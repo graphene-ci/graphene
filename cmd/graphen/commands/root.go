@@ -3,12 +3,16 @@ package commands
 import (
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/block"
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/ci"
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/kernel"
-	"github.com/spf13/cobra"
 )
 
+// The cobra command tree is assembled from package-level commands.
+//
+//nolint:gochecknoglobals // see above
 var rootCmd = newRootCommand()
 
 func newRootCommand() *cobra.Command {

@@ -1,10 +1,14 @@
-package commands
+package commands_test
 
 import (
 	"testing"
+
+	"github.com/graphene-ci/graphene/cmd/graphen/commands"
 )
 
 func TestCommandTree(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		path         []string
 		flag         string
@@ -24,7 +28,7 @@ func TestCommandTree(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		command, _, err := Root().Find(test.path)
+		command, _, err := commands.Root().Find(test.path)
 		if err != nil {
 			t.Fatalf("find %v: %v", test.path, err)
 		}

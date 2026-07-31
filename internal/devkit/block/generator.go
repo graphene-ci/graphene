@@ -1,4 +1,3 @@
 package block
 
-type TemplateData struct {
-}
+type TemplateData struct{}

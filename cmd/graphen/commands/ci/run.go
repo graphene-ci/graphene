@@ -1,7 +1,6 @@
 package ci
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -32,10 +31,11 @@ func newRunFlags(command *cobra.Command) (*RunFlags, error) {
 
 func (flags *RunFlags) Validate() error {
 	if flags == nil {
-		return errors.New("CI run flags are required")
+		return errFlagsRequired
 	}
+
 	if strings.TrimSpace(flags.Config) == "" {
-		return errors.New("--config must not be empty")
+		return errConfigRequired
 	}
 
 	return nil

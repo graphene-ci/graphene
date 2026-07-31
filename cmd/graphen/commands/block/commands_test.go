@@ -1,6 +1,10 @@
-package block
+package block_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/graphene-ci/graphene/cmd/graphen/commands/block"
+)
 
 func TestCommandsValidateFlags(t *testing.T) {
 	t.Parallel()
@@ -12,9 +16,9 @@ func TestCommandsValidateFlags(t *testing.T) {
 	}{
 		{
 			name:    "init",
-			invalid: func() error { return Init(nil) },
+			invalid: func() error { return block.Init(nil) },
 			valid: func() error {
-				return Init(&InitFlags{
+				return block.Init(&block.InitFlags{
 					Lang: "go",
 					Path: "./someBlock",
 				})
@@ -22,18 +26,18 @@ func TestCommandsValidateFlags(t *testing.T) {
 		},
 		{
 			name:    "gen",
-			invalid: func() error { return Gen(nil) },
+			invalid: func() error { return block.Gen(nil) },
 			valid: func() error {
-				return Gen(&GenFlags{
+				return block.Gen(&block.GenFlags{
 					Config: "./.graphen-block.yaml",
 				})
 			},
 		},
 		{
 			name:    "build",
-			invalid: func() error { return Build(nil) },
+			invalid: func() error { return block.Build(nil) },
 			valid: func() error {
-				return Build(&BuildFlags{
+				return block.Build(&block.BuildFlags{
 					Config: "./.graphen-block.yaml",
 				})
 			},
@@ -48,6 +52,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			if err := test.invalid(); err == nil {
 				t.Fatal("command with invalid flags returned no error")
 			}
+
 			if err := test.valid(); err != nil {
 				t.Fatalf("command with valid flags: %v", err)
 			}

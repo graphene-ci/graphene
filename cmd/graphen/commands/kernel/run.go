@@ -8,6 +8,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	errFlagsRequired  = errors.New("flags are required")
+	errConfigRequired = errors.New("--config is required")
+)
+
 type RunFlags struct {
 	Config string
 }
@@ -23,10 +28,11 @@ func newRunFlags(command *cobra.Command) (*RunFlags, error) {
 
 func (flags *RunFlags) Validate() error {
 	if flags == nil {
-		return errors.New("kernel run flags are required")
+		return errFlagsRequired
 	}
+
 	if strings.TrimSpace(flags.Config) == "" {
-		return errors.New("--config is required")
+		return errConfigRequired
 	}
 
 	return nil

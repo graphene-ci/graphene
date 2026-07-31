@@ -3,7 +3,7 @@
 //
 // Definitions are stored in the same truth store as everything else, under
 // the reserved kind space "Kind": key = (Kind, <kind>, <version>), value =
-// marshalled graphenepbv1.ResourceDefinition. Versions are monotonic per
+// marshaled graphenepbv1.ResourceDefinition. Versions are monotonic per
 // kind and assigned here on Define; nothing is ever overwritten — a new
 // version is a new record (instances pin the version they were validated
 // against).
@@ -15,15 +15,22 @@ import (
 	"fmt"
 	"strings"
 
-	schemapb "github.com/gopherex/schemapb/go/schemapb"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/protobuf/proto"
+
+	schemapb "github.com/gopherex/schemapb/go/schemapb"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
 
 // KindKind is the reserved kind space holding definitions themselves.
-const KindKind = "Kind"
+const (
+	KindKind = "Kind"
+
+	scanPage      = 512
+	maxSegmentLen = 256
+)
 
 var (
 	// ErrUnknownKind — no definition for the kind.
@@ -32,6 +39,11 @@ var (
 	ErrUnknownVersion = errors.New("registry: unknown definition version")
 	// ErrReservedKind — the kind name is system-reserved.
 	ErrReservedKind = errors.New("registry: reserved kind")
+
+	errUncloneable      = errors.New("registry: definition clone returned an unexpected type")
+	errSegmentEmpty     = errors.New("empty")
+	errSegmentTooLong   = errors.New("longer than 256 bytes")
+	errSegmentSeparator = errors.New("contains a reserved separator character")
 )
 
 // ValidationError carries the reasons an instance was rejected.
@@ -55,32 +67,17 @@ func New(st store.Store) *Registry {
 // Define registers a new version of the kind and returns it. The version
 // field of the input is ignored; the next monotonic version is assigned.
 func (r *Registry) Define(ctx context.Context, def *graphenepbv1.ResourceDefinition) (uint32, error) {
-	if def.GetKind() == "" {
-		return 0, &ValidationError{Reasons: []string{"kind is empty"}}
-	}
-	if def.GetKind() == KindKind {
-		return 0, ErrReservedKind
-	}
-	if err := validSegment(def.GetKind()); err != nil {
-		return 0, &ValidationError{Reasons: []string{fmt.Sprintf("kind: %v", err)}}
-	}
-	if len(def.GetPathSegments()) == 0 {
-		return 0, &ValidationError{Reasons: []string{"path_segments is empty"}}
-	}
-	for _, seg := range def.GetPathSegments() {
-		if err := validSegment(seg); err != nil {
-			return 0, &ValidationError{Reasons: []string{fmt.Sprintf("path segment %q: %v", seg, err)}}
-		}
-	}
-	if def.GetSpecSchema() == nil {
-		return 0, &ValidationError{Reasons: []string{"spec_schema is nil"}}
+	if err := validateDefinition(def); err != nil {
+		return 0, err
 	}
 
 	// Assign version = latest+1 with a CAS-create; a concurrent Define of
 	// the same kind loses the race and retries on the next number.
 	for {
 		latest, err := r.latest(ctx, def.GetKind())
+
 		var version uint32
+
 		switch {
 		case err == nil:
 			version = latest.GetVersion() + 1
@@ -90,8 +87,13 @@ func (r *Registry) Define(ctx context.Context, def *graphenepbv1.ResourceDefinit
 			return 0, err
 		}
 
-		next := proto.Clone(def).(*graphenepbv1.ResourceDefinition)
+		next, ok := proto.Clone(def).(*graphenepbv1.ResourceDefinition)
+		if !ok {
+			return 0, errUncloneable
+		}
+
 		next.Version = version
+
 		raw, err := proto.Marshal(next)
 		if err != nil {
 			return 0, fmt.Errorf("registry: marshal definition: %w", err)
@@ -101,9 +103,11 @@ func (r *Registry) Define(ctx context.Context, def *graphenepbv1.ResourceDefinit
 		if errors.Is(err, store.ErrRevisionMismatch) {
 			continue // lost the race, re-read latest
 		}
+
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("registry: store definition: %w", err)
 		}
+
 		return version, nil
 	}
 }
@@ -113,50 +117,65 @@ func (r *Registry) Get(ctx context.Context, kind string, version uint32) (*graph
 	if version == 0 {
 		return r.latest(ctx, kind)
 	}
+
 	entry, err := r.st.Get(ctx, defKey(kind, version))
 	if errors.Is(err, store.ErrNotFound) {
 		// Distinguish "no kind at all" from "no such version".
 		if _, lerr := r.latest(ctx, kind); errors.Is(lerr, ErrUnknownKind) {
 			return nil, ErrUnknownKind
 		}
+
 		return nil, ErrUnknownVersion
 	}
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("registry: read definition: %w", err)
 	}
+
 	return unmarshalDef(entry.Value)
 }
 
 // List returns the latest version of every defined kind, in kind order.
 func (r *Registry) List(ctx context.Context) ([]*graphenepbv1.ResourceDefinition, error) {
-	var out []*graphenepbv1.ResourceDefinition
-	var cursor []byte
+	var (
+		out    []*graphenepbv1.ResourceDefinition
+		cursor []byte
+	)
+
 	byKind := map[string]*graphenepbv1.ResourceDefinition{}
+
 	var order []string
+
 	for {
-		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind), 512, cursor)
+		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind), scanPage, cursor)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("registry: scan definitions: %w", err)
 		}
+
 		for _, e := range entries {
 			def, err := unmarshalDef(e.Value)
 			if err != nil {
 				return nil, err
 			}
+
 			if _, seen := byKind[def.GetKind()]; !seen {
 				order = append(order, def.GetKind())
 			}
 			// Ascending version order within a kind: the last one wins.
 			byKind[def.GetKind()] = def
 		}
+
 		if next == nil {
 			break
 		}
+
 		cursor = next
 	}
+
 	for _, k := range order {
 		out = append(out, byKind[k])
 	}
+
 	return out, nil
 }
 
@@ -174,6 +193,7 @@ func (r *Registry) ValidateInstance(
 	if kind == KindKind {
 		return 0, ErrReservedKind
 	}
+
 	def, err := r.Get(ctx, kind, version)
 	if err != nil {
 		return 0, err
@@ -185,6 +205,7 @@ func (r *Registry) ValidateInstance(
 			"path has %d segments, kind %q wants %d (%s)",
 			len(path), kind, len(def.GetPathSegments()), strings.Join(def.GetPathSegments(), "/")))
 	}
+
 	for _, seg := range path {
 		if err := validSegment(seg); err != nil {
 			reasons = append(reasons, fmt.Sprintf("path segment %q: %v", seg, err))
@@ -207,7 +228,38 @@ func (r *Registry) ValidateInstance(
 	if len(reasons) > 0 {
 		return 0, &ValidationError{Reasons: reasons}
 	}
+
 	return def.GetVersion(), nil
+}
+
+func validateDefinition(def *graphenepbv1.ResourceDefinition) error {
+	if def.GetKind() == "" {
+		return &ValidationError{Reasons: []string{"kind is empty"}}
+	}
+
+	if def.GetKind() == KindKind {
+		return ErrReservedKind
+	}
+
+	if err := validSegment(def.GetKind()); err != nil {
+		return &ValidationError{Reasons: []string{fmt.Sprintf("kind: %v", err)}}
+	}
+
+	if len(def.GetPathSegments()) == 0 {
+		return &ValidationError{Reasons: []string{"path_segments is empty"}}
+	}
+
+	for _, seg := range def.GetPathSegments() {
+		if err := validSegment(seg); err != nil {
+			return &ValidationError{Reasons: []string{fmt.Sprintf("path segment %q: %v", seg, err)}}
+		}
+	}
+
+	if def.GetSpecSchema() == nil {
+		return &ValidationError{Reasons: []string{"spec_schema is nil"}}
+	}
+
+	return nil
 }
 
 func validateValues(schema *schemapb.Schema, values *schemapb.StructValue, part string) []string {
@@ -215,37 +267,47 @@ func validateValues(schema *schemapb.Schema, values *schemapb.StructValue, part 
 	if err != nil {
 		return []string{fmt.Sprintf("%s: schema does not compile: %v", part, err)}
 	}
+
 	if res.Ok() {
 		return nil
 	}
+
 	var out []string
 	for _, verr := range res.GetErrors() {
 		out = append(out, fmt.Sprintf("%s.%s: %s", part, verr.GetPath(), verr.GetCode().String()))
 	}
+
 	return out
 }
 
 func (r *Registry) latest(ctx context.Context, kind string) (*graphenepbv1.ResourceDefinition, error) {
 	// Versions are zero-padded: ascending key order == ascending version
 	// order; the last entry under the kind prefix is the latest.
-	var last []byte
-	var cursor []byte
+	var (
+		last   []byte
+		cursor []byte
+	)
 	for {
-		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind, kind), 512, cursor)
+		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind, kind), scanPage, cursor)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("registry: scan definitions: %w", err)
 		}
+
 		if len(entries) > 0 {
 			last = entries[len(entries)-1].Value
 		}
+
 		if next == nil {
 			break
 		}
+
 		cursor = next
 	}
+
 	if last == nil {
 		return nil, ErrUnknownKind
 	}
+
 	return unmarshalDef(last)
 }
 
@@ -258,6 +320,7 @@ func unmarshalDef(raw []byte) (*graphenepbv1.ResourceDefinition, error) {
 	if err := proto.Unmarshal(raw, def); err != nil {
 		return nil, fmt.Errorf("registry: unmarshal definition: %w", err)
 	}
+
 	return def, nil
 }
 
@@ -265,13 +328,16 @@ func unmarshalDef(raw []byte) (*graphenepbv1.ResourceDefinition, error) {
 // no separator bytes, no '/', sane length.
 func validSegment(s string) error {
 	if s == "" {
-		return errors.New("empty")
+		return errSegmentEmpty
 	}
-	if len(s) > 256 {
-		return errors.New("longer than 256 bytes")
+
+	if len(s) > maxSegmentLen {
+		return errSegmentTooLong
 	}
+
 	if strings.ContainsAny(s, "/\x1e\x1f") {
-		return errors.New("contains a reserved separator character")
+		return errSegmentSeparator
 	}
+
 	return nil
 }

@@ -7,7 +7,7 @@
 // interfaces directly (the proto IS our contract), while transport
 // concerns (listeners, uds, tokens) live in infrastructure.
 //
-// Storage layout: the store value is the marshalled Resource with the
+// Storage layout: the store value is the marshaled Resource with the
 // store-owned fields (revision, created_revision) zeroed; they are stamped
 // back from store entries on every read. Definitions live under the
 // reserved kind space (see registry).
@@ -19,15 +19,21 @@ import (
 	"fmt"
 	"strings"
 
-	schemapb "github.com/gopherex/schemapb/go/schemapb"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	schemapb "github.com/gopherex/schemapb/go/schemapb"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
+
+// errUncloneable guards the proto.Clone type assertion; hitting it means a
+// broken protobuf runtime, not a caller mistake.
+var errUncloneable = errors.New("service: resource clone returned an unexpected type")
 
 // Resources implements graphenepbv1.ResourceServiceServer.
 type Resources struct {
@@ -48,26 +54,32 @@ func (r *Resources) Get(ctx context.Context, req *graphenepbv1.GetRequest) (*gra
 	if err != nil {
 		return nil, err
 	}
+
 	entry, err := r.st.Get(ctx, key)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
 	}
+
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	res, err := decodeResource(entry)
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	return &graphenepbv1.GetResponse{Resource: res}, nil
 }
 
 func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*graphenepbv1.PutResponse, error) {
 	res := req.GetResource()
+
 	key, err := storeKey(res.GetKey())
 	if err != nil {
 		return nil, err
 	}
+
 	kind := res.GetKey().GetKind()
 	if kind == registry.KindKind {
 		return nil, status.Error(codes.InvalidArgument, "definitions are managed via Define, not Put")
@@ -86,15 +98,23 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	// but must not set or clear the mark itself — we carry it over from
 	// the current record.
 	var current *graphenepbv1.Resource
-	if entry, err := r.st.Get(ctx, key); err == nil {
+
+	entry, err := r.st.Get(ctx, key)
+
+	switch {
+	case err == nil:
 		if current, err = decodeResource(entry); err != nil {
 			return nil, internal(err)
 		}
-	} else if !errors.Is(err, store.ErrNotFound) {
+	case !errors.Is(err, store.ErrNotFound):
 		return nil, internal(err)
 	}
 
-	stored := proto.Clone(res).(*graphenepbv1.Resource)
+	stored, ok := proto.Clone(res).(*graphenepbv1.Resource)
+	if !ok {
+		return nil, internal(errUncloneable)
+	}
+
 	stored.Revision = 0
 	stored.CreatedRevision = 0
 	stored.DefinitionVersion = pinned
@@ -107,6 +127,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 		if err != nil {
 			return nil, mapStoreErr(err, res.GetKey())
 		}
+
 		return &graphenepbv1.PutResponse{Revision: rev, StoreRevision: rev}, nil
 	}
 
@@ -114,10 +135,12 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	rev, err := r.st.Put(ctx, key, raw, req.GetExpectedRevision())
 	if err != nil {
 		return nil, mapStoreErr(err, res.GetKey())
 	}
+
 	return &graphenepbv1.PutResponse{Revision: rev, StoreRevision: rev}, nil
 }
 
@@ -126,13 +149,16 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 	if err != nil {
 		return nil, err
 	}
+
 	entry, err := r.st.Get(ctx, key)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
 	}
+
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	current, err := decodeResource(entry)
 	if err != nil {
 		return nil, internal(err)
@@ -143,6 +169,7 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 		if _, err := r.st.Delete(ctx, key, req.GetExpectedRevision()); err != nil {
 			return nil, mapStoreErr(err, req.GetKey())
 		}
+
 		return &graphenepbv1.DeleteResponse{}, nil
 	}
 
@@ -152,16 +179,20 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 	if current.GetDeleting() {
 		return &graphenepbv1.DeleteResponse{}, nil // already in progress
 	}
+
 	current.Deleting = true
 	current.Revision = 0
 	current.CreatedRevision = 0
+
 	raw, err := proto.Marshal(current)
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	if _, err := r.st.Put(ctx, key, raw, req.GetExpectedRevision()); err != nil {
 		return nil, mapStoreErr(err, req.GetKey())
 	}
+
 	return &graphenepbv1.DeleteResponse{}, nil
 }
 
@@ -169,9 +200,11 @@ func (r *Resources) List(ctx context.Context, req *graphenepbv1.ListRequest) (*g
 	if req.GetKind() == "" {
 		return nil, status.Error(codes.InvalidArgument, "kind is required")
 	}
+
 	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
 
 	limit := int(req.GetPageSize())
+
 	var cursor []byte
 	if req.GetPageToken() != "" {
 		cursor = []byte(req.GetPageToken())
@@ -181,19 +214,24 @@ func (r *Resources) List(ctx context.Context, req *graphenepbv1.ListRequest) (*g
 	if err != nil {
 		return nil, internal(err)
 	}
+
 	resp := &graphenepbv1.ListResponse{}
+
 	for _, e := range entries {
 		res, err := decodeResource(e)
 		if err != nil {
 			return nil, internal(err)
 		}
+
 		if matchSelector(res, req.GetSelector()) {
 			resp.Resources = append(resp.Resources, res)
 		}
 	}
+
 	if next != nil {
 		resp.NextPageToken = string(next)
 	}
+
 	return resp, nil
 }
 
@@ -201,25 +239,30 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 	if req.GetKind() == "" {
 		return status.Error(codes.InvalidArgument, "kind is required")
 	}
+
 	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
 
 	ctx := srv.Context()
+
 	events, err := r.st.Watch(ctx, prefix, req.GetFromStoreRevision())
 	if err != nil {
 		return internal(err)
 	}
-	for ev := range events {
-		out, err := mapEvent(ev)
+
+	for event := range events {
+		out, err := mapEvent(&event)
 		if err != nil {
 			return internal(err)
 		}
+
 		// Deletes pass the selector always: the final state is gone and
 		// the watcher must be told regardless of its filter.
-		if ev.Type == store.EventPut && !matchSelector(out.GetResource(), req.GetSelector()) {
+		if event.Type == store.EventPut && !matchSelector(out.GetResource(), req.GetSelector()) {
 			continue
 		}
+
 		if err := srv.Send(out); err != nil {
-			return err
+			return fmt.Errorf("send watch event: %w", err)
 		}
 	}
 	// Channel closed: store shut down or the consumer was too slow —
@@ -234,45 +277,61 @@ func (r *Resources) Define(ctx context.Context, req *graphenepbv1.DefineRequest)
 	if err != nil {
 		return nil, mapRegistryErr(err)
 	}
+
 	return &graphenepbv1.DefineResponse{Version: version}, nil
 }
 
-func (r *Resources) GetDefinition(ctx context.Context, req *graphenepbv1.GetDefinitionRequest) (*graphenepbv1.GetDefinitionResponse, error) {
+func (r *Resources) GetDefinition(
+	ctx context.Context,
+	req *graphenepbv1.GetDefinitionRequest,
+) (*graphenepbv1.GetDefinitionResponse, error) {
 	def, err := r.reg.Get(ctx, req.GetKind(), req.GetVersion())
 	if err != nil {
 		return nil, mapRegistryErr(err)
 	}
+
 	return &graphenepbv1.GetDefinitionResponse{Definition: def}, nil
 }
 
-func (r *Resources) ListDefinitions(ctx context.Context, req *graphenepbv1.ListDefinitionsRequest) (*graphenepbv1.ListDefinitionsResponse, error) {
+func (r *Resources) ListDefinitions(
+	ctx context.Context,
+	_ *graphenepbv1.ListDefinitionsRequest,
+) (*graphenepbv1.ListDefinitionsResponse, error) {
 	defs, err := r.reg.List(ctx)
 	if err != nil {
 		return nil, mapRegistryErr(err)
 	}
+
 	return &graphenepbv1.ListDefinitionsResponse{Definitions: defs}, nil
 }
 
-func (r *Resources) WatchDefinitions(req *graphenepbv1.WatchDefinitionsRequest, srv graphenepbv1.ResourceService_WatchDefinitionsServer) error {
+func (r *Resources) WatchDefinitions(
+	req *graphenepbv1.WatchDefinitionsRequest,
+	srv graphenepbv1.ResourceService_WatchDefinitionsServer,
+) error {
 	events, err := r.st.Watch(srv.Context(), store.EncodePrefix(registry.KindKind), req.GetFromStoreRevision())
 	if err != nil {
 		return internal(err)
 	}
-	for ev := range events {
-		if ev.Type != store.EventPut {
+
+	for event := range events {
+		if event.Type != store.EventPut {
 			continue // definitions are never deleted
 		}
+
 		def := &graphenepbv1.ResourceDefinition{}
-		if err := proto.Unmarshal(ev.Entry.Value, def); err != nil {
+		if err := proto.Unmarshal(event.Entry.Value, def); err != nil {
 			return internal(err)
 		}
+
 		if err := srv.Send(&graphenepbv1.WatchDefinitionsEvent{
 			Definition:    def,
-			StoreRevision: ev.StoreRevision,
+			StoreRevision: event.StoreRevision,
 		}); err != nil {
-			return err
+			return fmt.Errorf("send definitions event: %w", err)
 		}
 	}
+
 	return status.Error(codes.Aborted, "watch stream reset; re-watch from the last seen store_revision")
 }
 
@@ -282,9 +341,11 @@ func storeKey(k *graphenepbv1.Key) ([]byte, error) {
 	if k.GetKind() == "" {
 		return nil, status.Error(codes.InvalidArgument, "key.kind is required")
 	}
+
 	if len(k.GetPath()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "key.path is required")
 	}
+
 	return store.EncodeKey(k.GetKind(), k.GetPath()...), nil
 }
 
@@ -299,29 +360,35 @@ func decodeResource(e store.Entry) (*graphenepbv1.Resource, error) {
 	if err := proto.Unmarshal(e.Value, res); err != nil {
 		return nil, fmt.Errorf("decode resource: %w", err)
 	}
+
 	res.Revision = e.Revision
 	res.CreatedRevision = e.CreatedRevision
+
 	return res, nil
 }
 
-func mapEvent(ev store.Event) (*graphenepbv1.WatchEvent, error) {
-	out := &graphenepbv1.WatchEvent{StoreRevision: ev.StoreRevision}
-	switch ev.Type {
+func mapEvent(event *store.Event) (*graphenepbv1.WatchEvent, error) {
+	out := &graphenepbv1.WatchEvent{StoreRevision: event.StoreRevision}
+
+	switch event.Type {
 	case store.EventPut:
 		out.Type = graphenepbv1.EventType_EVENT_TYPE_PUT
-		res, err := decodeResource(ev.Entry)
+
+		res, err := decodeResource(event.Entry)
 		if err != nil {
 			return nil, err
 		}
+
 		out.Resource = res
 	case store.EventDelete:
 		out.Type = graphenepbv1.EventType_EVENT_TYPE_DELETE
-		kind, path := store.DecodeKey(ev.Entry.Key)
+		kind, path := store.DecodeKey(event.Entry.Key)
 		out.Resource = &graphenepbv1.Resource{
 			Key:      &graphenepbv1.Key{Kind: kind, Path: path},
-			Revision: ev.Entry.Revision,
+			Revision: event.Entry.Revision,
 		}
 	}
+
 	return out, nil
 }
 
@@ -333,15 +400,21 @@ func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) b
 			return false
 		}
 	}
+
 	return true
 }
 
+// minSelectorParts: a selector path is at least "<root>.<field>".
+const minSelectorParts = 2
+
 func matchField(res *graphenepbv1.Resource, path, want string) bool {
 	parts := strings.Split(path, ".")
-	if len(parts) < 2 {
+	if len(parts) < minSelectorParts {
 		return false
 	}
+
 	var root *schemapb.StructValue
+
 	switch parts[0] {
 	case "spec":
 		root = res.GetSpec()
@@ -350,10 +423,12 @@ func matchField(res *graphenepbv1.Resource, path, want string) bool {
 	default:
 		return false
 	}
+
 	val, ok := lookup(root.ToGo(), parts[1:])
 	if !ok {
 		return false
 	}
+
 	return fmt.Sprintf("%v", val) == want
 }
 
@@ -364,10 +439,12 @@ func lookup(m map[string]any, path []string) (any, bool) {
 		if !ok {
 			return nil, false
 		}
+
 		if cur, ok = obj[p]; !ok {
 			return nil, false
 		}
 	}
+
 	return cur, true
 }
 

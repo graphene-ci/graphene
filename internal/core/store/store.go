@@ -122,10 +122,12 @@ func EncodeKey(kind string, path ...string) []byte {
 	var b bytes.Buffer
 	b.WriteString(kind)
 	b.WriteByte(sepKind)
+
 	for _, seg := range path {
 		b.WriteString(seg)
 		b.WriteByte(sepSegment)
 	}
+
 	return b.Bytes()
 }
 
@@ -136,21 +138,28 @@ func EncodePrefix(kind string, path ...string) []byte {
 }
 
 // DecodeKey splits a stored key back into kind and path segments.
-func DecodeKey(key []byte) (kind string, path []string) {
-	i := bytes.IndexByte(key, sepKind)
-	if i < 0 {
+func DecodeKey(key []byte) (string, []string) {
+	idx := bytes.IndexByte(key, sepKind)
+	if idx < 0 {
 		return string(key), nil
 	}
-	kind = string(key[:i])
-	rest := key[i+1:]
+
+	kind := string(key[:idx])
+	rest := key[idx+1:]
+
+	var path []string
+
 	for len(rest) > 0 {
 		j := bytes.IndexByte(rest, sepSegment)
 		if j < 0 {
 			path = append(path, string(rest))
+
 			break
 		}
+
 		path = append(path, string(rest[:j]))
 		rest = rest[j+1:]
 	}
+
 	return kind, path
 }

@@ -2,11 +2,19 @@ package embed
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"text/template"
+)
+
+var (
+	errNilSource        = errors.New("copy embedded templates: source is nil")
+	errEmptyDestination = errors.New("copy embedded templates: destination is empty")
+	errNilOption        = errors.New("copy embedded templates")
+	errBadPermissions   = errors.New("copy embedded templates")
 )
 
 const (
@@ -50,20 +58,21 @@ func WithDirectoryPermissions(permissions fs.FileMode) CopyOption {
 // subdirectory of an embed.FS should be copied.
 func Copy(source fs.FS, destination string, data any, options ...CopyOption) error {
 	if source == nil {
-		return fmt.Errorf("copy embedded templates: source is nil")
+		return errNilSource
 	}
 
 	if destination == "" {
-		return fmt.Errorf("copy embedded templates: destination is empty")
+		return errEmptyDestination
 	}
 
 	config := copyOptions{
 		filePermissions:      DefaultFilePermissions,
 		directoryPermissions: DefaultDirectoryPermissions,
 	}
+
 	for index, option := range options {
 		if option == nil {
-			return fmt.Errorf("copy embedded templates: option %d is nil", index)
+			return fmt.Errorf("%w: option %d is nil", errNilOption, index)
 		}
 
 		option(&config)
@@ -72,11 +81,12 @@ func Copy(source fs.FS, destination string, data any, options ...CopyOption) err
 	if err := validatePermissions("file", config.filePermissions); err != nil {
 		return err
 	}
+
 	if err := validatePermissions("directory", config.directoryPermissions); err != nil {
 		return err
 	}
 
-	return fs.WalkDir(source, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(source, ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return fmt.Errorf("walk embedded templates at %q: %w", path, walkErr)
 		}
@@ -111,15 +121,16 @@ func Copy(source fs.FS, destination string, data any, options ...CopyOption) err
 
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("copy embedded templates: %w", err)
+	}
+
+	return nil
 }
 
 func validatePermissions(kind string, permissions fs.FileMode) error {
 	if permissions&^fs.ModePerm != 0 {
-		return fmt.Errorf(
-			"copy embedded templates: invalid %s permissions %v",
-			kind,
-			permissions,
-		)
+		return fmt.Errorf("%w: invalid %s permissions %v", errBadPermissions, kind, permissions)
 	}
 
 	return nil

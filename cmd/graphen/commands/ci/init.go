@@ -1,7 +1,6 @@
 package ci
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -32,13 +31,15 @@ func newInitFlags(command *cobra.Command) (*InitFlags, error) {
 
 func (flags *InitFlags) Validate() error {
 	if flags == nil {
-		return errors.New("CI init flags are required")
+		return errFlagsRequired
 	}
+
 	if strings.TrimSpace(flags.Lang) == "" {
-		return errors.New("--lang must not be empty")
+		return errLangRequired
 	}
+
 	if strings.TrimSpace(flags.Path) == "" {
-		return errors.New("--path is required")
+		return errPathRequired
 	}
 
 	return nil

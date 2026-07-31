@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	schemapb "github.com/gopherex/schemapb/go/schemapb"
+
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/registry"
@@ -15,11 +16,14 @@ import (
 
 func newRegistry(t *testing.T) *registry.Registry {
 	t.Helper()
+
 	st, err := bbolt.Open(filepath.Join(t.TempDir(), "store.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+
 	t.Cleanup(func() { _ = st.Close() })
+
 	return registry.New(st)
 }
 
@@ -27,6 +31,7 @@ func secretDef() *graphenepbv1.ResourceDefinition {
 	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "secret-spec"}).
 		Fields(schemapb.Str("value").Required()).
 		MustBuild()
+
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         "Secret",
 		PathSegments: []string{"tenant", "env", "name"},
@@ -47,6 +52,7 @@ func vmDef() *graphenepbv1.ResourceDefinition {
 			schemapb.Str("ip"),
 		).
 		MustBuild()
+
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         "aws.vm",
 		PathSegments: []string{"tenant", "env", "workflow", "name"},
@@ -56,61 +62,74 @@ func vmDef() *graphenepbv1.ResourceDefinition {
 }
 
 func TestDefineAssignsMonotonicVersions(t *testing.T) {
+	t.Parallel()
+
 	r := newRegistry(t)
 	ctx := context.Background()
 
-	v1, err := r.Define(ctx, secretDef())
+	ver1, err := r.Define(ctx, secretDef())
 	if err != nil {
 		t.Fatalf("define v1: %v", err)
 	}
-	v2, err := r.Define(ctx, secretDef())
+
+	ver2, err := r.Define(ctx, secretDef())
 	if err != nil {
 		t.Fatalf("define v2: %v", err)
 	}
-	if v1 != 1 || v2 != 2 {
-		t.Fatalf("versions: got %d,%d want 1,2", v1, v2)
+
+	if ver1 != 1 || ver2 != 2 {
+		t.Fatalf("versions: got %d,%d want 1,2", ver1, ver2)
 	}
 
 	latest, err := r.Get(ctx, "Secret", 0)
 	if err != nil {
 		t.Fatalf("get latest: %v", err)
 	}
+
 	if latest.GetVersion() != 2 {
 		t.Fatalf("latest: got v%d want v2", latest.GetVersion())
 	}
+
 	pinned, err := r.Get(ctx, "Secret", 1)
 	if err != nil {
 		t.Fatalf("get v1: %v", err)
 	}
+
 	if pinned.GetVersion() != 1 {
 		t.Fatalf("pinned: got v%d want v1", pinned.GetVersion())
 	}
 }
 
 func TestGetErrors(t *testing.T) {
+	t.Parallel()
+
 	r := newRegistry(t)
 	ctx := context.Background()
 
 	if _, err := r.Get(ctx, "Nope", 0); !errors.Is(err, registry.ErrUnknownKind) {
 		t.Fatalf("unknown kind: got %v", err)
 	}
+
 	if _, err := r.Define(ctx, secretDef()); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := r.Get(ctx, "Secret", 42); !errors.Is(err, registry.ErrUnknownVersion) {
 		t.Fatalf("unknown version: got %v", err)
 	}
 }
 
 func TestDefineRejectsBadInput(t *testing.T) {
+	t.Parallel()
+
 	r := newRegistry(t)
 	ctx := context.Background()
 
 	cases := map[string]*graphenepbv1.ResourceDefinition{
-		"empty kind":    {PathSegments: []string{"a"}, SpecSchema: secretDef().SpecSchema},
-		"reserved kind": {Kind: "Kind", PathSegments: []string{"a"}, SpecSchema: secretDef().SpecSchema},
-		"no segments":   {Kind: "X", SpecSchema: secretDef().SpecSchema},
-		"bad segment":   {Kind: "X", PathSegments: []string{"a/b"}, SpecSchema: secretDef().SpecSchema},
+		"empty kind":    {PathSegments: []string{"a"}, SpecSchema: secretDef().GetSpecSchema()},
+		"reserved kind": {Kind: "Kind", PathSegments: []string{"a"}, SpecSchema: secretDef().GetSpecSchema()},
+		"no segments":   {Kind: "X", SpecSchema: secretDef().GetSpecSchema()},
+		"bad segment":   {Kind: "X", PathSegments: []string{"a/b"}, SpecSchema: secretDef().GetSpecSchema()},
 		"no schema":     {Kind: "X", PathSegments: []string{"a"}},
 	}
 	for name, def := range cases {
@@ -121,15 +140,19 @@ func TestDefineRejectsBadInput(t *testing.T) {
 }
 
 func TestListReturnsLatestPerKind(t *testing.T) {
+	t.Parallel()
+
 	r := newRegistry(t)
 	ctx := context.Background()
 
 	if _, err := r.Define(ctx, secretDef()); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := r.Define(ctx, secretDef()); err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := r.Define(ctx, vmDef()); err != nil {
 		t.Fatal(err)
 	}
@@ -138,19 +161,24 @@ func TestListReturnsLatestPerKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
+
 	if len(defs) != 2 {
 		t.Fatalf("list: got %d defs, want 2", len(defs))
 	}
+
 	got := map[string]uint32{}
 	for _, d := range defs {
 		got[d.GetKind()] = d.GetVersion()
 	}
+
 	if got["Secret"] != 2 || got["aws.vm"] != 1 {
 		t.Fatalf("list versions: %v", got)
 	}
 }
 
 func TestValidateInstance(t *testing.T) {
+	t.Parallel()
+
 	r := newRegistry(t)
 	ctx := context.Background()
 
@@ -169,6 +197,7 @@ func TestValidateInstance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid instance rejected: %v", err)
 	}
+
 	if pinned != 1 {
 		t.Fatalf("pinned version: got %d want 1", pinned)
 	}
@@ -185,6 +214,7 @@ func TestValidateInstance(t *testing.T) {
 
 	// Missing required spec field.
 	badSpec := schemapb.MustStructFromGo(map[string]any{"type": "t3.medium"})
+
 	var verr *registry.ValidationError
 	if _, err := r.ValidateInstance(ctx, "aws.vm", path, 0, badSpec, nil); !errors.As(err, &verr) {
 		t.Fatalf("bad spec: want ValidationError, got %v", err)
