@@ -42,10 +42,10 @@ type Layout struct {
 
 const (
 	// UnitName is the service name in both scopes.
-	UnitName = "graphen-kernel.service"
+	UnitName = "graphene-kernel.service"
 
 	systemUnitDir   = "/etc/systemd/system"
-	systemConfigDir = "/etc/graphen"
+	systemConfigDir = "/etc/graphene"
 )
 
 // NewLayout computes the paths for a scope.
@@ -53,11 +53,11 @@ func NewLayout(scope Scope) (Layout, error) {
 	if scope == ScopeSystem {
 		return Layout{
 			Scope:     ScopeSystem,
-			Binary:    "/usr/local/bin/graphen",
+			Binary:    "/usr/local/bin/graphene",
 			Config:    systemConfigDir + "/kernel.yaml",
-			Data:      "/var/lib/graphen",
+			Data:      "/var/lib/graphene",
 			Unit:      systemUnitDir + "/" + UnitName,
-			Socket:    "/run/graphen/kernel.sock",
+			Socket:    "/run/graphene/kernel.sock",
 			TokenFile: systemConfigDir + "/bootstrap.token",
 		}, nil
 	}
@@ -69,16 +69,16 @@ func NewLayout(scope Scope) (Layout, error) {
 
 	config := xdgDir("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	data := xdgDir("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
-	runtime := xdgDir("XDG_RUNTIME_DIR", filepath.Join(data, "graphen", "run"))
+	runtime := xdgDir("XDG_RUNTIME_DIR", filepath.Join(data, "graphene", "run"))
 
 	return Layout{
 		Scope:     ScopeUser,
-		Binary:    filepath.Join(home, ".local", "bin", "graphen"),
-		Config:    filepath.Join(config, "graphen", "kernel.yaml"),
-		Data:      filepath.Join(data, "graphen"),
+		Binary:    filepath.Join(home, ".local", "bin", "graphene"),
+		Config:    filepath.Join(config, "graphene", "kernel.yaml"),
+		Data:      filepath.Join(data, "graphene"),
 		Unit:      filepath.Join(config, "systemd", "user", UnitName),
-		Socket:    filepath.Join(runtime, "graphen", "kernel.sock"),
-		TokenFile: filepath.Join(config, "graphen", "bootstrap.token"),
+		Socket:    filepath.Join(runtime, "graphene", "kernel.sock"),
+		TokenFile: filepath.Join(config, "graphene", "bootstrap.token"),
 	}, nil
 }
 

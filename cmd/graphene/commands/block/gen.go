@@ -14,7 +14,7 @@ func newGenCommand() *cobra.Command {
 	return newConfigCommand(
 		"gen",
 		"Generate Graphene block artifacts",
-		"  graphen block gen --config ./.graphen-block.yaml",
+		"  graphene block gen --config ./.graphene-block.yaml",
 		Gen,
 	)
 }

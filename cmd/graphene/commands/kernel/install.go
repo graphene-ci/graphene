@@ -179,7 +179,7 @@ func report(out io.Writer, result *install.Result) {
 			layout.TokenFile, result.Token)
 	}
 
-	_, _ = fmt.Fprintf(out, "\ntalk to it:\n  export GRAPHEN_TOKEN=$(cat %s)\n  %s ctl definitions --socket %s\n",
+	_, _ = fmt.Fprintf(out, "\ntalk to it:\n  export GRAPHENE_TOKEN=$(cat %s)\n  %s ctl definitions --socket %s\n",
 		layout.TokenFile, layout.Binary, layout.Socket)
 }
 
@@ -190,9 +190,9 @@ func newInstallCommand() *cobra.Command {
 		Long: "Install the kernel as a systemd service.\n\n" +
 			"The system scope owns the machine (/etc, /var/lib, /usr/local/bin) and needs root;\n" +
 			"the user scope installs into the XDG directories and needs no privileges at all.",
-		Example: "  graphen kernel install --scope user\n" +
-			"  sudo graphen kernel install --scope system --tcp 0.0.0.0:9000\n" +
-			"  graphen kernel install --print",
+		Example: "  graphene kernel install --scope user\n" +
+			"  sudo graphene kernel install --scope system --tcp 0.0.0.0:9000\n" +
+			"  graphene kernel install --print",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := installFlags(command)
@@ -287,7 +287,7 @@ func newUninstallCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "uninstall",
 		Short:   "Remove the systemd service (data and configuration are kept)",
-		Example: "  graphen kernel uninstall --scope user",
+		Example: "  graphene kernel uninstall --scope user",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			scope, err := cmdflags.String(command, "scope")
@@ -324,7 +324,7 @@ func newStatusCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Show the service status",
-		Example: "  graphen kernel status --scope user",
+		Example: "  graphene kernel status --scope user",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			scope, err := cmdflags.String(command, "scope")

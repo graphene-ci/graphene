@@ -46,7 +46,7 @@ func newCACommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "ca",
 		Short:   "Print the kernel's certificate authority",
-		Example: "  graphen kernel ca --config ./graphen-kernel.yaml > ca.crt",
+		Example: "  graphene kernel ca --config ./graphene-kernel.yaml > ca.crt",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := newRunFlags(command)

@@ -21,10 +21,10 @@ var Cmd = newCommand()
 var (
 	errFlagsRequired = errors.New("flags are required")
 	errNoTarget      = errors.New(
-		"no kernel found: pass --address or --socket, set GRAPHEN_ADDRESS/GRAPHEN_SOCKET, " +
-			"or install one with `graphen kernel install`")
+		"no kernel found: pass --address or --socket, set GRAPHENE_ADDRESS/GRAPHENE_SOCKET, " +
+			"or install one with `graphene kernel install`")
 	errNoToken = errors.New(
-		"no token found: pass --token, set GRAPHEN_TOKEN, or install a kernel whose token file this user can read")
+		"no token found: pass --token, set GRAPHENE_TOKEN, or install a kernel whose token file this user can read")
 	errKindRequired = errors.New("--kind is required")
 )
 
@@ -105,10 +105,10 @@ func newCommand() *cobra.Command {
 
 	command.PersistentFlags().String("address", "", "kernel address (host:port)")
 	command.PersistentFlags().String("socket", "", "kernel unix socket path")
-	command.PersistentFlags().String("ca-file", "", "certificate authority to pin (graphen kernel ca)")
+	command.PersistentFlags().String("ca-file", "", "certificate authority to pin (graphene kernel ca)")
 	command.PersistentFlags().String("token", "", "bearer token; otherwise taken from the context")
 	command.PersistentFlags().String("config", "",
-		"client configuration file (default: $GRAPHEN_CONFIG or the user config dir)")
+		"client configuration file (default: $GRAPHENE_CONFIG or the user config dir)")
 	command.PersistentFlags().String("context", "", "context to use (default: the selected one)")
 
 	command.AddCommand(

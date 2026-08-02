@@ -3,7 +3,7 @@ package ci_test
 import (
 	"testing"
 
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/ci"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/ci"
 )
 
 func TestCommandsValidateFlags(t *testing.T) {
@@ -20,7 +20,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			valid: func() error {
 				return ci.Init(&ci.InitFlags{
 					Lang: "go",
-					Path: "./.graphen-ci",
+					Path: "./.graphene-ci",
 				})
 			},
 		},
@@ -29,7 +29,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			invalid: func() error { return ci.Build(nil) },
 			valid: func() error {
 				return ci.Build(&ci.BuildFlags{
-					Config: "./.graphen-ci/.graphen-ci.yaml",
+					Config: "./.graphene-ci/.graphene-ci.yaml",
 				})
 			},
 		},
@@ -38,7 +38,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			invalid: func() error { return ci.Plan(nil) },
 			valid: func() error {
 				return ci.Plan(&ci.PlanFlags{
-					Config: "./.graphen-ci/.graphen-ci.yaml",
+					Config: "./.graphene-ci/.graphene-ci.yaml",
 				})
 			},
 		},
@@ -47,7 +47,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			invalid: func() error { return ci.Run(nil) },
 			valid: func() error {
 				return ci.Run(&ci.RunFlags{
-					Config: "./.graphen-ci/.graphen-ci.yaml",
+					Config: "./.graphene-ci/.graphene-ci.yaml",
 					Watch:  true,
 				})
 			},

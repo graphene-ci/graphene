@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/kernel"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/kernel"
 )
 
 // Run reaches the real kernel: the unit test only pins the flag contract

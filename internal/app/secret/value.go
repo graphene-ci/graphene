@@ -26,8 +26,8 @@ var (
 // configuration (tokens, credentials) is expressed this way, so operators
 // can keep material out of the file without the code caring how:
 //
-//	token: { file: /etc/graphen/token }
-//	token: { env: GRAPHEN_TOKEN }
+//	token: { file: /etc/graphene/token }
+//	token: { env: GRAPHENE_TOKEN }
 //	token: { inline: dev-only-secret }
 type Value struct {
 	Inline string `json:"inline,omitempty" mapstructure:"inline"`

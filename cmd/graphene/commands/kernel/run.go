@@ -91,7 +91,7 @@ func newRunCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "run",
 		Short:   "Run the Graphene kernel",
-		Example: "  graphen kernel run --config ./graphen-kernel.yaml",
+		Example: "  graphene kernel run --config ./graphene-kernel.yaml",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := newRunFlags(command)

@@ -14,7 +14,7 @@ import (
 // Order, borrowed from kubectl: explicit flags win; then the selected
 // context of the client configuration; then, as the last resort, a kernel
 // installed on this machine — the analog of in-cluster credentials, so
-// `graphen kernel install` followed by `graphen ctl definitions` simply
+// `graphene kernel install` followed by `graphene ctl definitions` simply
 // works.
 func Resolve(flags Target, configPath, contextName string) (Target, error) {
 	if flags.complete() {

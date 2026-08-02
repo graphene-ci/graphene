@@ -33,11 +33,11 @@ func CompletionPath(layout *Layout, shell Shell) (string, error) {
 	if layout.Scope == ScopeSystem {
 		switch shell {
 		case ShellBash:
-			return "/usr/share/bash-completion/completions/graphen", nil
+			return "/usr/share/bash-completion/completions/graphene", nil
 		case ShellZsh:
-			return "/usr/share/zsh/site-functions/_graphen", nil
+			return "/usr/share/zsh/site-functions/_graphene", nil
 		case ShellFish:
-			return "/usr/share/fish/vendor_completions.d/graphen.fish", nil
+			return "/usr/share/fish/vendor_completions.d/graphene.fish", nil
 		}
 
 		return "", fmt.Errorf("%w: %s", ErrUnknownShell, shell)
@@ -53,11 +53,11 @@ func CompletionPath(layout *Layout, shell Shell) (string, error) {
 
 	switch shell {
 	case ShellBash:
-		return filepath.Join(data, "bash-completion", "completions", "graphen"), nil
+		return filepath.Join(data, "bash-completion", "completions", "graphene"), nil
 	case ShellZsh:
-		return filepath.Join(data, "zsh", "site-functions", "_graphen"), nil
+		return filepath.Join(data, "zsh", "site-functions", "_graphene"), nil
 	case ShellFish:
-		return filepath.Join(config, "fish", "completions", "graphen.fish"), nil
+		return filepath.Join(config, "fish", "completions", "graphene.fish"), nil
 	}
 
 	return "", fmt.Errorf("%w: %s", ErrUnknownShell, shell)

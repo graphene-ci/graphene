@@ -14,7 +14,7 @@ import (
 // Config is the whole kernel configuration. Capabilities follow presence:
 // no roles, no modes.
 type Config struct {
-	DataDir  string   `default:"/var/lib/graphen" mapstructure:"data_dir" validate:"required"`
+	DataDir  string   `default:"/var/lib/graphene" mapstructure:"data_dir" validate:"required"`
 	Identity Identity `mapstructure:"identity"`
 	Log      Log      `mapstructure:"log"`
 
@@ -63,7 +63,7 @@ type Blobs struct {
 }
 
 // Listen configures the served endpoints. An empty address disables that
-// endpoint; the unix socket defaults to <data_dir>/graphen.sock.
+// endpoint; the unix socket defaults to <data_dir>/graphene.sock.
 type Listen struct {
 	TCP string `mapstructure:"tcp"`
 	UDS string `mapstructure:"uds"`
@@ -74,7 +74,7 @@ type Listen struct {
 // TLS configures the certificate of the TCP endpoint.
 //
 // mode=auto mints a self-signed CA and server certificate on first start
-// under <dir>; clients pin the CA (graphen kernel ca). mode=files uses a
+// under <dir>; clients pin the CA (graphene kernel ca). mode=files uses a
 // certificate the operator provides.
 type TLS struct {
 	Mode string `default:"auto" mapstructure:"mode" validate:"oneof=auto files"`
@@ -128,9 +128,9 @@ type Lease struct {
 }
 
 // Load reads the configuration: tag defaults, then the file (optional when
-// path is empty), then environment variables prefixed with GRAPHEN_.
+// path is empty), then environment variables prefixed with GRAPHENE_.
 func Load(path string) (*Config, error) {
-	opts := []structconf.Option{structconf.WithEnvPrefix("GRAPHEN")}
+	opts := []structconf.Option{structconf.WithEnvPrefix("GRAPHENE")}
 	if path != "" {
 		opts = append(opts, structconf.WithFile(path))
 	}
@@ -164,7 +164,7 @@ func (c *Config) applyDefaults() {
 	}
 
 	if c.Listen != nil && c.Listen.UDS == "" && !c.Listen.DisableUDS {
-		c.Listen.UDS = filepath.Join(c.DataDir, "graphen.sock")
+		c.Listen.UDS = filepath.Join(c.DataDir, "graphene.sock")
 	}
 }
 

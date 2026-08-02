@@ -3,7 +3,7 @@ package commands_test
 import (
 	"testing"
 
-	"github.com/graphene-ci/graphene/cmd/graphen/commands"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands"
 )
 
 func TestCommandTree(t *testing.T) {
@@ -17,9 +17,9 @@ func TestCommandTree(t *testing.T) {
 		{[]string{"kernel", "run"}, "config", ""},
 		{[]string{"ci", "init"}, "lang", "go"},
 		{[]string{"ci", "init"}, "path", ""},
-		{[]string{"ci", "build"}, "config", "./.graphen-ci/.graphen-ci.yaml"},
-		{[]string{"ci", "plan"}, "config", "./.graphen-ci/.graphen-ci.yaml"},
-		{[]string{"ci", "run"}, "config", "./.graphen-ci/.graphen-ci.yaml"},
+		{[]string{"ci", "build"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
+		{[]string{"ci", "plan"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
+		{[]string{"ci", "run"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
 		{[]string{"ci", "run"}, "watch", "false"},
 		{[]string{"block", "init"}, "lang", "go"},
 		{[]string{"block", "init"}, "path", ""},

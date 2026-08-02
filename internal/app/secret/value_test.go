@@ -16,7 +16,7 @@ func TestValueSources(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("GRAPHEN_TEST_VALUE", "from-env")
+	t.Setenv("GRAPHENE_TEST_VALUE", "from-env")
 
 	cases := map[string]struct {
 		value secret.Value
@@ -25,13 +25,13 @@ func TestValueSources(t *testing.T) {
 	}{
 		"inline": {value: secret.Value{Inline: "x"}, want: "x"},
 		"file":   {value: secret.Value{File: file}, want: "from-file"},
-		"env":    {value: secret.Value{Env: "GRAPHEN_TEST_VALUE"}, want: "from-env"},
+		"env":    {value: secret.Value{Env: "GRAPHENE_TEST_VALUE"}, want: "from-env"},
 		"unset":  {value: secret.Value{}, err: secret.ErrValueUnset},
 		"ambiguous": {
-			value: secret.Value{Inline: "x", Env: "GRAPHEN_TEST_VALUE"},
+			value: secret.Value{Inline: "x", Env: "GRAPHENE_TEST_VALUE"},
 			err:   secret.ErrValueAmbiguous,
 		},
-		"missing env": {value: secret.Value{Env: "GRAPHEN_TEST_ABSENT"}, err: secret.ErrValueEmpty},
+		"missing env": {value: secret.Value{Env: "GRAPHENE_TEST_ABSENT"}, err: secret.ErrValueEmpty},
 	}
 
 	//nolint:paralleltest // the parent uses t.Setenv; subtests must stay sequential

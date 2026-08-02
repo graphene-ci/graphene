@@ -3,7 +3,7 @@ package block_test
 import (
 	"testing"
 
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/block"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/block"
 )
 
 func TestCommandsValidateFlags(t *testing.T) {
@@ -29,7 +29,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			invalid: func() error { return block.Gen(nil) },
 			valid: func() error {
 				return block.Gen(&block.GenFlags{
-					Config: "./.graphen-block.yaml",
+					Config: "./.graphene-block.yaml",
 				})
 			},
 		},
@@ -38,7 +38,7 @@ func TestCommandsValidateFlags(t *testing.T) {
 			invalid: func() error { return block.Build(nil) },
 			valid: func() error {
 				return block.Build(&block.BuildFlags{
-					Config: "./.graphen-block.yaml",
+					Config: "./.graphene-block.yaml",
 				})
 			},
 		},

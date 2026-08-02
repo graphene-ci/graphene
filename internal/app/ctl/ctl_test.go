@@ -30,7 +30,7 @@ func startKernel(ctx context.Context, t *testing.T) *appctl.Client {
 	t.Helper()
 
 	dir := t.TempDir()
-	socket := filepath.Join(dir, "graphen.sock")
+	socket := filepath.Join(dir, "graphene.sock")
 	body := fmt.Sprintf(`
 data_dir: %s
 identity: { tenant: %s, name: control }
@@ -41,7 +41,7 @@ listen: { uds: %s }
 auth: { bootstrap: { token: { inline: %s } } }
 `, dir, tenant, socket, bootstrapToken)
 
-	path := filepath.Join(dir, "graphen.yaml")
+	path := filepath.Join(dir, "graphene.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

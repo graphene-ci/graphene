@@ -91,6 +91,14 @@ func Install(ctx context.Context, opts *Options) (Result, error) {
 		return result, err
 	}
 
+	// The data directory must exist BEFORE the unit starts: ReadWritePaths
+	// names it, and systemd fails to build the mount namespace (exit 226)
+	// when the path is missing. The kernel creating it at startup is too
+	// late — it never gets to run.
+	if err := os.MkdirAll(layout.Data, dirMode); err != nil {
+		return result, fmt.Errorf("install: create data directory: %w", err)
+	}
+
 	if err := recordContext(&layout, opts); err != nil {
 		return result, err
 	}
@@ -118,7 +126,7 @@ func Install(ctx context.Context, opts *Options) (Result, error) {
 }
 
 // recordContext teaches the client about the kernel just installed: the
-// same file kubectl-style tooling reads, so `graphen ctl ...` needs no
+// same file kubectl-style tooling reads, so `graphene ctl ...` needs no
 // flags on this machine — and adding a second kernel later does not
 // disturb this one.
 func recordContext(layout *Layout, opts *Options) error {
@@ -146,7 +154,7 @@ func recordContext(layout *Layout, opts *Options) error {
 }
 
 // installBinary copies the running executable to its installed location —
-// so `graphen kernel install` works from anywhere (a build directory, a
+// so `graphene kernel install` works from anywhere (a build directory, a
 // download) and the unit points at a stable path.
 func installBinary(layout *Layout) error {
 	current, err := os.Executable()

@@ -103,9 +103,9 @@ func newGetCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "get <kind> [path]",
 		Short: "Read resources",
-		Example: "  graphen ctl get Kernel acme\n" +
-			"  graphen ctl get Kernel acme/k1\n" +
-			"  graphen ctl get Execution acme/prod --selector spec.placement=k1 -o name",
+		Example: "  graphene ctl get Kernel acme\n" +
+			"  graphene ctl get Kernel acme/k1\n" +
+			"  graphene ctl get Execution acme/prod --selector spec.placement=k1 -o name",
 		Args:              cobra.RangeArgs(1, 2), //nolint:mnd // kind, optional path
 		ValidArgsFunction: completeAddress,
 		RunE: func(command *cobra.Command, args []string) error {
@@ -217,7 +217,7 @@ func newApplyCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "apply",
 		Short:   "Write resources from YAML",
-		Example: "  graphen ctl apply -f role.yaml\n  graphen ctl get Role acme/admin | graphen ctl apply",
+		Example: "  graphene ctl apply -f role.yaml\n  graphene ctl get Role acme/admin | graphene ctl apply",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			target, err := newTargetFlags(command)
@@ -281,7 +281,7 @@ func newDeleteCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:               "delete <kind> <path>",
 		Short:             "Remove a resource",
-		Example:           "  graphen ctl delete Role acme/kernel-default",
+		Example:           "  graphene ctl delete Role acme/kernel-default",
 		Args:              cobra.ExactArgs(2), //nolint:mnd // kind and path
 		ValidArgsFunction: completeAddress,
 		RunE: func(command *cobra.Command, args []string) error {
@@ -351,7 +351,7 @@ func newWatchCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:               "watch <kind> [path]",
 		Short:             "Follow changes of a kind",
-		Example:           "  graphen ctl watch Kernel acme\n  graphen ctl watch Execution --selector spec.placement=k1",
+		Example:           "  graphene ctl watch Kernel acme\n  graphene ctl watch Execution --selector spec.placement=k1",
 		Args:              cobra.RangeArgs(1, 2), //nolint:mnd // kind, optional path prefix
 		ValidArgsFunction: completeAddress,
 		RunE: func(command *cobra.Command, args []string) error {
@@ -409,7 +409,7 @@ func newDefinitionsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "definitions",
 		Short:   "List the kinds this kernel knows",
-		Example: "  graphen ctl definitions",
+		Example: "  graphene ctl definitions",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			target, err := newTargetFlags(command)

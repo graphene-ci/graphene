@@ -57,7 +57,7 @@ func newInitCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "init",
 		Short:   "Initialize a Graphene block",
-		Example: "  graphen block init --lang go --path ./someBlock",
+		Example: "  graphene block init --lang go --path ./someBlock",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := newInitFlags(command)

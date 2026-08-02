@@ -1,9 +1,13 @@
 package install_test
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/graphene-ci/graphene/internal/app/clientconfig"
 	"github.com/graphene-ci/graphene/internal/app/install"
 )
 
@@ -131,5 +135,48 @@ func TestConfigMatchesLayout(t *testing.T) {
 
 	if !strings.Contains(string(withTCP), "tcp: 0.0.0.0:9000") || !strings.Contains(string(withTCP), "mode: auto") {
 		t.Fatalf("tcp config:\n%s", withTCP)
+	}
+}
+
+// A unit whose ReadWritePaths points at a missing directory cannot start
+// at all: systemd fails to build the mount namespace. Installing must
+// therefore create the data directory, not leave it to the kernel.
+func TestInstallCreatesDataDirectory(t *testing.T) {
+	// No t.Parallel: this test redirects HOME and the XDG variables for
+	// the whole process.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
+	t.Setenv(clientconfig.EnvPath, filepath.Join(home, "client.yaml"))
+
+	result, err := install.Install(context.Background(), &install.Options{
+		Scope:      install.ScopeUser,
+		Tenant:     "acme",
+		Name:       "local",
+		SkipEnable: true,
+	})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	info, err := os.Stat(result.Layout.Data)
+	if err != nil {
+		t.Fatalf("data directory: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", result.Layout.Data)
+	}
+
+	// The unit names exactly that directory as writable.
+	unit, err := install.RenderUnit(&result.Layout)
+	if err != nil {
+		t.Fatalf("render unit: %v", err)
+	}
+
+	if !strings.Contains(string(unit), "ReadWritePaths="+result.Layout.Data) {
+		t.Fatalf("unit does not grant write access to its data directory")
 	}
 }

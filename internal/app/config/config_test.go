@@ -12,7 +12,7 @@ import (
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "graphen.yaml")
+	path := filepath.Join(t.TempDir(), "graphene.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -24,7 +24,7 @@ func TestServingKernel(t *testing.T) {
 	t.Parallel()
 
 	path := writeConfig(t, `
-data_dir: /srv/graphen
+data_dir: /srv/graphene
 identity: { tenant: acme, name: srv1 }
 store: {}
 blobs: {}
@@ -39,19 +39,19 @@ auth: { bootstrap: { token: { inline: secret } } }
 	}
 
 	// Paths derive from data_dir when unset.
-	if cfg.Store.Path != "/srv/graphen/store.db" {
+	if cfg.Store.Path != "/srv/graphene/store.db" {
 		t.Errorf("store path: %s", cfg.Store.Path)
 	}
 
-	if cfg.Blobs.Path != "/srv/graphen/blobs" {
+	if cfg.Blobs.Path != "/srv/graphene/blobs" {
 		t.Errorf("blobs path: %s", cfg.Blobs.Path)
 	}
 
-	if cfg.TLS.Dir != "/srv/graphen/tls" {
+	if cfg.TLS.Dir != "/srv/graphene/tls" {
 		t.Errorf("tls dir: %s", cfg.TLS.Dir)
 	}
 
-	if cfg.Listen.UDS != "/srv/graphen/graphen.sock" {
+	if cfg.Listen.UDS != "/srv/graphene/graphene.sock" {
 		t.Errorf("uds: %s", cfg.Listen.UDS)
 	}
 
@@ -166,9 +166,9 @@ func TestValidationRejectsIncoherentCombinations(t *testing.T) {
 }
 
 func TestEnvOverridesAndMaterializesSections(t *testing.T) {
-	t.Setenv("GRAPHEN_IDENTITY_NAME", "from-env")
-	t.Setenv("GRAPHEN_LINK_ADDRESS", "srv2:9000")
-	t.Setenv("GRAPHEN_LINK_TOKEN_INLINE", "env-token")
+	t.Setenv("GRAPHENE_IDENTITY_NAME", "from-env")
+	t.Setenv("GRAPHENE_LINK_ADDRESS", "srv2:9000")
+	t.Setenv("GRAPHENE_LINK_TOKEN_INLINE", "env-token")
 
 	cfg, err := config.Load("")
 	if err != nil {

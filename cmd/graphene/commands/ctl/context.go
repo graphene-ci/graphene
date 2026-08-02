@@ -114,14 +114,14 @@ func newContextCommand() *cobra.Command {
 			Short:   "List contexts (the current one is marked)",
 			Args:    cobra.NoArgs,
 			RunE:    func(cmd *cobra.Command, _ []string) error { return runContext(cmd, ListContexts) },
-			Example: "  graphen ctl context list",
+			Example: "  graphene ctl context list",
 		},
 		&cobra.Command{
 			Use:               "use <name>",
 			Short:             "Select a context",
 			Args:              cobra.ExactArgs(1),
 			ValidArgsFunction: completeContext,
-			Example:           "  graphen ctl context use prod",
+			Example:           "  graphene ctl context use prod",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				config, err := cmdflags.String(cmd, "config")
 				if err != nil {
@@ -136,7 +136,7 @@ func newContextCommand() *cobra.Command {
 			Short:             "Forget a context",
 			Args:              cobra.ExactArgs(1),
 			ValidArgsFunction: completeContext,
-			Example:           "  graphen ctl context remove prod",
+			Example:           "  graphene ctl context remove prod",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				config, err := cmdflags.String(cmd, "config")
 				if err != nil {

@@ -45,7 +45,7 @@ func TestUpsertResolveRoundTrip(t *testing.T) {
 
 	cfg := &clientconfig.Config{}
 	cfg.Upsert("local",
-		clientconfig.Kernel{Socket: "/run/graphen/kernel.sock"},
+		clientconfig.Kernel{Socket: "/run/graphene/kernel.sock"},
 		clientconfig.Identity{Token: secret.Value{Inline: "t"}},
 		"acme")
 
@@ -68,7 +68,7 @@ func TestUpsertResolveRoundTrip(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if resolved.Kernel.Socket != "/run/graphen/kernel.sock" || resolved.Context.Tenant != "acme" {
+	if resolved.Kernel.Socket != "/run/graphene/kernel.sock" || resolved.Context.Tenant != "acme" {
 		t.Fatalf("resolved: %+v", resolved)
 	}
 

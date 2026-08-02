@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/block"
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/ci"
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/ctl"
-	"github.com/graphene-ci/graphene/cmd/graphen/commands/kernel"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/block"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/ci"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/ctl"
+	"github.com/graphene-ci/graphene/cmd/graphene/commands/kernel"
 )
 
 // The cobra command tree is assembled from package-level commands.
@@ -18,7 +18,7 @@ var rootCmd = newRootCommand()
 
 func newRootCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:   "graphen",
+		Use:   "graphene",
 		Short: "Graphene CI command-line interface",
 	}
 

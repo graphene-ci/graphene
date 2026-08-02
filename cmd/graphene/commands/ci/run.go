@@ -53,7 +53,7 @@ func newRunCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "run",
 		Short:   "Run a Graphene CI project",
-		Example: "  graphen ci run --config ./.graphen-ci/.graphen-ci.yaml --watch",
+		Example: "  graphene ci run --config ./.graphene-ci/.graphene-ci.yaml --watch",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := newRunFlags(command)
@@ -67,7 +67,7 @@ func newRunCommand() *cobra.Command {
 
 	command.Flags().String(
 		"config",
-		"./.graphen-ci/.graphen-ci.yaml",
+		"./.graphene-ci/.graphene-ci.yaml",
 		"path to the CI configuration file",
 	)
 	command.Flags().Bool("watch", false, "watch the CI run until completion")

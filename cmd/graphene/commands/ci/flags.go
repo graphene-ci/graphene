@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultConfigPath = "./.graphen-ci/.graphen-ci.yaml"
+const defaultConfigPath = "./.graphene-ci/.graphene-ci.yaml"
 
 var (
 	errFlagsRequired  = errors.New("flags are required")

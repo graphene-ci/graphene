@@ -25,7 +25,7 @@ import (
 )
 
 // File names of the auto-minted material. The CA certificate is what
-// clients pin (`graphen kernel ca` prints it).
+// clients pin (`graphene kernel ca` prints it).
 // errCorruptCA — the stored CA material does not parse.
 var errCorruptCA = errors.New("tls: corrupt ca material")
 
@@ -249,7 +249,7 @@ var ErrBadCA = errors.New("tls: ca file contains no usable certificate")
 
 const defaultServerName = "localhost"
 
-// CACertPEM reads the pinnable CA certificate (`graphen kernel ca`).
+// CACertPEM reads the pinnable CA certificate (`graphene kernel ca`).
 func CACertPEM(dir string) ([]byte, error) {
 	pemBytes, err := os.ReadFile(filepath.Join(dir, caCertFile))
 	if err != nil {

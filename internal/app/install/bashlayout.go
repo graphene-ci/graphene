@@ -18,8 +18,8 @@ package install
 //nolint:dupword // shell syntax, not prose
 const BashOneColumn = `
 
-# Installed by graphen: one candidate per line, whatever their length.
-__graphen_format_comp_descriptions()
+# Installed by graphene: one candidate per line, whatever their length.
+__graphene_format_comp_descriptions()
 {
     local tab=$'\t'
     local comp desc maxdesclength width

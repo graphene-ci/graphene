@@ -72,7 +72,7 @@ func writeFile(t *testing.T, dir, name, body string) string {
 func startKernel(ctx context.Context, t *testing.T, body string) {
 	t.Helper()
 
-	path := writeFile(t, t.TempDir(), "graphen.yaml", body)
+	path := writeFile(t, t.TempDir(), "graphene.yaml", body)
 
 	cfg, err := config.Load(path)
 	if err != nil {

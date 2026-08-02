@@ -19,29 +19,29 @@ test: ## Run all tests
 	go test ./...
 
 .PHONY: build
-build: ## Build the graphen binary into bin/
-	go build -o $(BIN)/graphen ./cmd/graphen
+build: ## Build the graphene binary into bin/
+	go build -o $(BIN)/graphene ./cmd/graphene
 
 .PHONY: kernel-install
 kernel-install: build ## Install the kernel as a user service (no privileges)
-	$(BIN)/graphen kernel install --scope user
+	$(BIN)/graphene kernel install --scope user
 
 .PHONY: kernel-reinstall
 kernel-reinstall: build ## Reinstall over the running service (new binary, same data)
-	$(BIN)/graphen kernel install --scope user --force
-	systemctl --user restart graphen-kernel.service
+	$(BIN)/graphene kernel install --scope user --force
+	systemctl --user restart graphene-kernel.service
 
 .PHONY: kernel-status
 kernel-status: ## Show the user service status
-	$(BIN)/graphen kernel status --scope user
+	$(BIN)/graphene kernel status --scope user
 
 .PHONY: kernel-logs
 kernel-logs: ## Follow the user service logs
-	journalctl --user -u graphen-kernel.service -f
+	journalctl --user -u graphene-kernel.service -f
 
 .PHONY: kernel-uninstall
 kernel-uninstall: ## Remove the user service (data and configuration are kept)
-	$(BIN)/graphen kernel uninstall --scope user
+	$(BIN)/graphene kernel uninstall --scope user
 
 .PHONY: help
 help: ## List all targets with explanations

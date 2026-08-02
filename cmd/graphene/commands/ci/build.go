@@ -14,7 +14,7 @@ func newBuildCommand() *cobra.Command {
 	return newConfigCommand(
 		"build",
 		"Build a Graphene CI project",
-		"  graphen ci build --config ./.graphen-ci/.graphen-ci.yaml",
+		"  graphene ci build --config ./.graphene-ci/.graphene-ci.yaml",
 		Build,
 	)
 }

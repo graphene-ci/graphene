@@ -14,7 +14,7 @@ func newBuildCommand() *cobra.Command {
 	return newConfigCommand(
 		"build",
 		"Build a Graphene block",
-		"  graphen block build --config ./.graphen-block.yaml",
+		"  graphene block build --config ./.graphene-block.yaml",
 		Build,
 	)
 }

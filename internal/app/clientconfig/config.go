@@ -6,7 +6,7 @@
 // identities (what to present), contexts (a pairing). Adding a kernel does
 // not disturb the others, and switching between them is one word.
 //
-// Resolution order, borrowed as-is: an explicit path, then $GRAPHEN_CONFIG,
+// Resolution order, borrowed as-is: an explicit path, then $GRAPHENE_CONFIG,
 // then the user's config directory. The only implicit source is the last
 // resort — a kernel installed on this machine — which is the analog of
 // kubectl's in-cluster credentials.
@@ -25,7 +25,7 @@ import (
 )
 
 // EnvPath overrides where the client configuration is read from.
-const EnvPath = "GRAPHEN_CONFIG"
+const EnvPath = "GRAPHENE_CONFIG"
 
 const (
 	dirMode  = 0o700
@@ -96,7 +96,7 @@ func Path(explicit string) (string, error) {
 		return "", fmt.Errorf("clientconfig: config directory: %w", err)
 	}
 
-	return filepath.Join(dir, "graphen", "config.yaml"), nil
+	return filepath.Join(dir, "graphene", "config.yaml"), nil
 }
 
 // Load reads the configuration. A missing file is an empty configuration,

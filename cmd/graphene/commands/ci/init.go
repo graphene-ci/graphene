@@ -57,7 +57,7 @@ func newInitCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "init",
 		Short:   "Initialize a Graphene CI project",
-		Example: "  graphen ci init --lang go --path ./.graphen-ci",
+		Example: "  graphene ci init --lang go --path ./.graphene-ci",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			flags, err := newInitFlags(command)

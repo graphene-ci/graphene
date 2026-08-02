@@ -14,7 +14,7 @@ func newPlanCommand() *cobra.Command {
 	return newConfigCommand(
 		"plan",
 		"Plan a Graphene CI run",
-		"  graphen ci plan --config ./.graphen-ci/.graphen-ci.yaml",
+		"  graphene ci plan --config ./.graphene-ci/.graphene-ci.yaml",
 		Plan,
 	)
 }
