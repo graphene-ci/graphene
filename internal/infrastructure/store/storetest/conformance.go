@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
 
@@ -57,13 +58,13 @@ func testGetPutCAS(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key := store.EncodeKey("Secret", "acme", "prod", "aws")
+	stored := key.New("Secret", "acme", "prod", "aws").Encode()
 
-	if _, err := s.Get(c, key); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Get(c, stored); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("get missing: want ErrNotFound, got %v", err)
 	}
 
-	rev1, err := s.Put(c, key, []byte("v1"), 0)
+	rev1, err := s.Put(c, stored, []byte("v1"), 0)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -73,16 +74,16 @@ func testGetPutCAS(t *testing.T, s store.Store) {
 	}
 
 	// Create again must fail: it exists.
-	if _, err := s.Put(c, key, []byte("v1b"), 0); !errors.Is(err, store.ErrRevisionMismatch) {
+	if _, err := s.Put(c, stored, []byte("v1b"), 0); !errors.Is(err, store.ErrRevisionMismatch) {
 		t.Fatalf("second create: want ErrRevisionMismatch, got %v", err)
 	}
 	// Wrong CAS token must fail.
 	const revGap = 100
-	if _, err := s.Put(c, key, []byte("v2"), rev1+revGap); !errors.Is(err, store.ErrRevisionMismatch) {
+	if _, err := s.Put(c, stored, []byte("v2"), rev1+revGap); !errors.Is(err, store.ErrRevisionMismatch) {
 		t.Fatalf("wrong rev: want ErrRevisionMismatch, got %v", err)
 	}
 
-	rev2, err := s.Put(c, key, []byte("v2"), rev1)
+	rev2, err := s.Put(c, stored, []byte("v2"), rev1)
 	if err != nil {
 		t.Fatalf("cas update: %v", err)
 	}
@@ -91,7 +92,7 @@ func testGetPutCAS(t *testing.T, s store.Store) {
 		t.Fatalf("revisions not monotonic: %d then %d", rev1, rev2)
 	}
 
-	entry, err := s.Get(c, key)
+	entry, err := s.Get(c, stored)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -105,14 +106,14 @@ func testCreatedRevision(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key := store.EncodeKey("Run", "acme", "prod", "wf", "1")
+	stored := key.New("Run", "acme", "prod", "wf", "1").Encode()
 
-	rev1, err := s.Put(c, key, []byte("a"), 0)
+	rev1, err := s.Put(c, stored, []byte("a"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	entry, err := s.Get(c, key)
+	entry, err := s.Get(c, stored)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,31 +123,31 @@ func testCreatedRevision(t *testing.T, s store.Store) {
 	}
 
 	// Stable across updates.
-	rev2, err := s.Put(c, key, []byte("b"), rev1)
+	rev2, err := s.Put(c, stored, []byte("b"), rev1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if entry, _ = s.Get(c, key); entry.CreatedRevision != rev1 || entry.Revision != rev2 {
+	if entry, _ = s.Get(c, stored); entry.CreatedRevision != rev1 || entry.Revision != rev2 {
 		t.Fatalf("after update: created=%d rev=%d, want %d/%d", entry.CreatedRevision, entry.Revision, rev1, rev2)
 	}
 
 	// New incarnation after delete+recreate.
-	if _, err := s.Delete(c, key, rev2); err != nil {
+	if _, err := s.Delete(c, stored, rev2); err != nil {
 		t.Fatal(err)
 	}
 
-	rev3, err := s.Put(c, key, []byte("c"), 0)
+	rev3, err := s.Put(c, stored, []byte("c"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if entry, _ = s.Get(c, key); entry.CreatedRevision != rev3 {
+	if entry, _ = s.Get(c, stored); entry.CreatedRevision != rev3 {
 		t.Fatalf("recreate: created=%d want %d", entry.CreatedRevision, rev3)
 	}
 
 	// Watch events carry the incarnation too.
-	events, err := s.Watch(c, key, rev2)
+	events, err := s.Watch(c, stored, rev2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,26 +167,26 @@ func testDelete(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key := store.EncodeKey("Secret", "acme", "prod", "gone")
+	stored := key.New("Secret", "acme", "prod", "gone").Encode()
 
-	rev, err := s.Put(c, key, []byte("x"), 0)
+	rev, err := s.Put(c, stored, []byte("x"), 0)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := s.Delete(c, key, rev+1); !errors.Is(err, store.ErrRevisionMismatch) {
+	if _, err := s.Delete(c, stored, rev+1); !errors.Is(err, store.ErrRevisionMismatch) {
 		t.Fatalf("delete wrong rev: want ErrRevisionMismatch, got %v", err)
 	}
 
-	if _, err := s.Delete(c, key, rev); err != nil {
+	if _, err := s.Delete(c, stored, rev); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	if _, err := s.Get(c, key); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Get(c, stored); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("get after delete: want ErrNotFound, got %v", err)
 	}
 	// Recreate after delete works with expected 0.
-	if _, err := s.Put(c, key, []byte("y"), 0); err != nil {
+	if _, err := s.Put(c, stored, []byte("y"), 0); err != nil {
 		t.Fatalf("recreate: %v", err)
 	}
 }
@@ -196,12 +197,12 @@ func testScan(t *testing.T, s store.Store) {
 	c := testCtx(t)
 
 	for _, name := range []string{"a", "b", "c", "d"} {
-		if _, err := s.Put(c, store.EncodeKey("Artifact", "acme", "prod", "wf", name), []byte(name), 0); err != nil {
+		if _, err := s.Put(c, key.New("Artifact", "acme", "prod", "wf", name).Encode(), []byte(name), 0); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
 
-	prefix := store.EncodePrefix("Artifact", "acme", "prod", "wf")
+	prefix := key.New("Artifact", "acme", "prod", "wf").Encode()
 
 	var (
 		got    []string
@@ -242,21 +243,21 @@ func testPrefixIsolation(t *testing.T, s store.Store) {
 
 	c := testCtx(t)
 
-	if _, err := s.Put(c, store.EncodeKey("Artifact", "acme", "prod", "app"), []byte("1"), 0); err != nil {
+	if _, err := s.Put(c, key.New("Artifact", "acme", "prod", "app").Encode(), []byte("1"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Put(c, store.EncodeKey("Artifact", "acme", "prod", "app2"), []byte("2"), 0); err != nil {
+	if _, err := s.Put(c, key.New("Artifact", "acme", "prod", "app2").Encode(), []byte("2"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Put(c, store.EncodeKey("Secret", "acme", "prod", "app"), []byte("3"), 0); err != nil {
+	if _, err := s.Put(c, key.New("Secret", "acme", "prod", "app").Encode(), []byte("3"), 0); err != nil {
 		t.Fatal(err)
 	}
 
 	// Whole-segment prefix: "app" must not match "app2"; kind spaces are
 	// isolated.
-	entries, _, err := s.Scan(c, store.EncodePrefix("Artifact", "acme", "prod", "app"), 0, nil)
+	entries, _, err := s.Scan(c, key.New("Artifact", "acme", "prod", "app").Encode(), 0, nil)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -270,20 +271,20 @@ func testWatchReplay(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key := store.EncodeKey("Execution", "acme", "prod", "wf", "1", "build", "1")
+	stored := key.New("Execution", "acme", "prod", "wf", "1", "build", "1").Encode()
 
-	rev1, err := s.Put(c, key, []byte("pending"), 0)
+	rev1, err := s.Put(c, stored, []byte("pending"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rev2, err := s.Put(c, key, []byte("running"), rev1)
+	rev2, err := s.Put(c, stored, []byte("running"), rev1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Resume after rev1: must replay exactly the rev2 event, then live.
-	events, err := s.Watch(c, store.EncodePrefix("Execution"), rev1)
+	events, err := s.Watch(c, key.New("Execution").Encode(), rev1)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
@@ -293,7 +294,7 @@ func testWatchReplay(t *testing.T, s store.Store) {
 		t.Fatalf("replay: got rev=%d value=%q, want %d/running", event.StoreRevision, event.Entry.Value, rev2)
 	}
 
-	rev3, err := s.Put(c, key, []byte("done"), rev2)
+	rev3, err := s.Put(c, stored, []byte("done"), rev2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +309,8 @@ func testWatchSnapshot(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key1 := store.EncodeKey("Node", "acme", "prod", "wf", "1", "a")
-	key2 := store.EncodeKey("Node", "acme", "prod", "wf", "1", "b")
+	key1 := key.New("Node", "acme", "prod", "wf", "1", "a").Encode()
+	key2 := key.New("Node", "acme", "prod", "wf", "1", "b").Encode()
 
 	if _, err := s.Put(c, key1, []byte("A"), 0); err != nil {
 		t.Fatal(err)
@@ -319,12 +320,12 @@ func testWatchSnapshot(t *testing.T, s store.Store) {
 		t.Fatal(err)
 	}
 
-	events, err := s.Watch(c, store.EncodePrefix("Node"), 0)
+	events, err := s.Watch(c, key.New("Node").Encode(), 0)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
 
-	// Snapshot: both current entries as PUT, in key order.
+	// Snapshot: both current entries as PUT, in stored order.
 	first, second := recvData(t, events), recvData(t, events)
 	if string(first.Entry.Value) != "A" || string(second.Entry.Value) != "B" {
 		t.Fatalf("snapshot: got %q,%q want A,B", first.Entry.Value, second.Entry.Value)
@@ -341,19 +342,19 @@ func testWatchLive(t *testing.T, s store.Store) {
 		t.Fatalf("revision: %v", err)
 	}
 
-	events, err := s.Watch(c, store.EncodePrefix("Run"), head)
+	events, err := s.Watch(c, key.New("Run").Encode(), head)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
 
 	// Event outside the prefix must not arrive.
-	if _, err := s.Put(c, store.EncodeKey("Node", "x"), []byte("noise"), 0); err != nil {
+	if _, err := s.Put(c, key.New("Node", "x").Encode(), []byte("noise"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	key := store.EncodeKey("Run", "acme", "prod", "wf", "7")
+	stored := key.New("Run", "acme", "prod", "wf", "7").Encode()
 
-	rev, err := s.Put(c, key, []byte("started"), 0)
+	rev, err := s.Put(c, stored, []byte("started"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +365,7 @@ func testWatchLive(t *testing.T, s store.Store) {
 	}
 
 	// Delete arrives as EventDelete.
-	drev, err := s.Delete(c, key, rev)
+	drev, err := s.Delete(c, stored, rev)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,14 +396,14 @@ func testWatchSync(t *testing.T, s store.Store) {
 	t.Helper()
 
 	c := testCtx(t)
-	key := store.EncodeKey("Run", "acme", "prod", "wf", "1")
+	stored := key.New("Run", "acme", "prod", "wf", "1").Encode()
 
-	rev, err := s.Put(c, key, []byte("a"), 0)
+	rev, err := s.Put(c, stored, []byte("a"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := s.Watch(c, store.EncodePrefix("Run"), 0)
+	events, err := s.Watch(c, key.New("Run").Encode(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +424,7 @@ func testWatchSync(t *testing.T, s store.Store) {
 	}
 
 	// Resuming from the sync revision must replay nothing already seen.
-	resumed, err := s.Watch(c, store.EncodePrefix("Run"), sync.StoreRevision)
+	resumed, err := s.Watch(c, key.New("Run").Encode(), sync.StoreRevision)
 	if err != nil {
 		t.Fatal(err)
 	}

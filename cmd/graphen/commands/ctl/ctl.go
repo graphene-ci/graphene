@@ -6,7 +6,6 @@ package ctl
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,9 +20,12 @@ var Cmd = newCommand()
 
 var (
 	errFlagsRequired = errors.New("flags are required")
-	errNoTarget      = errors.New("--address or --socket is required")
-	errNoToken       = errors.New("a token is required (--token or GRAPHEN_TOKEN)")
-	errKindRequired  = errors.New("--kind is required")
+	errNoTarget      = errors.New(
+		"no kernel found: pass --address or --socket, set GRAPHEN_ADDRESS/GRAPHEN_SOCKET, " +
+			"or install one with `graphen kernel install`")
+	errNoToken = errors.New(
+		"no token found: pass --token, set GRAPHEN_TOKEN, or install a kernel whose token file this user can read")
+	errKindRequired = errors.New("--kind is required")
 )
 
 // TargetFlags are the connection inputs shared by every subcommand.
@@ -34,30 +36,35 @@ type TargetFlags struct {
 	Token   string
 }
 
-// Validate checks the connection inputs.
+// Validate checks the connection inputs AFTER discovery: what matters is
+// whether a kernel can be reached at all, not whether it was typed out.
 func (flags *TargetFlags) Validate() error {
 	if flags == nil {
 		return errFlagsRequired
 	}
 
-	if strings.TrimSpace(flags.Address) == "" && strings.TrimSpace(flags.Socket) == "" {
+	resolved := flags.target()
+
+	if strings.TrimSpace(resolved.Address) == "" && strings.TrimSpace(resolved.Socket) == "" {
 		return errNoTarget
 	}
 
-	if strings.TrimSpace(flags.Token) == "" {
+	if strings.TrimSpace(resolved.Token) == "" {
 		return errNoToken
 	}
 
 	return nil
 }
 
+// target resolves what was typed against what is installed: a kernel on
+// this machine is reachable without naming its socket or its token.
 func (flags *TargetFlags) target() appctl.Target {
-	return appctl.Target{
+	return appctl.Discover(appctl.Target{
 		Address: flags.Address,
 		Socket:  flags.Socket,
 		CAFile:  flags.CAFile,
 		Token:   flags.Token,
-	}
+	})
 }
 
 // connect validates and dials.
@@ -117,10 +124,6 @@ func newTargetFlags(command *cobra.Command) (*TargetFlags, error) {
 	token, err := command.Flags().GetString("token")
 	if err != nil {
 		return nil, fmt.Errorf("read --token: %w", err)
-	}
-
-	if token == "" {
-		token = os.Getenv("GRAPHEN_TOKEN")
 	}
 
 	return &TargetFlags{Address: address, Socket: socket, CAFile: caFile, Token: token}, nil

@@ -28,6 +28,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -172,7 +173,7 @@ func (s *Source) scanKind(ctx context.Context, kind string, handle handler) erro
 	var cursor []byte
 
 	for {
-		entries, next, err := s.st.Scan(ctx, store.EncodePrefix(kind), scanPage, cursor)
+		entries, next, err := s.st.Scan(ctx, key.New(kind).Encode(), scanPage, cursor)
 		if err != nil {
 			return fmt.Errorf("auth: scan %s: %w", kind, err)
 		}
@@ -200,48 +201,30 @@ func (s *Source) scanKind(ctx context.Context, kind string, handle handler) erro
 // stream after resets (slow-consumer eviction, store restarts) from the
 // last revision it consumed — replay from a revision is gapless.
 func (s *Source) watch(ctx context.Context, kind string, from uint64, handle handler) error {
-	cursor := from
-
-	for {
-		events, err := s.st.Watch(ctx, store.EncodePrefix(kind), cursor)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil //nolint:nilerr // shutdown is a clean exit
-			}
-
-			return fmt.Errorf("auth: watch %s: %w", kind, err)
-		}
-
-		for event := range events {
-			// The catch-up boundary carries no record: it is the only
-			// revision safe to resume from (catch-up events arrive in key
-			// order, so their revisions are not monotonic).
-			if event.Type == store.EventSync {
-				cursor = event.StoreRevision
-
-				continue
-			}
-
-			res, decodeErr := service.DecodeEntry(event.Entry)
-			if decodeErr != nil {
-				s.log.Error("auth: undecodable event skipped", "kind", kind, "error", decodeErr)
-
-				continue
+	loop := &store.WatchLoop{
+		Store:  s.st,
+		Prefix: key.New(kind).Encode(),
+		From:   from,
+		OnError: func(err error) {
+			s.log.Error("auth: watch", "kind", kind, "error", err)
+		},
+		Handle: func(_ context.Context, event store.Event) error {
+			res, err := service.DecodeEntry(event.Entry)
+			if err != nil {
+				return fmt.Errorf("auth: decode %s: %w", kind, err)
 			}
 
 			handle(res, event.Type == store.EventDelete)
 
-			if event.StoreRevision > cursor {
-				cursor = event.StoreRevision
-			}
-		}
-
-		select {
-		case <-ctx.Done():
 			return nil
-		case <-time.After(retryPause):
-		}
+		},
 	}
+
+	if err := loop.Run(ctx); err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {

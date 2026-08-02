@@ -13,7 +13,13 @@ func newCommand() *cobra.Command {
 		Short: "Manage the Graphene kernel",
 	}
 
-	command.AddCommand(newRunCommand(), newCACommand())
+	command.AddCommand(
+		newRunCommand(),
+		newCACommand(),
+		newInstallCommand(),
+		newUninstallCommand(),
+		newStatusCommand(),
+	)
 
 	return command
 }

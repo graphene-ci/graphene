@@ -3,6 +3,7 @@ package ctl_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -94,12 +95,15 @@ func TestOutputFormats(t *testing.T) {
 		Revision: 3,
 	}
 
+	// protojson deliberately varies its whitespace, so the json case is
+	// checked by parsing rather than by comparing text.
 	cases := map[string]struct {
 		format string
 		want   string
+		parse  bool
 	}{
 		"yaml": {format: "yaml", want: "kind: Kernel"},
-		"json": {format: "json", want: `"kind": "Kernel"`},
+		"json": {format: "json", parse: true},
 		"name": {format: "name", want: "Kernel acme/k1"},
 	}
 
@@ -115,6 +119,20 @@ func TestOutputFormats(t *testing.T) {
 			var out bytes.Buffer
 			if err := appctl.Write(&out, format, []*graphenepbv1.Resource{res}); err != nil {
 				t.Fatalf("write: %v", err)
+			}
+
+			if tc.parse {
+				var decoded map[string]any
+				if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+					t.Fatalf("json output does not parse: %v\n%s", err, out.String())
+				}
+
+				keyPart, _ := decoded["key"].(map[string]any)
+				if keyPart["kind"] != builtin.KindKernel {
+					t.Fatalf("json output: %v", decoded)
+				}
+
+				return
 			}
 
 			if !strings.Contains(out.String(), tc.want) {

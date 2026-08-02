@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -230,7 +230,7 @@ func (r *Resources) List(ctx context.Context, req *graphenepbv1.ListRequest) (*g
 		return nil, denied(err)
 	}
 
-	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
+	prefix := key.New(req.GetKind(), req.GetPathPrefix()...).Encode()
 
 	limit := int(req.GetPageSize())
 
@@ -276,7 +276,7 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 		return denied(err)
 	}
 
-	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
+	prefix := key.New(req.GetKind(), req.GetPathPrefix()...).Encode()
 
 	events, err := r.st.Watch(ctx, prefix, req.GetFromStoreRevision())
 	if err != nil {
@@ -377,7 +377,7 @@ func (r *Resources) WatchDefinitions(
 		return denied(err)
 	}
 
-	events, err := r.st.Watch(srv.Context(), store.EncodePrefix(registry.KindKind), req.GetFromStoreRevision())
+	events, err := r.st.Watch(srv.Context(), key.New(registry.KindKind).Encode(), req.GetFromStoreRevision())
 	if err != nil {
 		return internal(err)
 	}
@@ -414,11 +414,11 @@ func storeKey(k *graphenepbv1.Key) ([]byte, error) {
 		return nil, status.Error(codes.InvalidArgument, "key.path is required")
 	}
 
-	return store.EncodeKey(k.GetKind(), k.GetPath()...), nil
+	return key.FromProto(k).Encode(), nil
 }
 
 func keyString(k *graphenepbv1.Key) string {
-	return k.GetKind() + "/" + strings.Join(k.GetPath(), "/")
+	return key.FromProto(k).String()
 }
 
 // DecodeEntry unmarshals a stored entry into the resource it holds —
@@ -456,9 +456,8 @@ func mapEvent(event *store.Event) (*graphenepbv1.WatchEvent, error) {
 		out.Resource = res
 	case store.EventDelete:
 		out.Type = graphenepbv1.EventType_EVENT_TYPE_DELETE
-		kind, path := store.DecodeKey(event.Entry.Key)
 		out.Resource = &graphenepbv1.Resource{
-			Key:      &graphenepbv1.Key{Kind: kind, Path: path},
+			Key:      key.Decode(event.Entry.Key).Proto(),
 			Revision: event.Entry.Revision,
 		}
 	case store.EventSync:
@@ -598,7 +597,7 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 // refused rather than deferred — an identity must never carry a name that
 // silently gains meaning later.
 func (r *Resources) roleGrants(ctx context.Context, tenant, role string) ([]auth.Grant, error) {
-	entry, err := r.st.Get(ctx, store.EncodeKey(builtin.KindRole, tenant, role))
+	entry, err := r.st.Get(ctx, key.New(builtin.KindRole, tenant, role).Encode())
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("%w: role %s/%s does not exist", auth.ErrDenied, tenant, role)
 	}

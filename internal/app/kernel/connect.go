@@ -3,10 +3,7 @@ package kernel
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -19,10 +16,8 @@ import (
 
 	corelink "github.com/graphene-ci/graphene/internal/core/link"
 	"github.com/graphene-ci/graphene/internal/infrastructure/link"
+	tlsutil "github.com/graphene-ci/graphene/internal/infrastructure/tls"
 )
-
-// ErrBadCA — the configured CA file does not parse.
-var ErrBadCA = errors.New("kernel: ca file contains no usable certificate")
 
 // connect establishes the link to another kernel and starts what rides on
 // it. Today that is the lease renewal — the heartbeat by which the far
@@ -85,30 +80,21 @@ func (k *Kernel) buildLink() (corelink.Link, error) {
 	}
 }
 
-// linkTLS builds the client TLS configuration. A stdio link carries no TLS
-// of its own: the ssh session it rides in already provides the channel —
-// the bearer token is still required, as on every other transport.
+// linkTLS builds the client TLS configuration. A stdio link carries no
+// TLS of its own: the ssh session it rides in already provides the
+// channel — the bearer token is still required, as on every transport.
 func (k *Kernel) linkTLS() (*tls.Config, error) {
 	cfg := k.cfg.Link
-	if cfg.Mode == "stdio" || cfg.CAFile == "" {
-		return nil, nil //nolint:nilnil // no TLS is a valid, explicit outcome
+	if cfg.Mode == "stdio" {
+		return nil, nil //nolint:nilnil // the ssh session is the channel
 	}
 
-	pem, err := os.ReadFile(cfg.CAFile)
+	tlsConfig, err := tlsutil.ClientConfig(cfg.CAFile, tlsutil.ServerNameFor(cfg.Address))
 	if err != nil {
-		return nil, fmt.Errorf("kernel: read ca file: %w", err)
+		return nil, fmt.Errorf("kernel: link: %w", err)
 	}
 
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("%w: %s", ErrBadCA, cfg.CAFile)
-	}
-
-	return &tls.Config{
-		RootCAs:    pool,
-		ServerName: cfg.ServerName,
-		MinVersion: tls.VersionTLS12,
-	}, nil
+	return tlsConfig, nil
 }
 
 // renewLease writes this kernel's KernelLease at the configured interval.

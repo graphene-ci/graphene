@@ -21,6 +21,7 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
 
@@ -147,7 +148,7 @@ func (r *Registry) List(ctx context.Context) ([]*graphenepbv1.ResourceDefinition
 	var order []string
 
 	for {
-		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind), scanPage, cursor)
+		entries, next, err := r.st.Scan(ctx, key.New(KindKind).Encode(), scanPage, cursor)
 		if err != nil {
 			return nil, fmt.Errorf("registry: scan definitions: %w", err)
 		}
@@ -288,7 +289,7 @@ func (r *Registry) latest(ctx context.Context, kind string) (*graphenepbv1.Resou
 		cursor []byte
 	)
 	for {
-		entries, next, err := r.st.Scan(ctx, store.EncodePrefix(KindKind, kind), scanPage, cursor)
+		entries, next, err := r.st.Scan(ctx, key.New(KindKind, kind).Encode(), scanPage, cursor)
 		if err != nil {
 			return nil, fmt.Errorf("registry: scan definitions: %w", err)
 		}
@@ -312,7 +313,7 @@ func (r *Registry) latest(ctx context.Context, kind string) (*graphenepbv1.Resou
 }
 
 func defKey(kind string, version uint32) []byte {
-	return store.EncodeKey(KindKind, kind, fmt.Sprintf("%010d", version))
+	return key.New(KindKind, kind, fmt.Sprintf("%010d", version)).Encode()
 }
 
 func unmarshalDef(raw []byte) (*graphenepbv1.ResourceDefinition, error) {

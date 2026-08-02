@@ -14,6 +14,7 @@ import (
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -80,22 +81,22 @@ func (l *Lease) RunSweeper(ctx context.Context, interval time.Duration) {
 
 func (l *Lease) handle(ctx context.Context, typ store.EventType, res *graphenepbv1.Resource) error {
 	path := res.GetKey().GetPath()
-	key := store.EncodeKey(builtin.KindKernelLease, path...)
+	stored := key.New(builtin.KindKernelLease, path...).Encode()
 
 	l.mu.Lock()
 
 	if typ == store.EventDelete {
-		delete(l.seen, string(key))
+		delete(l.seen, string(stored))
 		l.mu.Unlock()
 
 		// A removed lease means the kernel is administratively gone.
 		return l.setOnline(ctx, path, false)
 	}
 
-	state, ok := l.seen[string(key)]
+	state, ok := l.seen[string(stored)]
 	if !ok {
 		state = &leaseState{path: append([]string(nil), path...)}
-		l.seen[string(key)] = state
+		l.seen[string(stored)] = state
 	}
 
 	state.lastSeen = l.now()

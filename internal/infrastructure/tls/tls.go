@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -201,6 +202,52 @@ func writeCertKey(dir, certName, keyName string, der []byte, key *ecdsa.PrivateK
 
 	return nil
 }
+
+// ClientConfig builds the client side: trust exactly the pinned CA, or
+// nothing at all when no CA is given (a channel that is trusted by
+// construction — a unix socket, an ssh session — where the bearer token
+// still carries the authentication).
+func ClientConfig(caFile, serverName string) (*tls.Config, error) {
+	if caFile == "" {
+		return nil, nil //nolint:nilnil // no TLS is a valid, explicit outcome
+	}
+
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("tls: read ca file: %w", err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("%w: %s", ErrBadCA, caFile)
+	}
+
+	if serverName == "" {
+		serverName = defaultServerName
+	}
+
+	return &tls.Config{
+		RootCAs:    pool,
+		ServerName: serverName,
+		MinVersion: tls.VersionTLS12,
+	}, nil
+}
+
+// ServerNameFor is the host a certificate is verified against: an address
+// without a host verifies as the locally minted name.
+func ServerNameFor(addr string) string {
+	host, _, found := strings.Cut(addr, ":")
+	if !found || host == "" {
+		return defaultServerName
+	}
+
+	return host
+}
+
+// ErrBadCA — the pinned file carries no usable certificate.
+var ErrBadCA = errors.New("tls: ca file contains no usable certificate")
+
+const defaultServerName = "localhost"
 
 // CACertPEM reads the pinnable CA certificate (`graphen kernel ca`).
 func CACertPEM(dir string) ([]byte, error) {

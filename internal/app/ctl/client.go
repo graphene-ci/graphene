@@ -8,12 +8,9 @@ package ctl
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"strings"
 
 	"google.golang.org/grpc"
 
@@ -21,10 +18,8 @@ import (
 
 	corelink "github.com/graphene-ci/graphene/internal/core/link"
 	"github.com/graphene-ci/graphene/internal/infrastructure/link"
+	tlsutil "github.com/graphene-ci/graphene/internal/infrastructure/tls"
 )
-
-// ErrBadCA — the pinned CA file carries no usable certificate.
-var ErrBadCA = errors.New("ctl: ca file contains no usable certificate")
 
 // Target says which kernel to talk to and how.
 //
@@ -95,37 +90,16 @@ func (t Target) transport() (corelink.Link, string, error) {
 }
 
 func (t Target) tlsConfig() (*tls.Config, error) {
-	if t.Socket != "" || t.CAFile == "" {
-		return nil, nil //nolint:nilnil // no TLS is a valid, explicit outcome
+	if t.Socket != "" {
+		return nil, nil //nolint:nilnil // the socket is the channel
 	}
 
-	pem, err := os.ReadFile(t.CAFile)
+	cfg, err := tlsutil.ClientConfig(t.CAFile, tlsutil.ServerNameFor(t.Address))
 	if err != nil {
-		return nil, fmt.Errorf("ctl: read ca file: %w", err)
+		return nil, fmt.Errorf("ctl: %w", err)
 	}
 
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("%w: %s", ErrBadCA, t.CAFile)
-	}
-
-	return &tls.Config{
-		RootCAs:    pool,
-		ServerName: serverName(t.Address),
-		MinVersion: tls.VersionTLS12,
-	}, nil
-}
-
-// serverName is the host the certificate is verified against; an address
-// without a host (":9000") verifies as localhost, which is what a locally
-// minted certificate carries.
-func serverName(addr string) string {
-	host, _, found := strings.Cut(addr, ":")
-	if !found || host == "" {
-		return "localhost"
-	}
-
-	return host
+	return cfg, nil
 }
 
 var errNoTarget = errors.New("ctl: no kernel address or socket given")

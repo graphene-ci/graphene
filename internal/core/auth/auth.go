@@ -139,6 +139,21 @@ func interpolate(s string, p Principal) string {
 	return strings.ReplaceAll(s, principalTenantVar, p.Tenant)
 }
 
+// AllVerbs is every operation the API defines.
+//
+//nolint:gochecknoglobals // a slice cannot be const; treated as one
+var AllVerbs = []Verb{VerbGet, VerbList, VerbWatch, VerbPut, VerbDelete, VerbDefine}
+
+// FullAccess is unrestricted authority — the bootstrap credential and the
+// in-process controllers. It exists once so "what does full access mean"
+// has a single answer.
+func FullAccess(kind PrincipalKind, name string) Credentials {
+	return Credentials{
+		Principal: Principal{Kind: kind, Name: name},
+		Grants:    []Grant{{Verbs: AllVerbs, Kind: "*"}},
+	}
+}
+
 // ScopeToTenant returns the grants confined to the given tenant. The token
 // source applies this when resolving a Role: the resulting grants can only
 // ever touch that tenant's resources.

@@ -15,7 +15,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"errors"
 )
@@ -73,6 +72,11 @@ type Event struct {
 	StoreRevision uint64
 }
 
+// Keys are opaque bytes here: their shape (kind, path, tenant) belongs to
+// core/key, which produces them. The store only needs the one property
+// that encoding guarantees — a shorter key is a byte prefix of everything
+// beneath it — so scans and watches take plain byte prefixes.
+
 // Store is the port. All methods are safe for concurrent use.
 type Store interface {
 	// Get returns the current entry or ErrNotFound.
@@ -114,65 +118,4 @@ type Store interface {
 	Revision(ctx context.Context) (uint64, error)
 
 	Close() error
-}
-
-// Key segment separators. A full key is:
-//
-//	kind 0x1E seg1 0x1F seg2 0x1F ... segN 0x1F
-//
-// Every segment is terminated (including the last): the encoding of
-// (kind, p...) is then a strict byte-prefix of the encoding of
-// (kind, p..., q...) and of nothing else — prefix Scan/Watch match whole
-// segments, never "app" matching "app2". Segments must not contain the
-// separator bytes; that is validated by the definition layer, not here.
-const (
-	sepKind    = 0x1E
-	sepSegment = 0x1F
-)
-
-// EncodeKey builds the stored key for kind + full path.
-func EncodeKey(kind string, path ...string) []byte {
-	var b bytes.Buffer
-	b.WriteString(kind)
-	b.WriteByte(sepKind)
-
-	for _, seg := range path {
-		b.WriteString(seg)
-		b.WriteByte(sepSegment)
-	}
-
-	return b.Bytes()
-}
-
-// EncodePrefix builds a scan/watch prefix: same encoding — a full key of a
-// shorter path IS the prefix of all its descendants (and itself).
-func EncodePrefix(kind string, path ...string) []byte {
-	return EncodeKey(kind, path...)
-}
-
-// DecodeKey splits a stored key back into kind and path segments.
-func DecodeKey(key []byte) (string, []string) {
-	idx := bytes.IndexByte(key, sepKind)
-	if idx < 0 {
-		return string(key), nil
-	}
-
-	kind := string(key[:idx])
-	rest := key[idx+1:]
-
-	var path []string
-
-	for len(rest) > 0 {
-		j := bytes.IndexByte(rest, sepSegment)
-		if j < 0 {
-			path = append(path, string(rest))
-
-			break
-		}
-
-		path = append(path, string(rest[:j]))
-		rest = rest[j+1:]
-	}
-
-	return kind, path
 }

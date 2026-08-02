@@ -37,17 +37,15 @@ func (s *Source) Lookup(token string) (auth.Credentials, bool) {
 	return creds, ok
 }
 
-// Admin returns full-access credentials scoped to the given path prefix
-// (empty prefix = everything).
+// Admin returns full-access credentials, optionally confined to a path
+// prefix.
 func Admin(name string, prefix ...string) auth.Credentials {
-	return auth.Credentials{
-		Principal: auth.Principal{Kind: auth.PrincipalUser, Name: name},
-		Grants: []auth.Grant{{
-			Verbs:      []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete, auth.VerbDefine},
-			Kind:       "*",
-			PathPrefix: prefix,
-		}},
+	creds := auth.FullAccess(auth.PrincipalUser, name)
+	if len(prefix) > 0 {
+		creds.Grants[0].PathPrefix = prefix
 	}
+
+	return creds
 }
 
 // Kernel returns the worker-kernel role for the given kernel id: it sees

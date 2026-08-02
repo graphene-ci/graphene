@@ -156,16 +156,7 @@ func (k *Kernel) bootstrapCredentials() (string, auth.Credentials, error) {
 		return "", auth.Credentials{}, fmt.Errorf("kernel: bootstrap token: %w", err)
 	}
 
-	creds := auth.Credentials{
-		Principal: auth.Principal{Kind: auth.PrincipalUser, Name: k.cfg.Auth.Bootstrap.Name},
-		Grants: []auth.Grant{{
-			Verbs: []auth.Verb{
-				auth.VerbGet, auth.VerbList, auth.VerbWatch,
-				auth.VerbPut, auth.VerbDelete, auth.VerbDefine,
-			},
-			Kind: "*",
-		}},
-	}
+	creds := auth.FullAccess(auth.PrincipalUser, k.cfg.Auth.Bootstrap.Name)
 
 	return token, creds, nil
 }
