@@ -15,9 +15,14 @@ import (
 const (
 	KindKernel      = "Kernel"
 	KindKernelLease = "KernelLease"
+	KindRole        = "Role"
+	KindIdentity    = "Identity"
 
 	// schemaNS namespaces the schemapb identities of built-in kinds.
 	schemaNS = "graphene"
+
+	// segTenant is the first path segment of every tenant-scoped kind.
+	segTenant = "tenant"
 )
 
 // Definitions returns the compiled-in kind definitions, version field
@@ -26,6 +31,8 @@ func Definitions() []*graphenepbv1.ResourceDefinition {
 	return []*graphenepbv1.ResourceDefinition{
 		kernelDefinition(),
 		kernelLeaseDefinition(),
+		roleDefinition(),
+		identityDefinition(),
 	}
 }
 
@@ -48,7 +55,7 @@ func kernelDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindKernel,
-		PathSegments: []string{"tenant", "kernel"},
+		PathSegments: []string{segTenant, "kernel"},
 		SpecSchema:   spec,
 		StatusSchema: status,
 	}
@@ -70,7 +77,61 @@ func kernelLeaseDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindKernelLease,
-		PathSegments: []string{"tenant", "kernel"},
+		PathSegments: []string{segTenant, "kernel"},
+		SpecSchema:   spec,
+	}
+}
+
+// Role — a named set of grants, the serialized form of auth.Grant. Roles
+// live as resources so authorization can be administered through the API
+// (and watched live) instead of a config file requiring restarts.
+func roleDefinition() *graphenepbv1.ResourceDefinition {
+	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Namespace: schemaNS, Name: "role-spec", Version: "v1"}).
+		Fields(
+			// A list whose single item spec is an object: every element is
+			// one grant.
+			schemapb.List("grants",
+				schemapb.Object("grant",
+					schemapb.List("verbs", schemapb.Str("verb")).Required(),
+					schemapb.Str("kind").Required(),
+					schemapb.List("path_prefix", schemapb.Str("segment")),
+					schemapb.List("where",
+						schemapb.Object("term",
+							schemapb.Str("path").Required(),
+							schemapb.Str("equal").Required(),
+						),
+					),
+					schemapb.List("parts", schemapb.Str("part")),
+				),
+			).Required(),
+		).
+		MustBuild()
+
+	return &graphenepbv1.ResourceDefinition{
+		Kind:         KindRole,
+		PathSegments: []string{segTenant, "name"},
+		SpecSchema:   spec,
+	}
+}
+
+// Identity — who a token authenticates as, and which roles it carries.
+//
+// Tokens are stored as sha256 hex digests, never in clear: a token is a
+// high-entropy random string, so a plain digest is enough (this is not a
+// password — there is nothing to brute force). The list holds more than
+// one digest during rotation.
+func identityDefinition() *graphenepbv1.ResourceDefinition {
+	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Namespace: schemaNS, Name: "identity-spec", Version: "v1"}).
+		Fields(
+			schemapb.Str("principal_kind").In("user", "kernel", "process").Required(),
+			schemapb.List("roles", schemapb.Str("role")).Required(),
+			schemapb.List("token_sha256", schemapb.Str("digest")).Required(),
+		).
+		MustBuild()
+
+	return &graphenepbv1.ResourceDefinition{
+		Kind:         KindIdentity,
+		PathSegments: []string{segTenant, "name"},
 		SpecSchema:   spec,
 	}
 }

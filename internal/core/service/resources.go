@@ -27,6 +27,7 @@ import (
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
+	"github.com/graphene-ci/graphene/internal/core/builtin"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -115,6 +116,13 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	}
 
 	if err := auth.CheckWrite(ctx, kind, res.GetKey().GetPath(), changedParts(current, res), against); err != nil {
+		return nil, denied(err)
+	}
+
+	// Authorization data is written through the same API as everything
+	// else — so the escalation rule guards it here: no writer may mint
+	// grants it does not itself hold.
+	if err := r.checkAuthorityWrite(ctx, kind, res); err != nil {
 		return nil, denied(err)
 	}
 
@@ -454,6 +462,76 @@ func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) b
 	}
 
 	return true
+}
+
+// checkAuthorityWrite applies the escalation guard to writes of the kinds
+// that CARRY authority: defining a Role mints grants, and binding roles to
+// an Identity hands those grants out. Either way the writer must already
+// hold everything it gives away (auth.CheckEscalation).
+func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
+	switch kind {
+	case builtin.KindRole:
+		grants, err := auth.GrantsFromSpec(res.GetSpec())
+		if err != nil {
+			return fmt.Errorf("decode role grants: %w", err)
+		}
+
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
+			return fmt.Errorf("role grants: %w", err)
+		}
+
+		return nil
+
+	case builtin.KindIdentity:
+		spec := auth.IdentityFromSpec(res.GetSpec())
+		tenant := ""
+
+		if path := res.GetKey().GetPath(); len(path) > 0 {
+			tenant = path[0]
+		}
+
+		for _, role := range spec.Roles {
+			grants, err := r.roleGrants(ctx, tenant, role)
+			if err != nil {
+				return err
+			}
+
+			if err := auth.CheckEscalation(ctx, grants); err != nil {
+				return fmt.Errorf("binding role %q: %w", role, err)
+			}
+		}
+
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// roleGrants reads a Role's grants; binding a role that does not exist is
+// refused rather than deferred — an identity must never carry a name that
+// silently gains meaning later.
+func (r *Resources) roleGrants(ctx context.Context, tenant, role string) ([]auth.Grant, error) {
+	entry, err := r.st.Get(ctx, store.EncodeKey(builtin.KindRole, tenant, role))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("%w: role %s/%s does not exist", auth.ErrDenied, tenant, role)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("read role: %w", err)
+	}
+
+	res, err := decodeResource(entry)
+	if err != nil {
+		return nil, err
+	}
+
+	grants, err := auth.GrantsFromSpec(res.GetSpec())
+	if err != nil {
+		return nil, fmt.Errorf("decode role grants: %w", err)
+	}
+
+	return grants, nil
 }
 
 // currentRecord loads the existing record; nil (no error) when absent.
