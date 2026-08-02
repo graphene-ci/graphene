@@ -255,7 +255,7 @@ func TestGrantEncodingRoundTrip(t *testing.T) {
 		t.Fatalf("round trip lost data: %+v", got)
 	}
 
-	if !errors.Is(auth.CheckEscalation(context.Background(), decoded), auth.ErrDenied) {
+	if !errors.Is(auth.CheckEscalation(context.Background(), decoded, "acme"), auth.ErrDenied) {
 		t.Fatal("unauthenticated escalation check must deny")
 	}
 }

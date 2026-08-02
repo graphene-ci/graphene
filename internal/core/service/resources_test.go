@@ -251,6 +251,23 @@ func TestListWithSelector(t *testing.T) {
 	}
 }
 
+// recvData returns the next non-sync watch event: every watch opens with
+// the catch-up marker.
+func recvData(t *testing.T, stream graphenepbv1.ResourceService_WatchClient) *graphenepbv1.WatchEvent {
+	t.Helper()
+
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("recv: %v", err)
+		}
+
+		if event.GetType() != graphenepbv1.EventType_EVENT_TYPE_SYNC {
+			return event
+		}
+	}
+}
+
 func TestWatchWithSelector(t *testing.T) {
 	t.Parallel()
 
@@ -283,10 +300,7 @@ func TestWatchWithSelector(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	event, err := watcher.Recv()
-	if err != nil {
-		t.Fatalf("recv: %v", err)
-	}
+	event := recvData(t, watcher)
 
 	if event.GetType() != graphenepbv1.EventType_EVENT_TYPE_PUT ||
 		event.GetStoreRevision() != put.GetStoreRevision() {
@@ -482,11 +496,7 @@ func TestKernelWatchIsFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	event, err := watcher.Recv()
-	if err != nil {
-		t.Fatalf("recv: %v", err)
-	}
-
+	event := recvData(t, watcher)
 	if got := event.GetResource().GetKey().GetPath()[4]; got != "build" {
 		t.Fatalf("watch leaked foreign execution: got %q", got)
 	}

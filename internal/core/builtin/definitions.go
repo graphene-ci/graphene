@@ -92,7 +92,12 @@ func roleDefinition() *graphenepbv1.ResourceDefinition {
 			// one grant.
 			schemapb.List("grants",
 				schemapb.Object("grant",
-					schemapb.List("verbs", schemapb.Str("verb")).Required(),
+					// Verbs and parts are closed vocabularies: a typo like
+					// "Put" would otherwise produce a grant that silently
+					// matches nothing — fail-safe but undiagnosable.
+					schemapb.List("verbs",
+						schemapb.Str("verb").In("get", "list", "watch", "put", "delete", "define"),
+					).Required(),
 					schemapb.Str("kind").Required(),
 					schemapb.List("path_prefix", schemapb.Str("segment")),
 					schemapb.List("where",
@@ -101,7 +106,9 @@ func roleDefinition() *graphenepbv1.ResourceDefinition {
 							schemapb.Str("equal").Required(),
 						),
 					),
-					schemapb.List("parts", schemapb.Str("part")),
+					schemapb.List("parts",
+						schemapb.Str("part").In("spec", "status", "finalizers"),
+					),
 				),
 			).Required(),
 		).

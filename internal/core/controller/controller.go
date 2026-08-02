@@ -36,9 +36,16 @@ func SystemContext(ctx context.Context) context.Context {
 type Handler func(ctx context.Context, typ store.EventType, res *graphenepbv1.Resource) error
 
 // Loop watches one kind and hands every event to the handler, resuming
-// from the last seen store revision whenever the watch channel closes
-// (link resets, slow-consumer eviction). Handler errors are terminal:
-// controllers own their retries per object.
+// from the last SYNC revision whenever the watch channel closes (store
+// resets, slow-consumer eviction).
+//
+// Resuming from a delivered event's revision would be wrong: catch-up
+// events arrive in key order, so their revisions are not monotonic and an
+// interrupted catch-up would silently drop the entries whose revision was
+// lower than the last delivered one. Until the sync marker arrives the
+// cursor stays where it was — an interrupted catch-up is redone in full.
+//
+// Handler errors are terminal: controllers own their retries per object.
 type Loop struct {
 	Store store.Store
 	Kind  string
@@ -74,11 +81,15 @@ func (l *Loop) watchOnce(ctx context.Context, cursor *uint64) error {
 	}
 
 	for event := range events {
+		if event.Type == store.EventSync {
+			*cursor = event.StoreRevision
+
+			continue
+		}
+
 		res, decodeErr := service.DecodeEntry(event.Entry)
 		if decodeErr != nil {
 			// A corrupt record must not kill the control loop; skip it.
-			*cursor = event.StoreRevision
-
 			continue
 		}
 
@@ -86,7 +97,9 @@ func (l *Loop) watchOnce(ctx context.Context, cursor *uint64) error {
 			return err
 		}
 
-		*cursor = event.StoreRevision
+		if event.StoreRevision > *cursor {
+			*cursor = event.StoreRevision
+		}
 	}
 
 	// The channel closed: store shutdown, slow-consumer eviction or ctx

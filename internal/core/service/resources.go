@@ -122,7 +122,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	// Authorization data is written through the same API as everything
 	// else — so the escalation rule guards it here: no writer may mint
 	// grants it does not itself hold.
-	if err := r.checkAuthorityWrite(ctx, kind, res); err != nil {
+	if err := r.checkAuthority(ctx, kind, res, current); err != nil {
 		return nil, denied(err)
 	}
 
@@ -181,6 +181,10 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 	}
 
 	if err := auth.CheckDelete(ctx, req.GetKey().GetKind(), req.GetKey().GetPath(), current); err != nil {
+		return nil, denied(err)
+	}
+
+	if err := r.checkAuthorityLoss(ctx, req.GetKey().GetKind(), current); err != nil {
 		return nil, denied(err)
 	}
 
@@ -285,6 +289,16 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 			return internal(err)
 		}
 
+		// The catch-up boundary carries no resource: it is the client's
+		// resume cursor and passes every filter untouched.
+		if event.Type == store.EventSync {
+			if err := srv.Send(out); err != nil {
+				return fmt.Errorf("send watch event: %w", err)
+			}
+
+			continue
+		}
+
 		// The grant predicate is mandatory for every event. For deletes it
 		// is evaluated against the record's final state (prev_kv), while
 		// the client only ever receives the key: visibility is filtered,
@@ -370,7 +384,7 @@ func (r *Resources) WatchDefinitions(
 
 	for event := range events {
 		if event.Type != store.EventPut {
-			continue // definitions are never deleted
+			continue // definitions are never deleted; sync carries nothing
 		}
 
 		def := &graphenepbv1.ResourceDefinition{}
@@ -447,6 +461,8 @@ func mapEvent(event *store.Event) (*graphenepbv1.WatchEvent, error) {
 			Key:      &graphenepbv1.Key{Kind: kind, Path: path},
 			Revision: event.Entry.Revision,
 		}
+	case store.EventSync:
+		out.Type = graphenepbv1.EventType_EVENT_TYPE_SYNC
 	}
 
 	return out, nil
@@ -464,11 +480,27 @@ func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) b
 	return true
 }
 
+// checkAuthority guards both directions at once: no writer may mint
+// authority it does not hold, and none may destroy authority it does not
+// hold either.
+func (r *Resources) checkAuthority(ctx context.Context, kind string, res, current *graphenepbv1.Resource) error {
+	if err := r.checkAuthorityWrite(ctx, kind, res); err != nil {
+		return err
+	}
+
+	return r.checkAuthorityLoss(ctx, kind, current)
+}
+
 // checkAuthorityWrite applies the escalation guard to writes of the kinds
 // that CARRY authority: defining a Role mints grants, and binding roles to
 // an Identity hands those grants out. Either way the writer must already
 // hold everything it gives away (auth.CheckEscalation).
 func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
+	tenant := ""
+	if path := res.GetKey().GetPath(); len(path) > 0 {
+		tenant = path[0]
+	}
+
 	switch kind {
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(res.GetSpec())
@@ -476,7 +508,7 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 			return fmt.Errorf("decode role grants: %w", err)
 		}
 
-		if err := auth.CheckEscalation(ctx, grants); err != nil {
+		if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
 			return fmt.Errorf("role grants: %w", err)
 		}
 
@@ -484,11 +516,6 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 
 	case builtin.KindIdentity:
 		spec := auth.IdentityFromSpec(res.GetSpec())
-		tenant := ""
-
-		if path := res.GetKey().GetPath(); len(path) > 0 {
-			tenant = path[0]
-		}
 
 		for _, role := range spec.Roles {
 			grants, err := r.roleGrants(ctx, tenant, role)
@@ -496,8 +523,67 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 				return err
 			}
 
-			if err := auth.CheckEscalation(ctx, grants); err != nil {
+			if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
 				return fmt.Errorf("binding role %q: %w", role, err)
+			}
+		}
+
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// checkAuthorityLoss guards the destruction of authority: removing or
+// overwriting a Role, and removing or rebinding an Identity, must be done
+// by someone who already holds the authority being taken away.
+//
+// Without it the escalation guard has a trivial bypass: a principal that
+// cannot MINT the administrator's grants can still DELETE the role they
+// come from, or overwrite the administrator's identity — disarming the
+// system instead of escalating within it.
+func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current *graphenepbv1.Resource) error {
+	if current == nil {
+		return nil // nothing existed, nothing is lost
+	}
+
+	tenant := ""
+	if path := current.GetKey().GetPath(); len(path) > 0 {
+		tenant = path[0]
+	}
+
+	switch kind {
+	case builtin.KindRole:
+		grants, err := auth.GrantsFromSpec(current.GetSpec())
+		if err != nil {
+			// An undecodable role is authority nobody can account for:
+			// only an unconfined holder may remove it.
+			if err := auth.CheckEscalation(ctx, []auth.Grant{{Kind: "*"}}, tenant); err != nil {
+				return fmt.Errorf("removing an undecodable role: %w", err)
+			}
+
+			return nil
+		}
+
+		if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+			return fmt.Errorf("removing role grants: %w", err)
+		}
+
+		return nil
+
+	case builtin.KindIdentity:
+		spec := auth.IdentityFromSpec(current.GetSpec())
+
+		for _, role := range spec.Roles {
+			grants, err := r.roleGrants(ctx, tenant, role)
+			if err != nil {
+				// The bound role is already gone: nothing to hold.
+				continue
+			}
+
+			if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+				return fmt.Errorf("unbinding role %q: %w", role, err)
 			}
 		}
 

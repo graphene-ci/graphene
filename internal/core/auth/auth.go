@@ -38,6 +38,11 @@ const (
 // Principal is an authenticated identity.
 type Principal struct {
 	Kind PrincipalKind
+	// Tenant the identity belongs to. Names are unique only WITHIN a
+	// tenant, so anything comparing names must carry this alongside:
+	// without it "k1" of one tenant and "k1" of another are the same
+	// principal to every ${principal.name} constraint.
+	Tenant string
 	// Name: user name, kernel id, or execution path — the value the
 	// ${principal.name} grant variable interpolates to.
 	Name string
@@ -86,6 +91,12 @@ type Grant struct {
 	Where []Constraint
 	// Parts writable by Put. Empty = all parts (full write).
 	Parts []Part
+	// Tenant confines the grant to resources whose first path segment is
+	// this tenant. It is NOT part of the Role document: the system sets it
+	// from the tenant the Role lives in, so a role can never hand out
+	// authority in another tenant — no matter what its author wrote.
+	// Empty means unconfined (the bootstrap credential only).
+	Tenant string
 }
 
 // Credentials is an authenticated principal with its grants; the transport
@@ -116,8 +127,42 @@ type TokenSource interface {
 	Lookup(token string) (Credentials, bool)
 }
 
-const principalVar = "${principal.name}"
+// Grant variables, interpolated into PathPrefix segments and Where values.
+const (
+	principalNameVar   = "${principal.name}"
+	principalTenantVar = "${principal.tenant}"
+)
 
 func interpolate(s string, p Principal) string {
-	return strings.ReplaceAll(s, principalVar, p.Name)
+	s = strings.ReplaceAll(s, principalNameVar, p.Name)
+
+	return strings.ReplaceAll(s, principalTenantVar, p.Tenant)
+}
+
+// ScopeToTenant returns the grants confined to the given tenant. The token
+// source applies this when resolving a Role: the resulting grants can only
+// ever touch that tenant's resources.
+func ScopeToTenant(grants []Grant, tenant string) []Grant {
+	out := make([]Grant, 0, len(grants))
+
+	for i := range grants {
+		scoped := grants[i].clone()
+		scoped.Tenant = tenant
+		out = append(out, scoped)
+	}
+
+	return out
+}
+
+// clone deep-copies a grant: the index and every credential handed out
+// must not share mutable slices.
+func (g *Grant) clone() Grant {
+	return Grant{
+		Verbs:      append([]Verb(nil), g.Verbs...),
+		Kind:       g.Kind,
+		PathPrefix: append([]string(nil), g.PathPrefix...),
+		Where:      append([]Constraint(nil), g.Where...),
+		Parts:      append([]Part(nil), g.Parts...),
+		Tenant:     g.Tenant,
+	}
 }

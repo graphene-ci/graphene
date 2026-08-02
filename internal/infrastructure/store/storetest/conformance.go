@@ -32,6 +32,7 @@ func Run(t *testing.T, factory Factory) {
 		"Scan":            testScan,
 		"PrefixIsolation": testPrefixIsolation,
 		"WatchReplay":     testWatchReplay,
+		"WatchSync":       testWatchSync,
 		"WatchSnapshot":   testWatchSnapshot,
 		"WatchLive":       testWatchLive,
 	}
@@ -150,12 +151,12 @@ func testCreatedRevision(t *testing.T, s store.Store) {
 		t.Fatal(err)
 	}
 
-	event := recv(t, events) // the delete at rev2+1
+	event := recvData(t, events) // the delete at rev2+1
 	if event.Type != store.EventDelete {
 		t.Fatalf("expected delete replay, got %v", event.Type)
 	}
 
-	event = recv(t, events) // the recreate
+	event = recvData(t, events) // the recreate
 	if event.Entry.CreatedRevision != rev3 {
 		t.Fatalf("watch created: got %d want %d", event.Entry.CreatedRevision, rev3)
 	}
@@ -287,7 +288,7 @@ func testWatchReplay(t *testing.T, s store.Store) {
 		t.Fatalf("watch: %v", err)
 	}
 
-	event := recv(t, events)
+	event := recvData(t, events)
 	if event.StoreRevision != rev2 || string(event.Entry.Value) != "running" {
 		t.Fatalf("replay: got rev=%d value=%q, want %d/running", event.StoreRevision, event.Entry.Value, rev2)
 	}
@@ -297,7 +298,7 @@ func testWatchReplay(t *testing.T, s store.Store) {
 		t.Fatal(err)
 	}
 
-	event = recv(t, events)
+	event = recvData(t, events)
 	if event.StoreRevision != rev3 || string(event.Entry.Value) != "done" {
 		t.Fatalf("live after replay: got rev=%d value=%q, want %d/done", event.StoreRevision, event.Entry.Value, rev3)
 	}
@@ -324,7 +325,7 @@ func testWatchSnapshot(t *testing.T, s store.Store) {
 	}
 
 	// Snapshot: both current entries as PUT, in key order.
-	first, second := recv(t, events), recv(t, events)
+	first, second := recvData(t, events), recvData(t, events)
 	if string(first.Entry.Value) != "A" || string(second.Entry.Value) != "B" {
 		t.Fatalf("snapshot: got %q,%q want A,B", first.Entry.Value, second.Entry.Value)
 	}
@@ -357,7 +358,7 @@ func testWatchLive(t *testing.T, s store.Store) {
 		t.Fatal(err)
 	}
 
-	event := recv(t, events)
+	event := recvData(t, events)
 	if event.Type != store.EventPut || event.StoreRevision != rev || string(event.Entry.Value) != "started" {
 		t.Fatalf("live: got type=%d rev=%d value=%q", event.Type, event.StoreRevision, event.Entry.Value)
 	}
@@ -368,9 +369,67 @@ func testWatchLive(t *testing.T, s store.Store) {
 		t.Fatal(err)
 	}
 
-	event = recv(t, events)
+	event = recvData(t, events)
 	if event.Type != store.EventDelete || event.StoreRevision != drev {
 		t.Fatalf("live delete: got type=%d rev=%d, want delete/%d", event.Type, event.StoreRevision, drev)
+	}
+}
+
+// recvData returns the next non-sync event: most assertions are about
+// data, and exactly one sync marker precedes the live stream.
+func recvData(t *testing.T, events <-chan store.Event) store.Event {
+	t.Helper()
+
+	for {
+		event := recv(t, events)
+		if event.Type != store.EventSync {
+			return event
+		}
+	}
+}
+
+// testWatchSync pins the catch-up contract: exactly one sync marker after
+// the catch-up part and before any live event, carrying the revision that
+// is safe to resume from.
+func testWatchSync(t *testing.T, s store.Store) {
+	t.Helper()
+
+	c := testCtx(t)
+	key := store.EncodeKey("Run", "acme", "prod", "wf", "1")
+
+	rev, err := s.Put(c, key, []byte("a"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := s.Watch(c, store.EncodePrefix("Run"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Snapshot first...
+	if snap := recv(t, events); snap.Type != store.EventPut || string(snap.Entry.Value) != "a" {
+		t.Fatalf("snapshot: got type=%d value=%q", snap.Type, snap.Entry.Value)
+	}
+
+	// ...then the boundary, carrying the head it caught up to.
+	sync := recv(t, events)
+	if sync.Type != store.EventSync {
+		t.Fatalf("expected sync marker, got type=%d", sync.Type)
+	}
+
+	if sync.StoreRevision < rev {
+		t.Fatalf("sync revision %d predates the snapshot (%d)", sync.StoreRevision, rev)
+	}
+
+	// Resuming from the sync revision must replay nothing already seen.
+	resumed, err := s.Watch(c, store.EncodePrefix("Run"), sync.StoreRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if first := recv(t, resumed); first.Type != store.EventSync {
+		t.Fatalf("resume replayed %d (already-seen data), want sync first", first.Type)
 	}
 }
 

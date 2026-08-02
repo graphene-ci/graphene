@@ -70,7 +70,9 @@ func grantFromMap(obj map[string]any) Grant {
 func GrantsToSpec(grants []Grant) *schemapb.StructValue {
 	items := make([]any, 0, len(grants))
 
-	for _, grant := range grants {
+	for i := range grants {
+		grant := &grants[i]
+
 		verbs := make([]any, 0, len(grant.Verbs))
 		for _, verb := range grant.Verbs {
 			verbs = append(verbs, string(verb))

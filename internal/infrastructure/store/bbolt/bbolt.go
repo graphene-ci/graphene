@@ -426,12 +426,16 @@ func (s *Store) Watch(ctx context.Context, prefix []byte, fromRevision uint64) (
 		return nil, ErrClosed
 	}
 
-	backlog, err := s.collectBacklog(prefix, fromRevision)
+	backlog, head, err := s.collectBacklog(prefix, fromRevision)
 	if err != nil {
 		s.mu.Unlock()
 
 		return nil, err
 	}
+
+	// The sync marker closes the catch-up phase: everything up to head is
+	// in the backlog, everything after arrives live.
+	backlog = append(backlog, store.Event{Type: store.EventSync, StoreRevision: head})
 
 	s.subs[sub] = struct{}{}
 	s.mu.Unlock()
@@ -442,10 +446,15 @@ func (s *Store) Watch(ctx context.Context, prefix []byte, fromRevision uint64) (
 	return out, nil
 }
 
-func (s *Store) collectBacklog(prefix []byte, fromRevision uint64) ([]store.Event, error) {
-	var backlog []store.Event
+func (s *Store) collectBacklog(prefix []byte, fromRevision uint64) ([]store.Event, uint64, error) {
+	var (
+		backlog []store.Event
+		head    uint64
+	)
 
 	err := s.db.View(func(txn *bolt.Tx) error {
+		head = currentRevision(txn)
+
 		if fromRevision == 0 {
 			// Snapshot of the current state as synthetic PUTs.
 			iter := txn.Bucket(bucketCurrent).Cursor()
@@ -478,10 +487,10 @@ func (s *Store) collectBacklog(prefix []byte, fromRevision uint64) ([]store.Even
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("bbolt: watch backlog: %w", err)
+		return nil, 0, fmt.Errorf("bbolt: watch backlog: %w", err)
 	}
 
-	return backlog, nil
+	return backlog, head, nil
 }
 
 func (s *Store) pump(ctx context.Context, sub *subscriber, backlog []store.Event, out chan<- store.Event) {

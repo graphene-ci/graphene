@@ -51,6 +51,13 @@ type EventType byte
 const (
 	EventPut    EventType = 1
 	EventDelete EventType = 2
+	// EventSync marks the boundary between the initial catch-up (snapshot
+	// or replay) and the live stream. Its StoreRevision is the revision
+	// the consumer has now caught up to — the ONLY value safe to use as a
+	// resume cursor, because snapshot events arrive in key order and their
+	// revisions are not monotonic. Consumers that resume from a delivered
+	// event's revision instead will silently lose entries.
+	EventSync EventType = 3
 )
 
 // Event is one element of the watch stream.
@@ -94,9 +101,13 @@ type Store interface {
 	//   - >0: replay logged events with revision > fromRevision, then live.
 	//     ErrCompacted if that part of the log is gone.
 	//
+	// Exactly one EventSync is delivered after the catch-up part and
+	// before any live event; its StoreRevision is the resume cursor.
+	//
 	// The channel closes when ctx is done, the store closes, or the
 	// consumer is too slow to keep up — in every case the consumer is
-	// expected to re-Watch from its last seen StoreRevision.
+	// expected to re-Watch from its last SYNC revision (0 if none was
+	// seen yet: an interrupted catch-up must be redone in full).
 	Watch(ctx context.Context, prefix []byte, fromRevision uint64) (<-chan Event, error)
 
 	// Revision returns the current global store revision.
