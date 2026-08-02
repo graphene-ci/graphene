@@ -8,13 +8,16 @@ import (
 
 // unitTemplate is the systemd service.
 //
-// The system scope leans on systemd for the things a service should not do
-// itself: RuntimeDirectory creates and cleans /run/graphen, StateDirectory
-// owns /var/lib/graphen, and the sandboxing directives keep a compromised
-// kernel away from the rest of the machine.
+// The sandboxing is NOT system-only: a user manager applies these
+// directives too (verified by running a unit carrying them), and they take
+// the exposure level from "unsafe" to "medium" — so a workstation kernel
+// is confined as well as a machine one. Only two directives are genuinely
+// privileged: StateDirectory (the system data path is systemd's to own)
+// and ProtectHome, which would hide the very directory a user-scope
+// kernel stores its data in.
 //
-// The user scope drops everything that needs privileges — a user unit
-// cannot set them, and systemd refuses the whole unit if it sees them.
+// ProtectSystem=strict makes everything read-only except ReadWritePaths
+// and the runtime directory systemd creates for the socket.
 const unitTemplate = `[Unit]
 Description=Graphene kernel
 Documentation=https://github.com/graphene-ci
@@ -27,21 +30,26 @@ Restart=on-failure
 RestartSec=2s
 KillSignal=SIGTERM
 TimeoutStopSec=30s
-{{- if .System }}
 RuntimeDirectory=graphen
 RuntimeDirectoryMode=0750
-StateDirectory=graphen
-StateDirectoryMode=0750
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
 ReadWritePaths={{ .Data }}
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+RestrictNamespaces=true
 RestrictSUIDSGID=true
 LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+{{- if .System }}
+StateDirectory=graphen
+StateDirectoryMode=0750
+ProtectHome=true
 {{- end }}
 
 [Install]

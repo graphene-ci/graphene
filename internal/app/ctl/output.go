@@ -21,7 +21,17 @@ const (
 	FormatJSON Format = "json"
 	// FormatName prints addresses only — the form other commands take.
 	FormatName Format = "name"
+	// FormatTable is columns: the path and the state.
+	FormatTable Format = "table"
+	// FormatWide is the table plus the spec.
+	FormatWide Format = "wide"
 )
+
+// NeedsDefinition reports whether rendering this format requires the
+// kind's definition (the column names come from the schema).
+func (f Format) NeedsDefinition() bool {
+	return f == FormatTable || f == FormatWide
+}
 
 // ErrUnknownFormat — an output format nobody implements.
 var ErrUnknownFormat = errors.New("ctl: unknown output format")
@@ -35,14 +45,28 @@ func ParseFormat(value string) (Format, error) {
 		return FormatJSON, nil
 	case FormatName:
 		return FormatName, nil
+	case FormatTable:
+		return FormatTable, nil
+	case FormatWide:
+		return FormatWide, nil
 	default:
-		return "", fmt.Errorf("%w: %q (want yaml, json or name)", ErrUnknownFormat, value)
+		return "", fmt.Errorf("%w: %q (want yaml, json, name, table or wide)", ErrUnknownFormat, value)
 	}
 }
 
-// Write renders resources in the chosen format.
-func Write(out io.Writer, format Format, resources []*graphenepbv1.Resource) error {
+// Write renders resources in the chosen format. def is needed only by the
+// column formats and may be nil otherwise.
+func Write(
+	out io.Writer,
+	format Format,
+	def *graphenepbv1.ResourceDefinition,
+	resources []*graphenepbv1.Resource,
+) error {
 	switch format {
+	case FormatTable:
+		return WriteTable(out, def, resources, false)
+	case FormatWide:
+		return WriteTable(out, def, resources, true)
 	case FormatName:
 		return writeNames(out, resources)
 	case FormatJSON:

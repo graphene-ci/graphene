@@ -50,6 +50,8 @@ func completeFormat(_ *cobra.Command, _ []string, _ string) ([]string, cobra.She
 		string(appctl.FormatYAML) + "\tcanonical form: what apply reads back",
 		string(appctl.FormatJSON) + "\tsame content as json",
 		string(appctl.FormatName) + "\taddresses only",
+		string(appctl.FormatTable) + "\tcolumns: path and state",
+		string(appctl.FormatWide) + "\tcolumns: path, state and spec",
 	}, cobra.ShellCompDirectiveNoFileComp
 }
 

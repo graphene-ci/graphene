@@ -24,22 +24,9 @@ func WriteResources(out io.Writer, resources []*graphenepbv1.Resource) error {
 	return nil
 }
 
-// WriteDefinitions prints the kind table: what a kernel knows and the
-// shape of each kind's path.
+// WriteDefinitions prints the kind table.
 func WriteDefinitions(out io.Writer, defs []*graphenepbv1.ResourceDefinition) error {
-	for _, def := range defs {
-		line := fmt.Sprintf("%s\tv%d\t%s\n",
-			def.GetKind(),
-			def.GetVersion(),
-			"/"+strings.Join(def.GetPathSegments(), "/"),
-		)
-
-		if _, err := io.WriteString(out, line); err != nil {
-			return fmt.Errorf("ctl: write: %w", err)
-		}
-	}
-
-	return nil
+	return WriteDefinitionsTable(out, defs)
 }
 
 // WriteEvent prints one watch event: the type, the key, and — for changes —

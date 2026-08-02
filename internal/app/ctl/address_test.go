@@ -117,7 +117,7 @@ func TestOutputFormats(t *testing.T) {
 			}
 
 			var out bytes.Buffer
-			if err := appctl.Write(&out, format, []*graphenepbv1.Resource{res}); err != nil {
+			if err := appctl.Write(&out, format, nil, []*graphenepbv1.Resource{res}); err != nil {
 				t.Fatalf("write: %v", err)
 			}
 

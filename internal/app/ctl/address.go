@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // ErrPathTooLong — the address names more segments than the kind has.
@@ -58,6 +60,22 @@ func (c *Client) Exact(ctx context.Context, addr Address) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// Definition returns one kind's definition.
+func (c *Client) Definition(ctx context.Context, kind string) (*graphenepbv1.ResourceDefinition, error) {
+	defs, err := c.Definitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, def := range defs {
+		if def.GetKind() == kind {
+			return def, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: %s", ErrUnknownKind, kind)
 }
 
 // KindArity reports how many path segments a kind takes.

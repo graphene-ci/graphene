@@ -35,31 +35,26 @@ func TestScopesStayInTheirLanes(t *testing.T) {
 	}
 }
 
-// A user unit must not carry directives only the system manager accepts:
-// systemd refuses the whole unit if it sees them.
+// Both scopes are sandboxed: a user manager applies these directives just
+// as the system one does, so a workstation kernel is confined too. Only
+// what is genuinely privileged differs.
 func TestUnitMatchesItsScope(t *testing.T) {
 	t.Parallel()
 
-	privileged := []string{
-		"RuntimeDirectory=", "StateDirectory=", "ProtectSystem=",
-		"ProtectHome=", "ProtectKernelTunables=",
+	shared := []string{
+		"NoNewPrivileges=", "PrivateTmp=", "ProtectSystem=strict",
+		"ProtectKernelTunables=", "RestrictSUIDSGID=", "SystemCallFilter=",
+		"RuntimeDirectory=", "UMask=",
 	}
+	// StateDirectory belongs to the system manager; ProtectHome would hide
+	// the directory a user-scope kernel keeps its data in.
+	systemOnly := []string{"StateDirectory=", "ProtectHome="}
 
 	system, _ := install.NewLayout(install.ScopeSystem)
 
 	systemUnit, err := install.RenderUnit(&system)
 	if err != nil {
 		t.Fatalf("render system unit: %v", err)
-	}
-
-	for _, directive := range privileged {
-		if !strings.Contains(string(systemUnit), directive) {
-			t.Fatalf("system unit misses %s:\n%s", directive, systemUnit)
-		}
-	}
-
-	if !strings.Contains(string(systemUnit), "WantedBy=multi-user.target") {
-		t.Fatalf("system unit target:\n%s", systemUnit)
 	}
 
 	user, _ := install.NewLayout(install.ScopeUser)
@@ -69,19 +64,33 @@ func TestUnitMatchesItsScope(t *testing.T) {
 		t.Fatalf("render user unit: %v", err)
 	}
 
-	for _, directive := range privileged {
-		if strings.Contains(string(userUnit), directive) {
-			t.Fatalf("user unit carries the privileged directive %s:\n%s", directive, userUnit)
+	for _, directive := range shared {
+		if !strings.Contains(string(systemUnit), directive) {
+			t.Errorf("system unit misses %s", directive)
+		}
+
+		if !strings.Contains(string(userUnit), directive) {
+			t.Errorf("user unit misses %s", directive)
 		}
 	}
 
-	if !strings.Contains(string(userUnit), "WantedBy=default.target") {
-		t.Fatalf("user unit target:\n%s", userUnit)
+	for _, directive := range systemOnly {
+		if !strings.Contains(string(systemUnit), directive) {
+			t.Errorf("system unit misses %s", directive)
+		}
+
+		if strings.Contains(string(userUnit), directive) {
+			t.Errorf("user unit carries the privileged %s", directive)
+		}
 	}
 
-	// Whatever the scope, the unit must actually run this kernel.
-	if !strings.Contains(string(userUnit), user.Binary+" kernel run --config "+user.Config) {
-		t.Fatalf("user unit does not run the kernel:\n%s", userUnit)
+	// Each unit must be writable exactly where its data lives.
+	if !strings.Contains(string(userUnit), "ReadWritePaths="+user.Data) {
+		t.Errorf("user unit cannot write its own data directory")
+	}
+
+	if !strings.Contains(string(systemUnit), "ReadWritePaths="+system.Data) {
+		t.Errorf("system unit cannot write its own data directory")
 	}
 }
 

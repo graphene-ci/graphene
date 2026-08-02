@@ -57,7 +57,15 @@ func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
 		return err
 	}
 
-	if err := appctl.Write(out, format, resources); err != nil {
+	var def *graphenepbv1.ResourceDefinition
+
+	if format.NeedsDefinition() {
+		if def, err = client.Definition(ctx, flags.Address.Kind); err != nil {
+			return fmt.Errorf("render: %w", err)
+		}
+	}
+
+	if err := appctl.Write(out, format, def, resources); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
 
@@ -428,6 +436,6 @@ func addSelectorFlag(command *cobra.Command) {
 }
 
 func addFormatFlag(command *cobra.Command) {
-	command.Flags().StringP("output", "o", string(appctl.FormatYAML), "output format: yaml, json or name")
+	command.Flags().StringP("output", "o", string(appctl.FormatYAML), "output format: yaml, json, name, table or wide")
 	cmdflags.RegisterCompletion(command, "output", completeFormat)
 }
