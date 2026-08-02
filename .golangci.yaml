@@ -165,6 +165,8 @@ linters:
         - empty
         - stdlib
         - generic
+        # hexagonal factories: adapters legitimately return core ports
+        - github.com/graphene-ci/graphene/internal/core
     lll:
       line-length: 120
     misspell:
