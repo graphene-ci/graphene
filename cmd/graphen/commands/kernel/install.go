@@ -1,11 +1,14 @@
 package kernel
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -46,8 +49,33 @@ func (flags *InstallFlags) Validate() error {
 	return nil
 }
 
+// completions renders the shell completion scripts of the whole command
+// tree. Only this layer can: the scripts describe every command, and the
+// tree is what the binary was built with.
+func completions(command *cobra.Command) map[install.Shell][]byte {
+	root := command.Root()
+	out := map[install.Shell][]byte{}
+
+	renderers := map[install.Shell]func(io.Writer) error{
+		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, true) },
+		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletion(w) },
+		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, true) },
+	}
+
+	for shell, render := range renderers {
+		var buf bytes.Buffer
+		if err := render(&buf); err != nil {
+			continue // a shell we cannot render for is simply skipped
+		}
+
+		out[shell] = buf.Bytes()
+	}
+
+	return out
+}
+
 // Install puts the kernel under systemd.
-func Install(ctx context.Context, out io.Writer, flags *InstallFlags) error {
+func Install(ctx context.Context, out io.Writer, flags *InstallFlags, command *cobra.Command) error {
 	if err := flags.Validate(); err != nil {
 		return err
 	}
@@ -63,13 +91,14 @@ func Install(ctx context.Context, out io.Writer, flags *InstallFlags) error {
 		return printPlan(out, &layout, flags)
 	}
 
-	result, err := install.Install(ctx, install.Options{
-		Scope:      scope,
-		Tenant:     flags.Tenant,
-		Name:       flags.Name,
-		TCP:        flags.TCP,
-		Force:      flags.Force,
-		SkipEnable: flags.NoStart,
+	result, err := install.Install(ctx, &install.Options{
+		Scope:       scope,
+		Tenant:      flags.Tenant,
+		Name:        flags.Name,
+		TCP:         flags.TCP,
+		Force:       flags.Force,
+		SkipEnable:  flags.NoStart,
+		Completions: completions(command),
 	})
 	if err != nil && !errors.Is(err, install.ErrNoSystemd) {
 		return fmt.Errorf("kernel install: %w", err)
@@ -120,6 +149,18 @@ func report(out io.Writer, result *install.Result) {
 		_, _ = fmt.Fprintf(out, "\nservice %s is enabled and running\n", install.UnitName)
 	}
 
+	if len(result.Completions) > 0 {
+		shells := make([]string, 0, len(result.Completions))
+		for _, shell := range result.Completions {
+			shells = append(shells, string(shell))
+		}
+
+		sort.Strings(shells)
+
+		_, _ = fmt.Fprintf(out, "\nshell completion installed for %s (open a new shell to use it)\n",
+			strings.Join(shells, ", "))
+	}
+
 	if result.Token != "" {
 		_, _ = fmt.Fprintf(out, "\nbootstrap token (shown once, also in %s):\n  %s\n",
 			layout.TokenFile, result.Token)
@@ -146,7 +187,7 @@ func newInstallCommand() *cobra.Command {
 				return err
 			}
 
-			return Install(command.Context(), command.OutOrStdout(), flags)
+			return Install(command.Context(), command.OutOrStdout(), flags, command)
 		},
 	}
 

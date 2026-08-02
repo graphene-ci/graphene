@@ -25,9 +25,13 @@ const (
 	tokenBytes = 24
 )
 
-// ErrNoSystemd — systemd is not the init system here (or not reachable in
-// this scope), so the unit cannot be managed.
-var ErrNoSystemd = errors.New("install: systemd is not available")
+var (
+	// ErrNoSystemd — systemd is not the init system here (or not reachable
+	// in this scope), so the unit cannot be managed.
+	ErrNoSystemd = errors.New("install: systemd is not available")
+	// ErrUnknownShell — no completion path is known for that shell.
+	ErrUnknownShell = errors.New("install: unknown shell")
+)
 
 // Options steer an installation.
 type Options struct {
@@ -42,6 +46,9 @@ type Options struct {
 	// SkipEnable installs the files without starting anything: useful in
 	// images and containers where the unit is enabled later.
 	SkipEnable bool
+	// Completions are the shell scripts to install, rendered by the
+	// command layer (only it knows the command tree).
+	Completions map[Shell][]byte
 }
 
 // Result reports what an installation produced.
@@ -52,10 +59,12 @@ type Result struct {
 	Token string
 	// Started reports whether the unit was enabled and started.
 	Started bool
+	// Completions lists the shells whose completion was installed.
+	Completions []Shell
 }
 
 // Install lays out the files and, unless asked not to, enables the unit.
-func Install(ctx context.Context, opts Options) (Result, error) {
+func Install(ctx context.Context, opts *Options) (Result, error) {
 	layout, err := NewLayout(opts.Scope)
 	if err != nil {
 		return Result{}, err
@@ -86,6 +95,8 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 
+	result.Completions = WriteCompletions(&layout, opts.Completions)
+
 	if opts.SkipEnable {
 		return result, nil
 	}
@@ -110,7 +121,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 // same file kubectl-style tooling reads, so `graphen ctl ...` needs no
 // flags on this machine — and adding a second kernel later does not
 // disturb this one.
-func recordContext(layout *Layout, opts Options) error {
+func recordContext(layout *Layout, opts *Options) error {
 	cfg, path, err := clientconfig.Load("")
 	if err != nil {
 		return fmt.Errorf("install: client configuration: %w", err)
@@ -185,7 +196,7 @@ func ensureToken(layout *Layout, force bool) (string, error) {
 	return token, nil
 }
 
-func writeConfig(layout *Layout, opts Options) error {
+func writeConfig(layout *Layout, opts *Options) error {
 	if _, err := os.Stat(layout.Config); err == nil && !opts.Force {
 		return nil // an operator's configuration is never overwritten silently
 	}
