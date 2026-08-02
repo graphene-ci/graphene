@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/graphene-ci/graphene/internal/core/blob"
 )
@@ -38,6 +39,23 @@ const (
 )
 
 var errClosed = errors.New("blob fs: writer already finished")
+
+// idPattern pins the only shape this adapter ever mints: 2*idBytes
+// lowercase hex characters. Ids arrive from the wire — anything else
+// (traversal attempts, short strings that would panic the fan-out slice)
+// is treated as an unknown blob before any path is built.
+// idHexLen is the minted id length: hex of idBytes random bytes.
+const idHexLen = 2 * idBytes
+
+var idPattern = regexp.MustCompile(fmt.Sprintf(`^[0-9a-f]{%d}$`, idHexLen))
+
+func validateID(id string) error {
+	if !idPattern.MatchString(id) {
+		return blob.ErrNotFound
+	}
+
+	return nil
+}
 
 // Store implements blob.Store on a local directory.
 type Store struct {
@@ -77,6 +95,10 @@ func (s *Store) Create(_ context.Context) (blob.Writer, error) {
 
 // Open implements blob.Store.
 func (s *Store) Open(_ context.Context, id string, offset uint64) (io.ReadCloser, blob.Info, error) {
+	if err := validateID(id); err != nil {
+		return nil, blob.Info{}, err
+	}
+
 	info, err := s.stat(id)
 	if err != nil {
 		return nil, blob.Info{}, err
@@ -100,11 +122,19 @@ func (s *Store) Open(_ context.Context, id string, offset uint64) (io.ReadCloser
 
 // Stat implements blob.Store.
 func (s *Store) Stat(_ context.Context, id string) (blob.Info, error) {
+	if err := validateID(id); err != nil {
+		return blob.Info{}, err
+	}
+
 	return s.stat(id)
 }
 
 // Delete implements blob.Store.
 func (s *Store) Delete(_ context.Context, id string) error {
+	if err := validateID(id); err != nil {
+		return err
+	}
+
 	if err := os.Remove(s.blobPath(id)); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return blob.ErrNotFound
