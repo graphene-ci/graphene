@@ -187,6 +187,106 @@ func TestPutGetRoundtrip(t *testing.T) {
 	}
 }
 
+// Generation counts intent. It is what lets a controller ignore the echo
+// of its own status write — the revision moves, the generation does not,
+// so there is nothing new to reconcile.
+func TestGenerationCountsIntentNotWrites(t *testing.T) {
+	t.Parallel()
+
+	c := newClient(t)
+	ctx := context.Background()
+
+	defineVM(t, c)
+
+	read := func() *graphenepbv1.Resource {
+		t.Helper()
+
+		got, err := c.Get(ctx, &graphenepbv1.GetRequest{
+			Key: &graphenepbv1.Key{Kind: "aws.vm", Path: []string{"acme", "prod", "deploy", "app"}},
+		})
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+
+		return got.GetResource()
+	}
+
+	if _, err := c.Put(ctx, &graphenepbv1.PutRequest{
+		Resource: vmResource("app", map[string]any{"type": "t3.medium"}),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	created := read()
+	if created.GetGeneration() != 1 {
+		t.Fatalf("create: generation %d, want 1", created.GetGeneration())
+	}
+
+	// A status write — the controller reporting what it did.
+	reported := vmResource("app", map[string]any{"type": "t3.medium"})
+	reported.Status = schemapb.MustStructFromGo(map[string]any{"phase": "running"})
+
+	if _, err := c.Put(ctx, &graphenepbv1.PutRequest{
+		Resource: reported, ExpectedRevision: created.GetRevision(),
+	}); err != nil {
+		t.Fatalf("status write: %v", err)
+	}
+
+	afterStatus := read()
+	if afterStatus.GetRevision() == created.GetRevision() {
+		t.Fatal("status write did not bump the revision")
+	}
+
+	if afterStatus.GetGeneration() != 1 {
+		t.Fatalf("status write bumped the generation to %d", afterStatus.GetGeneration())
+	}
+
+	// A spec write — someone changing what they want.
+	if _, err := c.Put(ctx, &graphenepbv1.PutRequest{
+		Resource:         vmResource("app", map[string]any{"type": "t3.large"}),
+		ExpectedRevision: afterStatus.GetRevision(),
+	}); err != nil {
+		t.Fatalf("spec write: %v", err)
+	}
+
+	changed := read()
+	if changed.GetGeneration() != 2 {
+		t.Fatalf("spec change: generation %d, want 2", changed.GetGeneration())
+	}
+
+	// Deletion is not a change of intent: the mark must leave it alone,
+	// or every teardown would look like a fresh spec to reconcile.
+	withFinalizer := vmResource("app", map[string]any{"type": "t3.large"})
+	withFinalizer.Finalizers = []string{"test/teardown"}
+
+	if _, err := c.Put(ctx, &graphenepbv1.PutRequest{
+		Resource: withFinalizer, ExpectedRevision: changed.GetRevision(),
+	}); err != nil {
+		t.Fatalf("add finalizer: %v", err)
+	}
+
+	finalized := read()
+	if finalized.GetGeneration() != 2 {
+		t.Fatalf("adding a finalizer bumped the generation to %d", finalized.GetGeneration())
+	}
+
+	if _, err := c.Delete(ctx, &graphenepbv1.DeleteRequest{
+		Key:              &graphenepbv1.Key{Kind: "aws.vm", Path: []string{"acme", "prod", "deploy", "app"}},
+		ExpectedRevision: finalized.GetRevision(),
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	deleting := read()
+	if !deleting.GetDeleting() {
+		t.Fatal("delete did not mark the resource")
+	}
+
+	if deleting.GetGeneration() != 2 {
+		t.Fatalf("deletion bumped the generation to %d", deleting.GetGeneration())
+	}
+}
+
 func TestPutValidation(t *testing.T) {
 	t.Parallel()
 

@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/gopherex/schemapb/go v0.0.0-20260731140901-09887d4fe14e
 	github.com/gopherex/xconf v1.1.1
-	github.com/graphene-ci/graphenepb v0.0.0-20260802152254-7e25fe6d0bb0
+	github.com/graphene-ci/graphenepb v0.0.0-20260802181547-5a942ecf67eb
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.65.0

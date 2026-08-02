@@ -135,6 +135,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	stored.CreatedRevision = 0
 	stored.DefinitionVersion = pinned
 	stored.Deleting = current.GetDeleting()
+	stored.Generation = nextGeneration(current, stored)
 
 	// Finalize-commit path: the resource is deleting and the last
 	// finalizer was just removed — the Put turns into the real removal.
@@ -492,6 +493,29 @@ func (r *Resources) checkAuthority(ctx context.Context, kind string, res, curren
 // hold everything it gives away (auth.CheckEscalation).
 func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
 	switch kind {
+	case builtin.KindBinding:
+		// A Binding hands its grants to every process it spawns, so it is
+		// authority and passes the same guard as a Role.
+		grants, err := auth.GrantsFromSpec(res.GetSpec())
+		if err != nil {
+			return fmt.Errorf("decode binding grants: %w", err)
+		}
+
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
+			return fmt.Errorf("binding grants: %w", err)
+		}
+
+		// The bound kind is the binding's own path. Attaching code to a
+		// built-in kind would put user code where authority is decided —
+		// a Binding on Identity reconciles the very records that say who
+		// may do what.
+		if bound := key.FromProto(res.GetKey()).PathString(); builtin.IsBuiltin(bound) {
+			return fmt.Errorf("%w: %s is driven by a built-in controller and cannot be bound",
+				auth.ErrDenied, bound)
+		}
+
+		return nil
+
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(res.GetSpec())
 		if err != nil {
@@ -539,6 +563,22 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 	}
 
 	switch kind {
+	case builtin.KindBinding:
+		// Removing or repointing a binding takes away the authority its
+		// processes ran with; symmetric with minting it.
+		grants, err := auth.GrantsFromSpec(current.GetSpec())
+		if err != nil {
+			// Authority nobody can account for: only an unconfined holder
+			// may take it away.
+			grants = []auth.Grant{{Kind: "*"}}
+		}
+
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
+			return fmt.Errorf("removing binding grants: %w", err)
+		}
+
+		return nil
+
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(current.GetSpec())
 		if err != nil {
@@ -622,6 +662,25 @@ func (r *Resources) currentRecord(ctx context.Context, storedKey []byte) (*graph
 	}
 
 	return current, nil
+}
+
+// nextGeneration counts INTENT, not writes. A create starts at 1; a spec
+// change bumps; anything else — a status write, a finalizer removal —
+// carries the current value over.
+//
+// This is what lets a controller ignore the echo of its own status write:
+// the revision moved, the generation did not, so there is nothing new to
+// act on. Without it "react to changes" is an infinite loop.
+func nextGeneration(current, incoming *graphenepbv1.Resource) uint64 {
+	if current == nil {
+		return 1
+	}
+
+	if proto.Equal(current.GetSpec(), incoming.GetSpec()) {
+		return current.GetGeneration()
+	}
+
+	return current.GetGeneration() + 1
 }
 
 // changedParts reports which writable sections a Put actually touches;
