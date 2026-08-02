@@ -31,7 +31,7 @@ type GetFlags struct {
 }
 
 // Get reads resources and prints them.
-func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
+func Get(ctx context.Context, out, errOut io.Writer, flags *GetFlags) error {
 	if flags == nil {
 		return errFlagsRequired
 	}
@@ -55,6 +55,27 @@ func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
 	def, resources, err := readAddress(ctx, client, flags.Address, flags.Selector)
 	if err != nil {
 		return err
+	}
+
+	return render(out, errOut, format, flags.Address, def, resources)
+}
+
+// render prints the read result. An empty table prints nothing at all,
+// which reads as broken output — so emptiness is said out loud, on stderr,
+// where it cannot dirty a pipe reading the exchange formats.
+func render(
+	out, errOut io.Writer,
+	format appctl.Format,
+	addr appctl.Address,
+	def *graphenepbv1.ResourceDefinition,
+	resources []*graphenepbv1.Resource,
+) error {
+	if len(resources) == 0 && format.NeedsDefinition() {
+		if _, err := fmt.Fprintf(errOut, "no resources found: %s\n", addr); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+
+		return nil
 	}
 
 	if err := appctl.Write(out, format, def, resources); err != nil {
@@ -114,7 +135,7 @@ func newGetCommand() *cobra.Command {
 				return err
 			}
 
-			return Get(command.Context(), command.OutOrStdout(), flags)
+			return Get(command.Context(), command.OutOrStdout(), command.ErrOrStderr(), flags)
 		},
 	}
 
