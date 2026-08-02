@@ -49,7 +49,7 @@ WantedBy={{ .WantedBy }}
 `
 
 // RenderUnit produces the unit file for a layout.
-func RenderUnit(layout Layout) ([]byte, error) {
+func RenderUnit(layout *Layout) ([]byte, error) {
 	wantedBy := "default.target"
 	if layout.Scope == ScopeSystem {
 		wantedBy = "multi-user.target"
@@ -117,7 +117,7 @@ type ConfigOptions struct {
 }
 
 // RenderConfig produces the configuration file for a layout.
-func RenderConfig(layout Layout, opts ConfigOptions) ([]byte, error) {
+func RenderConfig(layout *Layout, opts ConfigOptions) ([]byte, error) {
 	data := struct {
 		Data      string
 		Tenant    string

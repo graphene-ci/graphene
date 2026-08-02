@@ -50,10 +50,6 @@ func (l *WatchLoop) Run(ctx context.Context) error {
 			return err
 		}
 
-		if ctx.Err() != nil {
-			return nil
-		}
-
 		select {
 		case <-ctx.Done():
 			return nil
@@ -70,13 +66,15 @@ func (l *WatchLoop) follow(ctx context.Context, cursor *uint64) error {
 	switch {
 	case errors.Is(err, ErrCompacted):
 		// The log no longer reaches back that far: start over from a full
-		// snapshot rather than continuing with a hole.
+		// snapshot rather than continuing with a hole. Reported, not
+		// returned — the loop recovers by itself.
 		l.report(fmt.Errorf("watch resumed from scratch: %w", err))
+
 		*cursor = 0
 
 		return nil
 	case err != nil && ctx.Err() != nil:
-		return nil
+		return nil //nolint:nilerr // the watch was cancelled
 	case err != nil:
 		return fmt.Errorf("store: watch: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/app/install"
+	"github.com/graphene-ci/graphene/internal/utils/cmdflags"
 )
 
 var (
@@ -59,7 +60,7 @@ func Install(ctx context.Context, out io.Writer, flags *InstallFlags) error {
 	}
 
 	if flags.Print {
-		return printPlan(out, layout, flags)
+		return printPlan(out, &layout, flags)
 	}
 
 	result, err := install.Install(ctx, install.Options{
@@ -74,7 +75,7 @@ func Install(ctx context.Context, out io.Writer, flags *InstallFlags) error {
 		return fmt.Errorf("kernel install: %w", err)
 	}
 
-	report(out, result)
+	report(out, &result)
 
 	if errors.Is(err, install.ErrNoSystemd) {
 		_, _ = fmt.Fprintf(out, "\nsystemd is not available here: the files are in place, "+
@@ -85,7 +86,7 @@ func Install(ctx context.Context, out io.Writer, flags *InstallFlags) error {
 	return nil
 }
 
-func printPlan(out io.Writer, layout install.Layout, flags *InstallFlags) error {
+func printPlan(out io.Writer, layout *install.Layout, flags *InstallFlags) error {
 	unit, err := install.RenderUnit(layout)
 	if err != nil {
 		return fmt.Errorf("kernel install: %w", err)
@@ -108,7 +109,7 @@ func printPlan(out io.Writer, layout install.Layout, flags *InstallFlags) error 
 	return nil
 }
 
-func report(out io.Writer, result install.Result) {
+func report(out io.Writer, result *install.Result) {
 	layout := result.Layout
 
 	_, _ = fmt.Fprintf(out, "installed (%s scope)\n", layout.Scope)
@@ -157,52 +158,35 @@ func newInstallCommand() *cobra.Command {
 	command.Flags().Bool("no-start", false, "install the files without enabling the service")
 	command.Flags().Bool("print", false, "print the unit and configuration instead of installing")
 
-	if err := command.RegisterFlagCompletionFunc("scope", completeScope); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "scope", completeScope)
 
 	return command
 }
 
 func installFlags(command *cobra.Command) (*InstallFlags, error) {
-	scope, err := command.Flags().GetString("scope")
+	values, err := cmdflags.Strings(command, "scope", "tenant", "name", "tcp")
 	if err != nil {
-		return nil, fmt.Errorf("read --scope: %w", err)
+		return nil, err
 	}
 
-	tenant, err := command.Flags().GetString("tenant")
+	force, err := cmdflags.Bool(command, "force")
 	if err != nil {
-		return nil, fmt.Errorf("read --tenant: %w", err)
+		return nil, err
 	}
 
-	name, err := command.Flags().GetString("name")
+	noStart, err := cmdflags.Bool(command, "no-start")
 	if err != nil {
-		return nil, fmt.Errorf("read --name: %w", err)
+		return nil, err
 	}
 
-	tcp, err := command.Flags().GetString("tcp")
+	printOnly, err := cmdflags.Bool(command, "print")
 	if err != nil {
-		return nil, fmt.Errorf("read --tcp: %w", err)
-	}
-
-	force, err := command.Flags().GetBool("force")
-	if err != nil {
-		return nil, fmt.Errorf("read --force: %w", err)
-	}
-
-	noStart, err := command.Flags().GetBool("no-start")
-	if err != nil {
-		return nil, fmt.Errorf("read --no-start: %w", err)
-	}
-
-	print, err := command.Flags().GetBool("print")
-	if err != nil {
-		return nil, fmt.Errorf("read --print: %w", err)
+		return nil, err
 	}
 
 	return &InstallFlags{
-		Scope: scope, Tenant: tenant, Name: name, TCP: tcp,
-		Force: force, NoStart: noStart, Print: print,
+		Scope: values[0], Tenant: values[1], Name: values[2], TCP: values[3],
+		Force: force, NoStart: noStart, Print: printOnly,
 	}, nil
 }
 
@@ -252,9 +236,9 @@ func newUninstallCommand() *cobra.Command {
 		Example: "  graphen kernel uninstall --scope user",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			scope, err := command.Flags().GetString("scope")
+			scope, err := cmdflags.String(command, "scope")
 			if err != nil {
-				return fmt.Errorf("read --scope: %w", err)
+				return err
 			}
 
 			return Uninstall(command.Context(), command.OutOrStdout(), &UninstallFlags{Scope: scope})
@@ -263,9 +247,7 @@ func newUninstallCommand() *cobra.Command {
 
 	command.Flags().String("scope", string(install.ScopeUser), "install scope: system or user")
 
-	if err := command.RegisterFlagCompletionFunc("scope", completeScope); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "scope", completeScope)
 
 	return command
 }
@@ -291,9 +273,9 @@ func newStatusCommand() *cobra.Command {
 		Example: "  graphen kernel status --scope user",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			scope, err := command.Flags().GetString("scope")
+			scope, err := cmdflags.String(command, "scope")
 			if err != nil {
-				return fmt.Errorf("read --scope: %w", err)
+				return err
 			}
 
 			return Status(command.Context(), command.OutOrStdout(), scope)
@@ -302,9 +284,7 @@ func newStatusCommand() *cobra.Command {
 
 	command.Flags().String("scope", string(install.ScopeUser), "install scope: system or user")
 
-	if err := command.RegisterFlagCompletionFunc("scope", completeScope); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "scope", completeScope)
 
 	return command
 }

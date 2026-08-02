@@ -1,12 +1,10 @@
-// Package config is the kernel's configuration: plain Go structs loaded by
-// structconf (tag defaults < file < env), plus the resolution of sensitive
-// values.
+// Package secret is how a secret reaches the process that needs it:
+// named in configuration, read from wherever the operator keeps it.
 //
-// A kernel has no "role" setting: what it does follows from what is
-// configured. A Store section makes it hold truth, a Listen section makes
-// it serve, a Link section makes it connect elsewhere. Optional sections
-// are pointers — absent means nil, and their required fields do not fire.
-package config
+// One model for everyone — the kernel's bootstrap token, a link token, a
+// client's credential — so "where does this secret come from" has the
+// same answer everywhere.
+package secret
 
 import (
 	"errors"
@@ -17,11 +15,11 @@ import (
 
 var (
 	// ErrValueUnset — no source was given for a required value.
-	ErrValueUnset = errors.New("config: value has no source (set exactly one of inline/file/env)")
+	ErrValueUnset = errors.New("secret: no source (set exactly one of inline/file/env)")
 	// ErrValueAmbiguous — more than one source was given.
-	ErrValueAmbiguous = errors.New("config: value has multiple sources (set exactly one of inline/file/env)")
+	ErrValueAmbiguous = errors.New("secret: multiple sources (set exactly one of inline/file/env)")
 	// ErrValueEmpty — the source resolved to nothing.
-	ErrValueEmpty = errors.New("config: value resolved empty")
+	ErrValueEmpty = errors.New("secret: resolved empty")
 )
 
 // Value is a sensitive string with exactly one source. Every secret in the
@@ -32,9 +30,9 @@ var (
 //	token: { env: GRAPHEN_TOKEN }
 //	token: { inline: dev-only-secret }
 type Value struct {
-	Inline string `mapstructure:"inline"`
-	File   string `mapstructure:"file"`
-	Env    string `mapstructure:"env"`
+	Inline string `json:"inline,omitempty" mapstructure:"inline"`
+	File   string `json:"file,omitempty"   mapstructure:"file"`
+	Env    string `json:"env,omitempty"    mapstructure:"env"`
 }
 
 // IsZero reports whether no source was configured at all.
@@ -81,7 +79,7 @@ func (v Value) read() (string, error) {
 	case v.File != "":
 		raw, err := os.ReadFile(v.File)
 		if err != nil {
-			return "", fmt.Errorf("config: read value file %s: %w", v.File, err)
+			return "", fmt.Errorf("secret: read %s: %w", v.File, err)
 		}
 
 		return string(raw), nil
@@ -89,7 +87,7 @@ func (v Value) read() (string, error) {
 	default:
 		raw, ok := os.LookupEnv(v.Env)
 		if !ok {
-			return "", fmt.Errorf("config: env %s: %w", v.Env, ErrValueEmpty)
+			return "", fmt.Errorf("secret: env %s: %w", v.Env, ErrValueEmpty)
 		}
 
 		return raw, nil

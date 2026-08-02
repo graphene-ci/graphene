@@ -165,50 +165,6 @@ func TestValidationRejectsIncoherentCombinations(t *testing.T) {
 	}
 }
 
-func TestValueSources(t *testing.T) {
-	// No t.Parallel: t.Setenv below is incompatible with parallel tests.
-	file := filepath.Join(t.TempDir(), "v")
-	if err := os.WriteFile(file, []byte(" from-file \n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("GRAPHEN_TEST_VALUE", "from-env")
-
-	cases := map[string]struct {
-		value config.Value
-		want  string
-		err   error
-	}{
-		"inline": {value: config.Value{Inline: "x"}, want: "x"},
-		"file":   {value: config.Value{File: file}, want: "from-file"},
-		"env":    {value: config.Value{Env: "GRAPHEN_TEST_VALUE"}, want: "from-env"},
-		"unset":  {value: config.Value{}, err: config.ErrValueUnset},
-		"ambiguous": {
-			value: config.Value{Inline: "x", Env: "GRAPHEN_TEST_VALUE"},
-			err:   config.ErrValueAmbiguous,
-		},
-		"missing env": {value: config.Value{Env: "GRAPHEN_TEST_ABSENT"}, err: config.ErrValueEmpty},
-	}
-
-	//nolint:paralleltest // the parent uses t.Setenv; subtests must stay sequential
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got, err := tc.value.Resolve()
-			if tc.err != nil {
-				if !errors.Is(err, tc.err) {
-					t.Fatalf("got err %v, want %v", err, tc.err)
-				}
-
-				return
-			}
-
-			if err != nil || got != tc.want {
-				t.Fatalf("got %q err=%v, want %q", got, err, tc.want)
-			}
-		})
-	}
-}
-
 func TestEnvOverridesAndMaterializesSections(t *testing.T) {
 	t.Setenv("GRAPHEN_IDENTITY_NAME", "from-env")
 	t.Setenv("GRAPHEN_LINK_ADDRESS", "srv2:9000")

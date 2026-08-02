@@ -12,6 +12,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/app/config"
 	appkernel "github.com/graphene-ci/graphene/internal/app/kernel"
+	"github.com/graphene-ci/graphene/internal/utils/cmdflags"
 )
 
 var (
@@ -26,9 +27,9 @@ type RunFlags struct {
 }
 
 func newRunFlags(command *cobra.Command) (*RunFlags, error) {
-	path, err := command.Flags().GetString("config")
+	path, err := cmdflags.String(command, "config")
 	if err != nil {
-		return nil, fmt.Errorf("read --config: %w", err)
+		return nil, err
 	}
 
 	return &RunFlags{Config: path}, nil

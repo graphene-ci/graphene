@@ -228,8 +228,8 @@ func (s *Source) watch(ctx context.Context, kind string, from uint64, handle han
 }
 
 func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
-	key := pathKey(res)
-	if key == "" {
+	pathName := pathKey(res)
+	if pathName == "" {
 		return
 	}
 
@@ -239,7 +239,7 @@ func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
 	// A resource marked deleting is on its way out: its authority must
 	// stop applying at the mark, not at the end of finalization.
 	if gone || res.GetDeleting() {
-		delete(s.roles, key)
+		delete(s.roles, pathName)
 		s.reindexLocked()
 
 		return
@@ -247,20 +247,20 @@ func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
 
 	grants, err := auth.GrantsFromSpec(res.GetSpec())
 	if err != nil {
-		s.log.Error("auth: undecodable role skipped", "role", key, "error", err)
+		s.log.Error("auth: undecodable role skipped", "role", pathName, "error", err)
 
 		return
 	}
 
 	// The grants of a role are confined to the tenant that role lives in,
 	// whatever its author wrote: authority never crosses tenants.
-	s.roles[key] = auth.ScopeToTenant(grants, res.GetKey().GetPath()[0])
+	s.roles[pathName] = auth.ScopeToTenant(grants, res.GetKey().GetPath()[0])
 	s.reindexLocked()
 }
 
 func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
-	key := pathKey(res)
-	if key == "" {
+	pathName := pathKey(res)
+	if pathName == "" {
 		return
 	}
 
@@ -268,7 +268,7 @@ func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 	defer s.mu.Unlock()
 
 	if gone || res.GetDeleting() {
-		delete(s.identities, key)
+		delete(s.identities, pathName)
 		s.reindexLocked()
 
 		return
@@ -277,7 +277,7 @@ func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 	path := res.GetKey().GetPath()
 	spec := auth.IdentityFromSpec(res.GetSpec())
 
-	s.identities[key] = identity{
+	s.identities[pathName] = identity{
 		tenant:  path[0],
 		name:    path[1],
 		kind:    spec.PrincipalKind,
@@ -298,8 +298,8 @@ func (s *Source) reindexLocked() {
 	index := make(map[string]auth.Credentials, len(s.byDigest))
 	owner := make(map[string]string, len(s.byDigest))
 
-	for key := range s.identities {
-		ident := s.identities[key]
+	for pathName := range s.identities {
+		ident := s.identities[pathName]
 		creds := auth.Credentials{
 			Principal: auth.Principal{
 				Kind:   ident.kind,
@@ -310,15 +310,15 @@ func (s *Source) reindexLocked() {
 		}
 
 		for _, digest := range ident.digests {
-			if previous, taken := owner[digest]; taken && previous != key {
+			if previous, taken := owner[digest]; taken && previous != pathName {
 				s.log.Error("auth: token digest claimed by several identities, disabled",
-					"identities", previous+" and "+key)
+					"identities", previous+" and "+pathName)
 				delete(index, digest)
 
 				continue
 			}
 
-			owner[digest] = key
+			owner[digest] = pathName
 			index[digest] = creds
 		}
 	}

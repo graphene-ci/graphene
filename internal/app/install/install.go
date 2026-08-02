@@ -11,6 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/graphene-ci/graphene/internal/app/clientconfig"
+	"github.com/graphene-ci/graphene/internal/app/secret"
 )
 
 const (
@@ -60,22 +63,26 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 
 	result := Result{Layout: layout}
 
-	if err := installBinary(layout); err != nil {
+	if err := installBinary(&layout); err != nil {
 		return result, err
 	}
 
-	token, err := ensureToken(layout, opts.Force)
+	token, err := ensureToken(&layout, opts.Force)
 	if err != nil {
 		return result, err
 	}
 
 	result.Token = token
 
-	if err := writeConfig(layout, opts); err != nil {
+	if err := writeConfig(&layout, opts); err != nil {
 		return result, err
 	}
 
-	if err := writeUnit(layout); err != nil {
+	if err := writeUnit(&layout); err != nil {
+		return result, err
+	}
+
+	if err := recordContext(&layout, opts); err != nil {
 		return result, err
 	}
 
@@ -83,7 +90,14 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 		return result, nil
 	}
 
-	if err := Enable(ctx, layout); err != nil {
+	if err := Enable(ctx, &layout); err != nil {
+		return result, err
+	}
+
+	// A service that was already running holds the OLD binary and the old
+	// token in memory: enabling it again changes nothing, so a reinstall
+	// has to restart it explicitly.
+	if err := Systemctl(ctx, opts.Scope, "restart", UnitName); err != nil {
 		return result, err
 	}
 
@@ -92,10 +106,38 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	return result, nil
 }
 
+// recordContext teaches the client about the kernel just installed: the
+// same file kubectl-style tooling reads, so `graphen ctl ...` needs no
+// flags on this machine — and adding a second kernel later does not
+// disturb this one.
+func recordContext(layout *Layout, opts Options) error {
+	cfg, path, err := clientconfig.Load("")
+	if err != nil {
+		return fmt.Errorf("install: client configuration: %w", err)
+	}
+
+	name := opts.Name
+	if opts.Scope == ScopeSystem {
+		name = opts.Name + "-system"
+	}
+
+	cfg.Upsert(name,
+		clientconfig.Kernel{Socket: layout.Socket},
+		clientconfig.Identity{Token: secret.Value{File: layout.TokenFile}},
+		opts.Tenant,
+	)
+
+	if err := clientconfig.Save(cfg, path); err != nil {
+		return fmt.Errorf("install: client configuration: %w", err)
+	}
+
+	return nil
+}
+
 // installBinary copies the running executable to its installed location —
 // so `graphen kernel install` works from anywhere (a build directory, a
 // download) and the unit points at a stable path.
-func installBinary(layout Layout) error {
+func installBinary(layout *Layout) error {
 	current, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("install: locate executable: %w", err)
@@ -121,7 +163,7 @@ func installBinary(layout Layout) error {
 // ensureToken creates the bootstrap credential unless one exists. The
 // value is returned only when freshly generated: an operator who lost it
 // rotates it rather than reading it back from a file the service owns.
-func ensureToken(layout Layout, force bool) (string, error) {
+func ensureToken(layout *Layout, force bool) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(layout.TokenFile), dirMode); err != nil {
 		return "", fmt.Errorf("install: create config directory: %w", err)
 	}
@@ -143,7 +185,7 @@ func ensureToken(layout Layout, force bool) (string, error) {
 	return token, nil
 }
 
-func writeConfig(layout Layout, opts Options) error {
+func writeConfig(layout *Layout, opts Options) error {
 	if _, err := os.Stat(layout.Config); err == nil && !opts.Force {
 		return nil // an operator's configuration is never overwritten silently
 	}
@@ -168,7 +210,7 @@ func writeConfig(layout Layout, opts Options) error {
 	return nil
 }
 
-func writeUnit(layout Layout) error {
+func writeUnit(layout *Layout) error {
 	body, err := RenderUnit(layout)
 	if err != nil {
 		return err
@@ -210,7 +252,7 @@ func Uninstall(ctx context.Context, scope Scope) (Layout, error) {
 }
 
 // Enable reloads systemd and starts the unit.
-func Enable(ctx context.Context, layout Layout) error {
+func Enable(ctx context.Context, layout *Layout) error {
 	if !Available(layout.Scope) {
 		return ErrNoSystemd
 	}
@@ -283,7 +325,7 @@ func Status(ctx context.Context, scope Scope) (string, error) {
 	return "", nil
 }
 
-func copyFile(from, to string, mode os.FileMode) error {
+func copyFile(from, target string, mode os.FileMode) error {
 	src, err := os.Open(from)
 	if err != nil {
 		return fmt.Errorf("install: read %s: %w", from, err)
@@ -293,7 +335,7 @@ func copyFile(from, to string, mode os.FileMode) error {
 
 	// Replacing a running binary fails with ETXTBSY; writing beside it and
 	// renaming is atomic and works while the old one runs.
-	tmp := to + ".new"
+	tmp := target + ".new"
 
 	dst, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
@@ -313,7 +355,7 @@ func copyFile(from, to string, mode os.FileMode) error {
 		return fmt.Errorf("install: close %s: %w", tmp, err)
 	}
 
-	if err := os.Rename(tmp, to); err != nil {
+	if err := os.Rename(tmp, target); err != nil {
 		_ = os.Remove(tmp)
 
 		return fmt.Errorf("install: install binary: %w", err)

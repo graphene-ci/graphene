@@ -14,6 +14,7 @@ import (
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	appctl "github.com/graphene-ci/graphene/internal/app/ctl"
+	"github.com/graphene-ci/graphene/internal/utils/cmdflags"
 )
 
 // Resources are addressed positionally: `get Kernel acme/k1` names one,
@@ -129,22 +130,17 @@ func getFlags(command *cobra.Command, args []string) (*GetFlags, error) {
 		return nil, err
 	}
 
-	selector, err := command.Flags().GetStringSlice("selector")
+	selector, err := cmdflags.StringSlice(command, "selector")
 	if err != nil {
-		return nil, fmt.Errorf("read --selector: %w", err)
+		return nil, err
 	}
 
-	format, err := command.Flags().GetString("output")
+	format, err := cmdflags.String(command, "output")
 	if err != nil {
-		return nil, fmt.Errorf("read --output: %w", err)
+		return nil, err
 	}
 
-	return &GetFlags{
-		Target:   target,
-		Address:  addressFromArgs(args),
-		Selector: selector,
-		Format:   format,
-	}, nil
+	return &GetFlags{Target: target, Address: addressFromArgs(args), Selector: selector, Format: format}, nil
 }
 
 func addressFromArgs(args []string) appctl.Address {
@@ -229,9 +225,9 @@ func newApplyCommand() *cobra.Command {
 				return err
 			}
 
-			file, err := command.Flags().GetString("file")
+			file, err := cmdflags.String(command, "file")
 			if err != nil {
-				return fmt.Errorf("read --file: %w", err)
+				return err
 			}
 
 			return Apply(command.Context(), command.InOrStdin(), command.OutOrStdout(),
@@ -241,9 +237,7 @@ func newApplyCommand() *cobra.Command {
 
 	command.Flags().StringP("file", "f", "-", "YAML file with resources, or - for stdin")
 
-	if err := command.RegisterFlagCompletionFunc("file", completeYAMLFile); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "file", completeYAMLFile)
 
 	return command
 }
@@ -296,9 +290,9 @@ func newDeleteCommand() *cobra.Command {
 				return err
 			}
 
-			revision, err := command.Flags().GetUint64("revision")
+			revision, err := cmdflags.Uint64(command, "revision")
 			if err != nil {
-				return fmt.Errorf("read --revision: %w", err)
+				return err
 			}
 
 			return Delete(command.Context(), command.OutOrStdout(),
@@ -366,9 +360,9 @@ func newWatchCommand() *cobra.Command {
 				return err
 			}
 
-			selector, err := command.Flags().GetStringSlice("selector")
+			selector, err := cmdflags.StringSlice(command, "selector")
 			if err != nil {
-				return fmt.Errorf("read --selector: %w", err)
+				return err
 			}
 
 			return Watch(command.Context(), command.OutOrStdout(),
@@ -430,16 +424,10 @@ func newDefinitionsCommand() *cobra.Command {
 
 func addSelectorFlag(command *cobra.Command) {
 	command.Flags().StringSlice("selector", nil, "field match, e.g. spec.placement=k1")
-
-	if err := command.RegisterFlagCompletionFunc("selector", completeSelector); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "selector", completeSelector)
 }
 
 func addFormatFlag(command *cobra.Command) {
 	command.Flags().StringP("output", "o", string(appctl.FormatYAML), "output format: yaml, json or name")
-
-	if err := command.RegisterFlagCompletionFunc("output", completeFormat); err != nil {
-		panic(err)
-	}
+	cmdflags.RegisterCompletion(command, "output", completeFormat)
 }

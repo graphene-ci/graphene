@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gopherex/xconf/pkg/structconf"
+
+	"github.com/graphene-ci/graphene/internal/app/secret"
 )
 
 // Config is the whole kernel configuration. Capabilities follow presence:
@@ -92,8 +94,8 @@ type Auth struct {
 
 // BootstrapAuth is the bootstrap identity and its token.
 type BootstrapAuth struct {
-	Name  string `default:"bootstrap"  mapstructure:"name" validate:"required"`
-	Token Value  `mapstructure:"token"`
+	Name  string       `default:"bootstrap"  mapstructure:"name" validate:"required"`
+	Token secret.Value `mapstructure:"token"`
 }
 
 // Link connects this kernel to another one.
@@ -102,10 +104,10 @@ type BootstrapAuth struct {
 //	stdio   — this process's own stdin/stdout (an ssh-spawned kernel);
 //	via     — dial through a relay chain.
 type Link struct {
-	Mode    string `default:"dialout"      mapstructure:"mode" validate:"oneof=dialout stdio via"`
-	Address string `mapstructure:"address"`
-	Token   Value  `mapstructure:"token"`
-	CAFile  string `mapstructure:"ca_file"`
+	Mode    string       `default:"dialout"      mapstructure:"mode" validate:"oneof=dialout stdio via"`
+	Address string       `mapstructure:"address"`
+	Token   secret.Value `mapstructure:"token"`
+	CAFile  string       `mapstructure:"ca_file"`
 	// ServerName overrides the name verified in the peer's certificate;
 	// needed when the address is an IP the certificate does not carry.
 	ServerName string `mapstructure:"server_name"`
@@ -114,8 +116,8 @@ type Link struct {
 
 // Relay is the first hop of a relay chain.
 type Relay struct {
-	Address string `mapstructure:"address" validate:"required"`
-	Token   Value  `mapstructure:"token"`
+	Address string       `mapstructure:"address" validate:"required"`
+	Token   secret.Value `mapstructure:"token"`
 }
 
 // Lease configures the liveness heartbeat: the kernel renews its lease

@@ -40,8 +40,13 @@ type Layout struct {
 	TokenFile string
 }
 
-// UnitName is the service name in both scopes.
-const UnitName = "graphen-kernel.service"
+const (
+	// UnitName is the service name in both scopes.
+	UnitName = "graphen-kernel.service"
+
+	systemUnitDir   = "/etc/systemd/system"
+	systemConfigDir = "/etc/graphen"
+)
 
 // NewLayout computes the paths for a scope.
 func NewLayout(scope Scope) (Layout, error) {
@@ -49,11 +54,11 @@ func NewLayout(scope Scope) (Layout, error) {
 		return Layout{
 			Scope:     ScopeSystem,
 			Binary:    "/usr/local/bin/graphen",
-			Config:    "/etc/graphen/kernel.yaml",
+			Config:    systemConfigDir + "/kernel.yaml",
 			Data:      "/var/lib/graphen",
-			Unit:      filepath.Join("/etc/systemd/system", UnitName),
+			Unit:      systemUnitDir + "/" + UnitName,
 			Socket:    "/run/graphen/kernel.sock",
-			TokenFile: "/etc/graphen/bootstrap.token",
+			TokenFile: systemConfigDir + "/bootstrap.token",
 		}, nil
 	}
 

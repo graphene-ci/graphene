@@ -65,9 +65,10 @@ func suggesterFor(command *cobra.Command) (*appctl.Suggester, bool) {
 		return nil, false
 	}
 
-	if flags.Validate() != nil {
+	target, err := flags.target()
+	if err != nil || (target.Address == "" && target.Socket == "") || target.Token == "" {
 		return nil, false
 	}
 
-	return appctl.NewSuggester(flags.target()), true
+	return appctl.NewSuggester(target), true
 }

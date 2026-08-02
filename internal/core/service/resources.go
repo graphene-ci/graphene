@@ -51,12 +51,12 @@ func NewResources(st store.Store, reg *registry.Registry) *Resources {
 // --- instances ----------------------------------------------------------
 
 func (r *Resources) Get(ctx context.Context, req *graphenepbv1.GetRequest) (*graphenepbv1.GetResponse, error) {
-	key, err := storeKey(req.GetKey())
+	storedKey, err := storeKey(req.GetKey())
 	if err != nil {
 		return nil, err
 	}
 
-	entry, err := r.st.Get(ctx, key)
+	entry, err := r.st.Get(ctx, storedKey)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
 	}
@@ -80,7 +80,7 @@ func (r *Resources) Get(ctx context.Context, req *graphenepbv1.GetRequest) (*gra
 func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*graphenepbv1.PutResponse, error) {
 	res := req.GetResource()
 
-	key, err := storeKey(res.GetKey())
+	storedKey, err := storeKey(res.GetKey())
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	// A Put may legitimately act on a deleting resource (finalizer removal)
 	// but must not set or clear the mark itself — we carry it over from
 	// the current record.
-	current, err := r.currentRecord(ctx, key)
+	current, err := r.currentRecord(ctx, storedKey)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	// Finalize-commit path: the resource is deleting and the last
 	// finalizer was just removed — the Put turns into the real removal.
 	if stored.GetDeleting() && len(stored.GetFinalizers()) == 0 {
-		rev, err := r.st.Delete(ctx, key, req.GetExpectedRevision())
+		rev, err := r.st.Delete(ctx, storedKey, req.GetExpectedRevision())
 		if err != nil {
 			return nil, mapStoreErr(err, res.GetKey())
 		}
@@ -152,7 +152,7 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 		return nil, internal(err)
 	}
 
-	rev, err := r.st.Put(ctx, key, raw, req.GetExpectedRevision())
+	rev, err := r.st.Put(ctx, storedKey, raw, req.GetExpectedRevision())
 	if err != nil {
 		return nil, mapStoreErr(err, res.GetKey())
 	}
@@ -161,12 +161,12 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 }
 
 func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest) (*graphenepbv1.DeleteResponse, error) {
-	key, err := storeKey(req.GetKey())
+	storedKey, err := storeKey(req.GetKey())
 	if err != nil {
 		return nil, err
 	}
 
-	entry, err := r.st.Get(ctx, key)
+	entry, err := r.st.Get(ctx, storedKey)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
 	}
@@ -190,7 +190,7 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 
 	// No finalizers — remove immediately.
 	if len(current.GetFinalizers()) == 0 {
-		if _, err := r.st.Delete(ctx, key, req.GetExpectedRevision()); err != nil {
+		if _, err := r.st.Delete(ctx, storedKey, req.GetExpectedRevision()); err != nil {
 			return nil, mapStoreErr(err, req.GetKey())
 		}
 
@@ -213,7 +213,7 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 		return nil, internal(err)
 	}
 
-	if _, err := r.st.Put(ctx, key, raw, req.GetExpectedRevision()); err != nil {
+	if _, err := r.st.Put(ctx, storedKey, raw, req.GetExpectedRevision()); err != nil {
 		return nil, mapStoreErr(err, req.GetKey())
 	}
 
@@ -620,8 +620,8 @@ func (r *Resources) roleGrants(ctx context.Context, tenant, role string) ([]auth
 }
 
 // currentRecord loads the existing record; nil (no error) when absent.
-func (r *Resources) currentRecord(ctx context.Context, key []byte) (*graphenepbv1.Resource, error) {
-	entry, err := r.st.Get(ctx, key)
+func (r *Resources) currentRecord(ctx context.Context, storedKey []byte) (*graphenepbv1.Resource, error) {
+	entry, err := r.st.Get(ctx, storedKey)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil //nolint:nilnil // absence is a valid, non-error outcome here
 	}
@@ -693,14 +693,14 @@ func denied(err error) error {
 	return internal(err)
 }
 
-func mapStoreErr(err error, key *graphenepbv1.Key) error {
+func mapStoreErr(err error, target *graphenepbv1.Key) error {
 	switch {
 	case errors.Is(err, store.ErrRevisionMismatch):
-		return status.Errorf(codes.Aborted, "%s: revision mismatch — re-read and retry", keyString(key))
+		return status.Errorf(codes.Aborted, "%s: revision mismatch — re-read and retry", keyString(target))
 	case errors.Is(err, store.ErrNotFound):
-		return status.Errorf(codes.NotFound, "%s not found", keyString(key))
+		return status.Errorf(codes.NotFound, "%s not found", keyString(target))
 	case errors.Is(err, store.ErrCompacted):
-		return status.Errorf(codes.OutOfRange, "%s: revision compacted", keyString(key))
+		return status.Errorf(codes.OutOfRange, "%s: revision compacted", keyString(target))
 	default:
 		return internal(err)
 	}

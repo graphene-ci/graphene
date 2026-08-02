@@ -118,6 +118,9 @@ linters:
         # status.Error IS the wrapping for a grpc service: it attaches the
         # code and message the client is meant to see.
         - status.Error(
+      ignore-package-globs:
+        # cmdflags errors already name the flag; wrapping again adds nothing
+        - github.com/graphene-ci/graphene/internal/utils/cmdflags
       ignore-interface-regexps:
         # grpc stream Send errors are transport conditions passed through.
         - ^google\.golang\.org/grpc
