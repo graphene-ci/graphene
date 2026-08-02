@@ -17,16 +17,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	schemapb "github.com/gopherex/schemapb/go/schemapb"
-
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
+	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -69,6 +69,10 @@ func (r *Resources) Get(ctx context.Context, req *graphenepbv1.GetRequest) (*gra
 		return nil, internal(err)
 	}
 
+	if err := auth.CheckRead(ctx, req.GetKey().GetKind(), req.GetKey().GetPath(), res); err != nil {
+		return nil, denied(err)
+	}
+
 	return &graphenepbv1.GetResponse{Resource: res}, nil
 }
 
@@ -97,17 +101,21 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 	// A Put may legitimately act on a deleting resource (finalizer removal)
 	// but must not set or clear the mark itself — we carry it over from
 	// the current record.
-	var current *graphenepbv1.Resource
+	current, err := r.currentRecord(ctx, key)
+	if err != nil {
+		return nil, err
+	}
 
-	entry, err := r.st.Get(ctx, key)
+	// Authorize by changed parts, constraints evaluated against the
+	// CURRENT record for updates (a writer cannot move an object out of
+	// its own scope) and the incoming one for creates.
+	against := current
+	if against == nil {
+		against = res
+	}
 
-	switch {
-	case err == nil:
-		if current, err = decodeResource(entry); err != nil {
-			return nil, internal(err)
-		}
-	case !errors.Is(err, store.ErrNotFound):
-		return nil, internal(err)
+	if err := auth.CheckWrite(ctx, kind, res.GetKey().GetPath(), changedParts(current, res), against); err != nil {
+		return nil, denied(err)
 	}
 
 	stored, ok := proto.Clone(res).(*graphenepbv1.Resource)
@@ -164,6 +172,10 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 		return nil, internal(err)
 	}
 
+	if err := auth.CheckDelete(ctx, req.GetKey().GetKind(), req.GetKey().GetPath(), current); err != nil {
+		return nil, denied(err)
+	}
+
 	// No finalizers — remove immediately.
 	if len(current.GetFinalizers()) == 0 {
 		if _, err := r.st.Delete(ctx, key, req.GetExpectedRevision()); err != nil {
@@ -201,6 +213,11 @@ func (r *Resources) List(ctx context.Context, req *graphenepbv1.ListRequest) (*g
 		return nil, status.Error(codes.InvalidArgument, "kind is required")
 	}
 
+	allowed, err := auth.Filter(ctx, auth.VerbList, req.GetKind(), req.GetPathPrefix())
+	if err != nil {
+		return nil, denied(err)
+	}
+
 	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
 
 	limit := int(req.GetPageSize())
@@ -223,7 +240,7 @@ func (r *Resources) List(ctx context.Context, req *graphenepbv1.ListRequest) (*g
 			return nil, internal(err)
 		}
 
-		if matchSelector(res, req.GetSelector()) {
+		if allowed(res) && matchSelector(res, req.GetSelector()) {
 			resp.Resources = append(resp.Resources, res)
 		}
 	}
@@ -240,9 +257,14 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 		return status.Error(codes.InvalidArgument, "kind is required")
 	}
 
-	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
-
 	ctx := srv.Context()
+
+	allowed, err := auth.Filter(ctx, auth.VerbWatch, req.GetKind(), req.GetPathPrefix())
+	if err != nil {
+		return denied(err)
+	}
+
+	prefix := store.EncodePrefix(req.GetKind(), req.GetPathPrefix()...)
 
 	events, err := r.st.Watch(ctx, prefix, req.GetFromStoreRevision())
 	if err != nil {
@@ -255,8 +277,16 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 			return internal(err)
 		}
 
-		// Deletes pass the selector always: the final state is gone and
-		// the watcher must be told regardless of its filter.
+		// The grant predicate is mandatory for every event. For deletes it
+		// is evaluated against the record's final state (prev_kv), while
+		// the client only ever receives the key: visibility is filtered,
+		// content is not leaked.
+		if !allowed(eventView(&event, out)) {
+			continue
+		}
+
+		// Deletes pass the CLIENT selector always: the final state is gone
+		// and the watcher must be told regardless of its filter.
 		if event.Type == store.EventPut && !matchSelector(out.GetResource(), req.GetSelector()) {
 			continue
 		}
@@ -273,6 +303,10 @@ func (r *Resources) Watch(req *graphenepbv1.WatchRequest, srv graphenepbv1.Resou
 // --- definitions --------------------------------------------------------
 
 func (r *Resources) Define(ctx context.Context, req *graphenepbv1.DefineRequest) (*graphenepbv1.DefineResponse, error) {
+	if err := auth.CheckDefine(ctx); err != nil {
+		return nil, denied(err)
+	}
+
 	version, err := r.reg.Define(ctx, req.GetDefinition())
 	if err != nil {
 		return nil, mapRegistryErr(err)
@@ -285,6 +319,10 @@ func (r *Resources) GetDefinition(
 	ctx context.Context,
 	req *graphenepbv1.GetDefinitionRequest,
 ) (*graphenepbv1.GetDefinitionResponse, error) {
+	if _, err := auth.Filter(ctx, auth.VerbGet, registry.KindKind, nil); err != nil {
+		return nil, denied(err)
+	}
+
 	def, err := r.reg.Get(ctx, req.GetKind(), req.GetVersion())
 	if err != nil {
 		return nil, mapRegistryErr(err)
@@ -297,6 +335,10 @@ func (r *Resources) ListDefinitions(
 	ctx context.Context,
 	_ *graphenepbv1.ListDefinitionsRequest,
 ) (*graphenepbv1.ListDefinitionsResponse, error) {
+	if _, err := auth.Filter(ctx, auth.VerbList, registry.KindKind, nil); err != nil {
+		return nil, denied(err)
+	}
+
 	defs, err := r.reg.List(ctx)
 	if err != nil {
 		return nil, mapRegistryErr(err)
@@ -309,6 +351,10 @@ func (r *Resources) WatchDefinitions(
 	req *graphenepbv1.WatchDefinitionsRequest,
 	srv graphenepbv1.ResourceService_WatchDefinitionsServer,
 ) error {
+	if _, err := auth.Filter(srv.Context(), auth.VerbWatch, registry.KindKind, nil); err != nil {
+		return denied(err)
+	}
+
 	events, err := r.st.Watch(srv.Context(), store.EncodePrefix(registry.KindKind), req.GetFromStoreRevision())
 	if err != nil {
 		return internal(err)
@@ -396,7 +442,7 @@ func mapEvent(event *store.Event) (*graphenepbv1.WatchEvent, error) {
 // Paths are dotted, rooted at the envelope: "spec.placement", "status.phase".
 func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) bool {
 	for _, m := range sel {
-		if !matchField(res, m.GetPath(), m.GetValue()) {
+		if !auth.FieldEquals(res, m.GetPath(), m.GetValue()) {
 			return false
 		}
 	}
@@ -404,48 +450,78 @@ func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) b
 	return true
 }
 
-// minSelectorParts: a selector path is at least "<root>.<field>".
-const minSelectorParts = 2
-
-func matchField(res *graphenepbv1.Resource, path, want string) bool {
-	parts := strings.Split(path, ".")
-	if len(parts) < minSelectorParts {
-		return false
+// currentRecord loads the existing record; nil (no error) when absent.
+func (r *Resources) currentRecord(ctx context.Context, key []byte) (*graphenepbv1.Resource, error) {
+	entry, err := r.st.Get(ctx, key)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil //nolint:nilnil // absence is a valid, non-error outcome here
 	}
 
-	var root *schemapb.StructValue
-
-	switch parts[0] {
-	case "spec":
-		root = res.GetSpec()
-	case "status":
-		root = res.GetStatus()
-	default:
-		return false
+	if err != nil {
+		return nil, internal(err)
 	}
 
-	val, ok := lookup(root.ToGo(), parts[1:])
-	if !ok {
-		return false
+	current, err := decodeResource(entry)
+	if err != nil {
+		return nil, internal(err)
 	}
 
-	return fmt.Sprintf("%v", val) == want
+	return current, nil
 }
 
-func lookup(m map[string]any, path []string) (any, bool) {
-	var cur any = m
-	for _, p := range path {
-		obj, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
+// changedParts reports which writable sections a Put actually touches;
+// nil current = create (every present part counts, spec always).
+func changedParts(current, incoming *graphenepbv1.Resource) []auth.Part {
+	if current == nil {
+		parts := []auth.Part{auth.PartSpec}
+		if len(incoming.GetStatus().GetFields()) > 0 {
+			parts = append(parts, auth.PartStatus)
 		}
 
-		if cur, ok = obj[p]; !ok {
-			return nil, false
+		if len(incoming.GetFinalizers()) > 0 {
+			parts = append(parts, auth.PartFinalizers)
 		}
+
+		return parts
 	}
 
-	return cur, true
+	var parts []auth.Part
+	if !proto.Equal(current.GetSpec(), incoming.GetSpec()) {
+		parts = append(parts, auth.PartSpec)
+	}
+
+	if !proto.Equal(current.GetStatus(), incoming.GetStatus()) {
+		parts = append(parts, auth.PartStatus)
+	}
+
+	if !slices.Equal(current.GetFinalizers(), incoming.GetFinalizers()) {
+		parts = append(parts, auth.PartFinalizers)
+	}
+
+	return parts
+}
+
+// eventView is what grant predicates evaluate: the resource for puts, the
+// final (prev_kv) state for deletes.
+func eventView(event *store.Event, out *graphenepbv1.WatchEvent) *graphenepbv1.Resource {
+	if event.Type != store.EventDelete || len(event.Entry.Value) == 0 {
+		return out.GetResource()
+	}
+
+	prev, err := decodeResource(event.Entry)
+	if err != nil {
+		return out.GetResource()
+	}
+
+	return prev
+}
+
+func denied(err error) error {
+	if errors.Is(err, auth.ErrDenied) {
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	return internal(err)
 }
 
 func mapStoreErr(err error, key *graphenepbv1.Key) error {

@@ -56,8 +56,10 @@ const (
 // Event is one element of the watch stream.
 type Event struct {
 	Type EventType
-	// Entry.Value is empty for EventDelete; Entry.Revision is the store
-	// revision of this very write.
+	// For EventDelete, Entry.Value carries the LAST value the key had
+	// (etcd prev_kv semantics): consumers can evaluate filters and
+	// authorization against the final state of the departed record.
+	// Entry.Revision is the store revision of this very write.
 	Entry Entry
 	// StoreRevision equals Entry.Revision; kept explicit as the resume
 	// cursor (WatchRequest.from_store_revision semantics).

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -19,10 +20,19 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/service"
+	"github.com/graphene-ci/graphene/internal/infrastructure/auth/static"
+	"github.com/graphene-ci/graphene/internal/infrastructure/server"
 	"github.com/graphene-ci/graphene/internal/infrastructure/store/bbolt"
 )
 
-func newClient(t *testing.T) graphenepbv1.ResourceServiceClient {
+const (
+	adminToken  = "admin-token"
+	kernelToken = "kernel-k1-token"
+)
+
+// newEnv starts a fully authenticated server (admin + kernel k1 tokens)
+// and returns a client factory keyed by token.
+func newEnv(t *testing.T) func(token string) graphenepbv1.ResourceServiceClient {
 	t.Helper()
 
 	st, err := bbolt.Open(filepath.Join(t.TempDir(), "store.db"))
@@ -32,7 +42,15 @@ func newClient(t *testing.T) graphenepbv1.ResourceServiceClient {
 
 	t.Cleanup(func() { _ = st.Close() })
 
-	srv := grpc.NewServer()
+	source := static.New(
+		static.Entry{Token: adminToken, Credentials: static.Admin("root")},
+		static.Entry{Token: kernelToken, Credentials: static.Kernel("k1")},
+	)
+
+	srv := grpc.NewServer(
+		grpc.UnaryInterceptor(server.UnaryAuth(source)),
+		grpc.StreamInterceptor(server.StreamAuth(source)),
+	)
 	graphenepbv1.RegisterResourceServiceServer(srv, service.NewResources(st, registry.New(st)))
 
 	lis := bufconn.Listen(1 << 20)
@@ -40,19 +58,49 @@ func newClient(t *testing.T) graphenepbv1.ResourceServiceClient {
 
 	t.Cleanup(srv.Stop)
 
-	conn, err := grpc.NewClient("passthrough:///bufnet",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.DialContext(ctx)
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
+	return func(token string) graphenepbv1.ResourceServiceClient {
+		conn, err := grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+				return lis.DialContext(ctx)
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithUnaryInterceptor(bearerUnary(token)),
+			grpc.WithStreamInterceptor(bearerStream(token)),
+		)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+
+		t.Cleanup(func() { _ = conn.Close() })
+
+		return graphenepbv1.NewResourceServiceClient(conn)
 	}
+}
 
-	t.Cleanup(func() { _ = conn.Close() })
+func bearerUnary(token string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any,
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		return invoker(withBearer(ctx, token), method, req, reply, cc, opts...)
+	}
+}
 
-	return graphenepbv1.NewResourceServiceClient(conn)
+func bearerStream(token string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn,
+		method string, streamer grpc.Streamer, opts ...grpc.CallOption,
+	) (grpc.ClientStream, error) {
+		return streamer(withBearer(ctx, token), desc, cc, method, opts...)
+	}
+}
+
+func withBearer(ctx context.Context, token string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+func newClient(t *testing.T) graphenepbv1.ResourceServiceClient {
+	t.Helper()
+
+	return newEnv(t)(adminToken)
 }
 
 func defineVM(t *testing.T, c graphenepbv1.ResourceServiceClient) {
@@ -328,5 +376,182 @@ func TestDefinitionsRoundtrip(t *testing.T) {
 
 	if got.GetDefinition().GetVersion() != 1 {
 		t.Fatalf("definition version: %d", got.GetDefinition().GetVersion())
+	}
+}
+
+func defineExecution(t *testing.T, c graphenepbv1.ResourceServiceClient) {
+	t.Helper()
+
+	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "execution-spec"}).
+		Fields(
+			schemapb.Str("entrypoint").Required(),
+			schemapb.Str("placement").Required(),
+		).
+		MustBuild()
+	stat := schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "execution-status"}).
+		Fields(schemapb.Str("phase")).
+		MustBuild()
+
+	_, err := c.Define(context.Background(), &graphenepbv1.DefineRequest{
+		Definition: &graphenepbv1.ResourceDefinition{
+			Kind:         "Execution",
+			PathSegments: []string{"tenant", "env", "workflow", "run", "node", "attempt"},
+			SpecSchema:   spec,
+			StatusSchema: stat,
+		},
+	})
+	if err != nil {
+		t.Fatalf("define execution: %v", err)
+	}
+}
+
+func executionResource(node, placement string) *graphenepbv1.Resource {
+	return &graphenepbv1.Resource{
+		Key: &graphenepbv1.Key{
+			Kind: "Execution",
+			Path: []string{"acme", "prod", "deploy", "1", node, "1"},
+		},
+		Spec: schemapb.MustStructFromGo(map[string]any{
+			"entrypoint": "shell.bash",
+			"placement":  placement,
+		}),
+	}
+}
+
+func TestKernelSeesOnlyItsExecutions(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t)
+	admin, kern := env(adminToken), env(kernelToken)
+	ctx := context.Background()
+
+	defineExecution(t, admin)
+
+	for node, placement := range map[string]string{"build": "k1", "test": "k2"} {
+		if _, err := admin.Put(ctx, &graphenepbv1.PutRequest{Resource: executionResource(node, placement)}); err != nil {
+			t.Fatalf("put %s: %v", node, err)
+		}
+	}
+
+	// List: the mandatory grant filter hides the foreign execution even
+	// without a client selector.
+	list, err := kern.List(ctx, &graphenepbv1.ListRequest{Kind: "Execution"})
+	if err != nil {
+		t.Fatalf("kernel list: %v", err)
+	}
+
+	if len(list.GetResources()) != 1 {
+		t.Fatalf("kernel list: got %d executions, want 1", len(list.GetResources()))
+	}
+
+	if got := list.GetResources()[0].GetKey().GetPath()[4]; got != "build" {
+		t.Fatalf("kernel list: got %q, want build", got)
+	}
+
+	// Get of a foreign execution is denied outright.
+	_, err = kern.Get(ctx, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: "Execution", Path: []string{"acme", "prod", "deploy", "1", "test", "1"}},
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign get: want PermissionDenied, got %v", err)
+	}
+}
+
+func TestKernelWatchIsFiltered(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t)
+	admin, kern := env(adminToken), env(kernelToken)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	defineExecution(t, admin)
+
+	watcher, err := kern.Watch(ctx, &graphenepbv1.WatchRequest{Kind: "Execution"})
+	if err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+
+	// Foreign first, then own: only the own one must arrive.
+	if _, err := admin.Put(ctx, &graphenepbv1.PutRequest{Resource: executionResource("test", "k2")}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := admin.Put(ctx, &graphenepbv1.PutRequest{Resource: executionResource("build", "k1")}); err != nil {
+		t.Fatal(err)
+	}
+
+	event, err := watcher.Recv()
+	if err != nil {
+		t.Fatalf("recv: %v", err)
+	}
+
+	if got := event.GetResource().GetKey().GetPath()[4]; got != "build" {
+		t.Fatalf("watch leaked foreign execution: got %q", got)
+	}
+}
+
+func TestKernelWritesStatusOnly(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t)
+	admin, kern := env(adminToken), env(kernelToken)
+	ctx := context.Background()
+
+	defineExecution(t, admin)
+
+	put, err := admin.Put(ctx, &graphenepbv1.PutRequest{Resource: executionResource("build", "k1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := kern.Get(ctx, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: "Execution", Path: []string{"acme", "prod", "deploy", "1", "build", "1"}},
+	})
+	if err != nil {
+		t.Fatalf("kernel get own: %v", err)
+	}
+
+	// Status write on its own execution — allowed.
+	res := got.GetResource()
+	res.Status = schemapb.MustStructFromGo(map[string]any{"phase": "running"})
+
+	if _, err := kern.Put(ctx, &graphenepbv1.PutRequest{Resource: res, ExpectedRevision: put.GetRevision()}); err != nil {
+		t.Fatalf("kernel status put: %v", err)
+	}
+
+	// Spec write — denied (Parts).
+	fresh, err := kern.Get(ctx, &graphenepbv1.GetRequest{Key: res.GetKey()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mutated := fresh.GetResource()
+	mutated.Spec = schemapb.MustStructFromGo(map[string]any{
+		"entrypoint": "shell.bash",
+		"placement":  "k2", // trying to move itself out of scope
+	})
+
+	_, err = kern.Put(ctx, &graphenepbv1.PutRequest{Resource: mutated, ExpectedRevision: mutated.GetRevision()})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("kernel spec put: want PermissionDenied, got %v", err)
+	}
+
+	// Define — denied.
+	if _, err := kern.Define(ctx, &graphenepbv1.DefineRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("kernel define: want PermissionDenied, got %v", err)
+	}
+}
+
+func TestUnauthenticatedRejected(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t)
+	bad := env("no-such-token")
+
+	_, err := bad.List(context.Background(), &graphenepbv1.ListRequest{Kind: "Execution"})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unknown token: want Unauthenticated, got %v", err)
 	}
 }

@@ -290,10 +290,14 @@ func (s *Store) write(typ store.EventType, key, value []byte, expectedRevision u
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var newRev, createdRev uint64
+	var (
+		newRev, createdRev uint64
+
+		eventValue = value
+	)
 
 	err := s.db.Update(func(txn *bolt.Tx) error {
-		return s.writeTx(txn, typ, key, value, expectedRevision, &newRev, &createdRev)
+		return s.writeTx(txn, typ, key, value, expectedRevision, &newRev, &createdRev, &eventValue)
 	})
 
 	switch {
@@ -307,7 +311,7 @@ func (s *Store) write(typ store.EventType, key, value []byte, expectedRevision u
 		Type: typ,
 		Entry: store.Entry{
 			Key:             bytes.Clone(key),
-			Value:           bytes.Clone(value),
+			Value:           bytes.Clone(eventValue),
 			Revision:        newRev,
 			CreatedRevision: createdRev,
 		},
@@ -332,12 +336,17 @@ func (s *Store) writeTx(
 	key, value []byte,
 	expectedRevision uint64,
 	newRev, createdRev *uint64,
+	eventValue *[]byte,
 ) error {
 	current := txn.Bucket(bucketCurrent)
 
-	var haveRev uint64
+	var (
+		haveRev   uint64
+		prevValue []byte
+	)
+
 	if raw := current.Get(key); raw != nil {
-		haveRev, *createdRev, _ = decodeCurrent(raw)
+		haveRev, *createdRev, prevValue = decodeCurrent(raw)
 	}
 
 	if haveRev != expectedRevision {
@@ -365,7 +374,14 @@ func (s *Store) writeTx(
 		return fmt.Errorf("current delete: %w", err)
 	}
 
-	if err := txn.Bucket(bucketLog).Put(revKey(*newRev), encodeLogValue(typ, *createdRev, key, value)); err != nil {
+	logged := value
+	if typ == store.EventDelete {
+		// prev_kv semantics: the delete event carries the last value.
+		logged = bytes.Clone(prevValue)
+		*eventValue = logged
+	}
+
+	if err := txn.Bucket(bucketLog).Put(revKey(*newRev), encodeLogValue(typ, *createdRev, key, logged)); err != nil {
 		return fmt.Errorf("log put: %w", err)
 	}
 
