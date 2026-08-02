@@ -4,24 +4,20 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"time"
 
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	schemapb "github.com/gopherex/schemapb/go/schemapb"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	corelink "github.com/graphene-ci/graphene/internal/core/link"
+	"github.com/graphene-ci/graphene/internal/core/presence"
 	"github.com/graphene-ci/graphene/internal/infrastructure/link"
 	tlsutil "github.com/graphene-ci/graphene/internal/infrastructure/tls"
 )
 
 // connect establishes the link to another kernel and starts what rides on
-// it. Today that is the lease renewal — the heartbeat by which the far
-// side knows this kernel is alive (execution work joins later, over the
+// it. Today that is this kernel's presence — it registers itself and keeps
+// its lease alive on the far side (execution work joins later, over the
 // same connection).
 func (k *Kernel) connect(ctx context.Context, group *errgroup.Group) error {
 	transport, err := k.buildLink()
@@ -47,15 +43,9 @@ func (k *Kernel) connect(ctx context.Context, group *errgroup.Group) error {
 	k.closers = append(k.closers, conn.Close)
 	k.log.Info("linked", "mode", k.cfg.Link.Mode, "address", k.cfg.Link.Address)
 
-	if k.cfg.Lease != nil {
-		client := graphenepbv1.NewResourceServiceClient(conn)
+	announce := k.presence(presence.OverClient(graphenepbv1.NewResourceServiceClient(conn)))
 
-		group.Go(func() error {
-			k.renewLease(ctx, client)
-
-			return nil
-		})
-	}
+	group.Go(func() error { return announce.Run(ctx) })
 
 	return nil
 }
@@ -96,61 +86,3 @@ func (k *Kernel) linkTLS() (*tls.Config, error) {
 
 	return tlsConfig, nil
 }
-
-// renewLease writes this kernel's KernelLease at the configured interval.
-// A renewal is a revision bump and nothing more: the far side times
-// expiry with its own clock, so a wrong clock here cannot extend a lease.
-func (k *Kernel) renewLease(ctx context.Context, client graphenepbv1.ResourceServiceClient) {
-	ticker := time.NewTicker(k.cfg.Lease.RenewInterval)
-	defer ticker.Stop()
-
-	for {
-		if err := k.renewOnce(ctx, client); err != nil && ctx.Err() == nil {
-			k.log.Warn("lease renewal failed", "error", err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (k *Kernel) renewOnce(ctx context.Context, client graphenepbv1.ResourceServiceClient) error {
-	key := &graphenepbv1.Key{
-		Kind: leaseKind,
-		Path: []string{k.cfg.Identity.Name},
-	}
-
-	var expected uint64
-
-	got, err := client.Get(ctx, &graphenepbv1.GetRequest{Key: key})
-
-	switch {
-	case err == nil:
-		expected = got.GetResource().GetRevision()
-	case status.Code(err) != codes.NotFound:
-		return fmt.Errorf("read lease: %w", err)
-	}
-
-	_, err = client.Put(ctx, &graphenepbv1.PutRequest{
-		Resource: &graphenepbv1.Resource{
-			Key: key,
-			Spec: schemapb.MustStructFromGo(map[string]any{
-				"kernel":      k.cfg.Identity.Name,
-				"ttl_seconds": int64(k.cfg.Lease.TTL / time.Second),
-			}),
-		},
-		ExpectedRevision: expected,
-	})
-	if err != nil {
-		return fmt.Errorf("write lease: %w", err)
-	}
-
-	return nil
-}
-
-// leaseKind is the kind renewLease writes; kept here to avoid importing the
-// builtin package into the link path.
-const leaseKind = "KernelLease"

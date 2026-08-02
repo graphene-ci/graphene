@@ -139,13 +139,15 @@ spec:
 		t.Fatalf("re-apply printed form: %v", err)
 	}
 
+	// The kernel serving this test registered ITSELF at startup, so the
+	// listing holds two: its own record and the one just applied.
 	listed, err := client.List(ctx, builtin.KindKernel, nil, nil)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 
-	if len(listed) != 1 {
-		t.Fatalf("list: got %d resources, want 1", len(listed))
+	if !listedPath(listed, "control") || !listedPath(listed, "k1") {
+		t.Fatalf("list: %v", listed)
 	}
 
 	if err := client.Delete(ctx, builtin.KindKernel, []string{"k1"}, 0); err != nil {
@@ -180,9 +182,17 @@ func TestWatchStream(t *testing.T) {
 		})
 	}()
 
-	// The empty store syncs immediately.
-	if first := recv(t, events); first.GetType() != graphenepbv1.EventType_EVENT_TYPE_SYNC {
-		t.Fatalf("first event: got %v, want sync", first.GetType())
+	// Catch-up first (this kernel's own registration is already there),
+	// then the marker. Nothing live may arrive before it.
+	for {
+		event := recv(t, events)
+		if event.GetType() == graphenepbv1.EventType_EVENT_TYPE_SYNC {
+			break
+		}
+
+		if event.GetType() != graphenepbv1.EventType_EVENT_TYPE_PUT {
+			t.Fatalf("catch-up event: got %v", event.GetType())
+		}
 	}
 
 	doc := fmt.Sprintf("key:\n  kind: %s\n  path: [k2]\nspec:\n  fields:\n    os: { stringValue: linux }\n    arch: { stringValue: arm64 }\n",
@@ -270,4 +280,14 @@ func recv(t *testing.T, events <-chan *graphenepbv1.WatchEvent) *graphenepbv1.Wa
 
 		return nil
 	}
+}
+
+func listedPath(resources []*graphenepbv1.Resource, name string) bool {
+	for _, res := range resources {
+		if res.GetKey().GetPath()[0] == name {
+			return true
+		}
+	}
+
+	return false
 }

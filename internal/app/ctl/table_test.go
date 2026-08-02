@@ -47,7 +47,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 		t.Fatalf("table: %v", err)
 	}
 
-	head, row := lines(t, table.String())
+	head := header(t, table.String())
 
 	// Path columns are named by the definition, not invented.
 	for _, want := range []string{"KERNEL", "REVISION", "ONLINE"} {
@@ -61,9 +61,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 		t.Fatalf("plain table shows spec columns: %q", head)
 	}
 
-	if !strings.Contains(row, "k1") {
-		t.Fatalf("table row %q misses the path", row)
-	}
+	row := rowFor(t, table.String(), "k1")
 
 	// An absent status field reads as empty, not as a missing column.
 	if !strings.Contains(row, "-") {
@@ -75,16 +73,42 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 		t.Fatalf("wide: %v", err)
 	}
 
-	wideHead, wideRow := lines(t, wide.String())
+	wideHead := header(t, wide.String())
 	for _, want := range []string{"OS", "ARCH"} {
 		if !strings.Contains(wideHead, want) {
 			t.Fatalf("wide header %q misses %s", wideHead, want)
 		}
 	}
 
+	wideRow := rowFor(t, wide.String(), "k1")
+
 	if !strings.Contains(wideRow, "linux") || !strings.Contains(wideRow, "amd64") {
 		t.Fatalf("wide row %q misses the spec values", wideRow)
 	}
+}
+
+// header is the first line; rowFor is the row whose first column is name —
+// a live kernel has registered itself, so a listing is never one row.
+func header(t *testing.T, text string) string {
+	t.Helper()
+
+	head, _ := lines(t, text)
+
+	return head
+}
+
+func rowFor(t *testing.T, text, name string) string {
+	t.Helper()
+
+	for _, row := range strings.Split(strings.TrimRight(text, "\n"), "\n")[1:] {
+		if strings.HasPrefix(row, name+" ") {
+			return row
+		}
+	}
+
+	t.Fatalf("no row for %q in:\n%s", name, text)
+
+	return ""
 }
 
 // Without a definition (an unknown kind) the table still prints rather

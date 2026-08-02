@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -163,16 +164,26 @@ auth: { bootstrap: { token: { inline: %s } } }
 	client := dialControl(t, addr, filepath.Join(controlDir, "tls"), bootstrapToken)
 	waitServing(ctx, t, client)
 
-	// The operator registers the worker kernel and provisions its identity.
-	putResource(ctx, t, client, builtin.KindKernel, []string{"k1"},
-		schemapb.MustStructFromGo(map[string]any{"os": "linux", "arch": "amd64"}))
-
+	// The operator provisions the worker's identity and grants — and
+	// NOTHING else. The Kernel resource is not written here: the worker
+	// registers itself, because os and arch are facts about its machine
+	// that nobody else should be typing in.
 	putResource(ctx, t, client, builtin.KindRole, []string{"kernel-default"},
-		auth.GrantsToSpec([]auth.Grant{{
-			Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
-			Kind:  builtin.KindKernelLease,
-			Where: []auth.Constraint{{Path: "spec.kernel", Equal: "${principal.name}"}},
-		}}))
+		auth.GrantsToSpec([]auth.Grant{
+			{
+				Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
+				Kind:  builtin.KindKernelLease,
+				Where: []auth.Constraint{{Path: "spec.kernel", Equal: "${principal.name}"}},
+			},
+			{
+				// Its own Kernel record, spec only: what it IS it may say,
+				// what it is JUDGED to be (online) stays the controller's.
+				Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut},
+				Kind:       builtin.KindKernel,
+				PathPrefix: []string{"${principal.name}"},
+				Parts:      []auth.Part{auth.PartSpec},
+			},
+		}))
 
 	putResource(ctx, t, client, builtin.KindIdentity, []string{"k1"},
 		schemapb.MustStructFromGo(map[string]any{
@@ -198,6 +209,20 @@ lease: { ttl: 5s, renew_interval: 200ms }
 `, workerDir, addr, caFile, workerToken))
 
 	waitOnline(ctx, t, client)
+
+	// The Kernel resource exists although nobody wrote it here, and it
+	// describes the worker's own machine.
+	got, err := client.Get(ctx, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"k1"}},
+	})
+	if err != nil {
+		t.Fatalf("read the self-registered kernel: %v", err)
+	}
+
+	spec := got.GetResource().GetSpec().ToGo()
+	if spec["os"] != runtime.GOOS || spec["arch"] != runtime.GOARCH {
+		t.Fatalf("self-registration described someone else: %v", spec)
+	}
 }
 
 func mustCA(t *testing.T, dir string) []byte {

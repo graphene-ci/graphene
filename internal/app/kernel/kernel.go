@@ -8,7 +8,7 @@
 //	blobs   → content bytes are held here
 //	listen  → the API is served (tcp with tls, unix socket)
 //	link    → a connection to another kernel is established
-//	lease   → liveness is renewed over that link
+//	lease   → how long this kernel's presence vouches for it
 package kernel
 
 import (
@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -27,6 +28,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/core/blob"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
 	"github.com/graphene-ci/graphene/internal/core/controller"
+	"github.com/graphene-ci/graphene/internal/core/presence"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/core/store"
@@ -161,6 +163,22 @@ func (k *Kernel) bootstrapCredentials() (string, auth.Credentials, error) {
 	return token, creds, nil
 }
 
+// presence builds this kernel's self-registration over the given writer.
+// Where it writes is the only difference between a worker announcing
+// itself across a link and a control kernel announcing itself into the
+// store it holds — so there is one construction, not two.
+func (k *Kernel) presence(writer presence.Writer) *presence.Kernel {
+	return &presence.Kernel{
+		Writer:   writer,
+		Name:     k.cfg.Identity.Name,
+		OS:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		TTL:      k.cfg.Lease.TTL,
+		Interval: k.cfg.Lease.RenewInterval,
+		Log:      k.log,
+	}
+}
+
 // Run starts everything configured and blocks until ctx is cancelled or a
 // component fails.
 func (k *Kernel) Run(ctx context.Context) error {
@@ -181,6 +199,15 @@ func (k *Kernel) Run(ctx context.Context) error {
 
 			return nil
 		})
+	}
+
+	// A kernel that holds the truth registers into it directly. With a
+	// link it registers over there instead (connect does that) — a kernel
+	// announces itself once, to whoever is keeping track of it.
+	if k.resources != nil && k.cfg.Link == nil {
+		announce := k.presence(presence.OverService(k.resources))
+
+		group.Go(func() error { return announce.Run(controller.SystemContext(ctx)) })
 	}
 
 	if k.cfg.Listen != nil {

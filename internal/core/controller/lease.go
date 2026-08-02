@@ -28,8 +28,7 @@ import (
 // anew (expiry is delayed by at most one ttl — the safe direction).
 //
 // Kernel.status.online is written by this controller only; the Kernel
-// resource itself is created by the operator when the join token is
-// issued.
+// resource itself is registered by the kernel it describes.
 type Lease struct {
 	resources *service.Resources
 	st        store.Store

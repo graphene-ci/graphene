@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/graphene-ci/graphene/internal/app/config"
 )
@@ -56,8 +57,14 @@ auth: { bootstrap: { token: { inline: secret } } }
 	}
 
 	// Absent sections stay nil — the kernel simply lacks those capabilities.
-	if cfg.Link != nil || cfg.Lease != nil {
-		t.Errorf("absent sections materialized: link=%v lease=%v", cfg.Link, cfg.Lease)
+	if cfg.Link != nil {
+		t.Errorf("absent section materialized: link=%v", cfg.Link)
+	}
+
+	// Presence is not a capability: every kernel announces itself, so the
+	// lease section is always there with its defaults.
+	if cfg.Lease.TTL != 30*time.Second || cfg.Lease.RenewInterval != 10*time.Second {
+		t.Errorf("lease defaults: %+v", cfg.Lease)
 	}
 
 	// Defaults inside present sections apply.
@@ -142,10 +149,6 @@ func TestValidationRejectsIncoherentCombinations(t *testing.T) {
 		"via without relay": {
 			body: "link: { mode: via, token: { inline: t } }\n",
 			want: config.ErrLinkVia,
-		},
-		"lease without link": {
-			body: "store: {}\nlease: { ttl: 1s }\n",
-			want: config.ErrLeaseWithoutLink,
 		},
 		"auth without listen": {
 			body: "store: {}\nauth: { bootstrap: { token: { inline: t } } }\n",

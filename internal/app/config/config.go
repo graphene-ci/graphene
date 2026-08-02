@@ -31,8 +31,10 @@ type Config struct {
 	Auth *Auth `mapstructure:"auth"`
 	// Link connects this kernel to another one.
 	Link *Link `mapstructure:"link"`
-	// Lease configures the liveness heartbeat sent over the link.
-	Lease *Lease `mapstructure:"lease"`
+	// Lease configures this kernel's presence: how long a renewal vouches
+	// for it and how often it renews. Every kernel has one — it registers
+	// itself either across its link or into the store it holds.
+	Lease Lease `mapstructure:"lease"`
 }
 
 // Identity is who this kernel is: one name, unique across the
@@ -177,7 +179,6 @@ var (
 	ErrLinkAddress       = errors.New("config: link mode dialout requires address")
 	ErrLinkVia           = errors.New("config: link mode via requires the via section")
 	ErrLinkToken         = errors.New("config: link requires a token")
-	ErrLeaseWithoutLink  = errors.New("config: lease requires link")
 	ErrAuthWithoutListen = errors.New("config: auth requires listen (nobody would present the token)")
 )
 
@@ -216,10 +217,6 @@ func (c *Config) validateServing() error {
 }
 
 func (c *Config) validateLink() error {
-	if c.Lease != nil && c.Link == nil {
-		return ErrLeaseWithoutLink
-	}
-
 	if c.Link == nil {
 		return nil
 	}

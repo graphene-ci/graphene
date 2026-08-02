@@ -40,9 +40,11 @@ func Definitions() []*graphenepbv1.ResourceDefinition {
 	}
 }
 
-// Kernel — a registered worker kernel. Created by the OPERATOR when the
-// join token is issued; spec is operator-owned, status is written by the
-// lease controller only.
+// Kernel — a kernel that has announced itself. The SPEC is written by the
+// kernel it describes (core/presence): os and arch are facts about that
+// machine, and nobody else should be typing them in. The STATUS is written
+// by the lease controller only — what a kernel is, it says; what it is
+// judged to be, it is told.
 func kernelDefinition() *graphenepbv1.ResourceDefinition {
 	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Namespace: schemaNS, Name: "kernel-spec", Version: "v1"}).
 		Fields(
