@@ -254,7 +254,7 @@ func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
 
 	// The grants of a role are confined to the tenant that role lives in,
 	// whatever its author wrote: authority never crosses tenants.
-	s.roles[pathName] = auth.ScopeToTenant(grants, res.GetKey().GetPath()[0])
+	s.roles[pathName] = auth.ScopeToTenant(grants, key.FromProto(res.GetKey()).Tenant())
 	s.reindexLocked()
 }
 
@@ -278,7 +278,7 @@ func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 	spec := auth.IdentityFromSpec(res.GetSpec())
 
 	s.identities[pathName] = identity{
-		tenant:  path[0],
+		tenant:  key.FromProto(res.GetKey()).Tenant(),
 		name:    path[1],
 		kind:    spec.PrincipalKind,
 		roles:   spec.Roles,

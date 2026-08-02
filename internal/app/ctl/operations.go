@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+
+	"github.com/graphene-ci/graphene/internal/core/key"
 )
 
 var (
@@ -83,7 +84,7 @@ func (c *Client) Apply(ctx context.Context, raw []byte) ([]*graphenepbv1.Key, er
 			Resource:         res,
 			ExpectedRevision: res.GetRevision(),
 		}); err != nil {
-			return applied, fmt.Errorf("ctl: apply %s: %w", keyText(res.GetKey()), err)
+			return applied, fmt.Errorf("ctl: apply %s: %w", key.FromProto(res.GetKey()).String(), err)
 		}
 
 		applied = append(applied, res.GetKey())
@@ -163,17 +164,4 @@ func (c *Client) Definitions(ctx context.Context) ([]*graphenepbv1.ResourceDefin
 	}
 
 	return resp.GetDefinitions(), nil
-}
-
-func keyText(key *graphenepbv1.Key) string {
-	var out strings.Builder
-
-	out.WriteString(key.GetKind())
-
-	for _, seg := range key.GetPath() {
-		out.WriteByte('/')
-		out.WriteString(seg)
-	}
-
-	return out.String()
 }

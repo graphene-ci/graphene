@@ -58,7 +58,7 @@ func (r *Resources) Get(ctx context.Context, req *graphenepbv1.GetRequest) (*gra
 
 	entry, err := r.st.Get(ctx, storedKey)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
+		return nil, status.Errorf(codes.NotFound, "%s not found", key.FromProto(req.GetKey()).String())
 	}
 
 	if err != nil {
@@ -168,7 +168,7 @@ func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest)
 
 	entry, err := r.st.Get(ctx, storedKey)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, status.Errorf(codes.NotFound, "%s not found", keyString(req.GetKey()))
+		return nil, status.Errorf(codes.NotFound, "%s not found", key.FromProto(req.GetKey()).String())
 	}
 
 	if err != nil {
@@ -417,10 +417,6 @@ func storeKey(k *graphenepbv1.Key) ([]byte, error) {
 	return key.FromProto(k).Encode(), nil
 }
 
-func keyString(k *graphenepbv1.Key) string {
-	return key.FromProto(k).String()
-}
-
 // DecodeEntry unmarshals a stored entry into the resource it holds —
 // shared with in-process consumers of raw store events (controllers).
 func DecodeEntry(e store.Entry) (*graphenepbv1.Resource, error) {
@@ -495,10 +491,7 @@ func (r *Resources) checkAuthority(ctx context.Context, kind string, res, curren
 // an Identity hands those grants out. Either way the writer must already
 // hold everything it gives away (auth.CheckEscalation).
 func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
-	tenant := ""
-	if path := res.GetKey().GetPath(); len(path) > 0 {
-		tenant = path[0]
-	}
+	tenant := key.FromProto(res.GetKey()).Tenant()
 
 	switch kind {
 	case builtin.KindRole:
@@ -547,10 +540,7 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 		return nil // nothing existed, nothing is lost
 	}
 
-	tenant := ""
-	if path := current.GetKey().GetPath(); len(path) > 0 {
-		tenant = path[0]
-	}
+	tenant := key.FromProto(current.GetKey()).Tenant()
 
 	switch kind {
 	case builtin.KindRole:
@@ -696,11 +686,11 @@ func denied(err error) error {
 func mapStoreErr(err error, target *graphenepbv1.Key) error {
 	switch {
 	case errors.Is(err, store.ErrRevisionMismatch):
-		return status.Errorf(codes.Aborted, "%s: revision mismatch — re-read and retry", keyString(target))
+		return status.Errorf(codes.Aborted, "%s: revision mismatch — re-read and retry", key.FromProto(target).String())
 	case errors.Is(err, store.ErrNotFound):
-		return status.Errorf(codes.NotFound, "%s not found", keyString(target))
+		return status.Errorf(codes.NotFound, "%s not found", key.FromProto(target).String())
 	case errors.Is(err, store.ErrCompacted):
-		return status.Errorf(codes.OutOfRange, "%s: revision compacted", keyString(target))
+		return status.Errorf(codes.OutOfRange, "%s: revision compacted", key.FromProto(target).String())
 	default:
 		return internal(err)
 	}

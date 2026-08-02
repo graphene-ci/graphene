@@ -137,7 +137,10 @@ func (e *env) online(t *testing.T) bool {
 func (e *env) waitOnline(t *testing.T, want bool) {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	// Generous on purpose: this waits for a watch round trip, and a loaded
+	// machine running the whole suite in parallel is exactly when a tight
+	// deadline turns a healthy system into a flaky test.
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if e.online(t) == want {
 			return

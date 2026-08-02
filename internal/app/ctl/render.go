@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+
+	"github.com/graphene-ci/graphene/internal/core/key"
 )
 
 // WriteResources prints resources as the canonical YAML stream.
@@ -51,13 +53,13 @@ func WriteEvent(out io.Writer, event *graphenepbv1.WatchEvent) error {
 
 	case graphenepbv1.EventType_EVENT_TYPE_DELETE:
 		_, err := fmt.Fprintf(out, "# deleted %s at revision %d\n",
-			keyText(event.GetResource().GetKey()), event.GetStoreRevision())
+			key.FromProto(event.GetResource().GetKey()), event.GetStoreRevision())
 
 		return wrapWrite(err)
 
 	case graphenepbv1.EventType_EVENT_TYPE_PUT, graphenepbv1.EventType_EVENT_TYPE_UNSPECIFIED:
 		if _, err := fmt.Fprintf(out, "# %s at revision %d\n",
-			keyText(event.GetResource().GetKey()), event.GetStoreRevision()); err != nil {
+			key.FromProto(event.GetResource().GetKey()), event.GetStoreRevision()); err != nil {
 			return wrapWrite(err)
 		}
 

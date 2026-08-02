@@ -5,6 +5,8 @@ import (
 	"slices"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+
+	"github.com/graphene-ci/graphene/internal/core/key"
 )
 
 // CheckRead authorizes a Get of the fetched resource.
@@ -203,7 +205,7 @@ func tenantAllows(grant *Grant, path []string) bool {
 		return true
 	}
 
-	return path[0] == grant.Tenant
+	return key.New("", path...).Tenant() == grant.Tenant
 }
 
 // scopesOverlap: a List/Watch request prefix and a grant scope can share
