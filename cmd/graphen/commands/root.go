@@ -7,6 +7,7 @@ import (
 
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/block"
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/ci"
+	"github.com/graphene-ci/graphene/cmd/graphen/commands/ctl"
 	"github.com/graphene-ci/graphene/cmd/graphen/commands/kernel"
 )
 
@@ -23,6 +24,7 @@ func newRootCommand() *cobra.Command {
 
 	command.AddCommand(
 		kernel.Cmd,
+		ctl.Cmd,
 		ci.Cmd,
 		block.Cmd,
 	)
