@@ -4,8 +4,10 @@ go 1.26
 
 require (
 	github.com/gopherex/schemapb/go v0.0.0-20260731140901-09887d4fe14e
+	github.com/gopherex/xconf v1.1.1
 	github.com/graphene-ci/graphenepb v0.0.0-20260731174712-1c10b45d62fe
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.36.11
 	sigs.k8s.io/yaml v1.6.0
@@ -13,6 +15,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/cbroglie/mustache v1.4.0 // indirect
 	github.com/google/cel-go v0.30.0 // indirect
@@ -23,6 +26,7 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240826202546-f6391c0de4c7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240826202546-f6391c0de4c7 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (

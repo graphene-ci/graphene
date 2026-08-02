@@ -1,11 +1,17 @@
 package kernel
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/graphene-ci/graphene/internal/app/config"
+	appkernel "github.com/graphene-ci/graphene/internal/app/kernel"
 )
 
 var (
@@ -13,19 +19,22 @@ var (
 	errConfigRequired = errors.New("--config is required")
 )
 
+// RunFlags are the inputs of the run command. Everything else about a
+// kernel lives in its configuration file (or environment).
 type RunFlags struct {
 	Config string
 }
 
 func newRunFlags(command *cobra.Command) (*RunFlags, error) {
-	config, err := command.Flags().GetString("config")
+	path, err := command.Flags().GetString("config")
 	if err != nil {
 		return nil, fmt.Errorf("read --config: %w", err)
 	}
 
-	return &RunFlags{Config: config}, nil
+	return &RunFlags{Config: path}, nil
 }
 
+// Validate checks the flag values.
 func (flags *RunFlags) Validate() error {
 	if flags == nil {
 		return errFlagsRequired
@@ -38,10 +47,41 @@ func (flags *RunFlags) Validate() error {
 	return nil
 }
 
+// Run loads the configuration, assembles the kernel and serves until the
+// process is asked to stop.
 func Run(flags *RunFlags) error {
 	if err := flags.Validate(); err != nil {
 		return err
 	}
+
+	cfg, err := config.Load(flags.Config)
+	if err != nil {
+		return fmt.Errorf("kernel run: %w", err)
+	}
+
+	log := appkernel.NewLogger(cfg.Log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	kern, err := appkernel.New(ctx, cfg, log)
+	if err != nil {
+		return fmt.Errorf("kernel run: %w", err)
+	}
+
+	defer func() {
+		if cerr := kern.Close(); cerr != nil {
+			log.Error("shutdown", "error", cerr)
+		}
+	}()
+
+	log.Info("kernel starting", "tenant", cfg.Identity.Tenant, "name", cfg.Identity.Name)
+
+	if err := kern.Run(ctx); err != nil {
+		return fmt.Errorf("kernel run: %w", err)
+	}
+
+	log.Info("kernel stopped")
 
 	return nil
 }
