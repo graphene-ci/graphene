@@ -47,9 +47,9 @@ func completeSelector(command *cobra.Command, args []string, toComplete string) 
 
 func completeFormat(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 	return []string{
-		string(appctl.FormatYAML) + "\tcanonical exchange form (apply reads it back)",
-		string(appctl.FormatJSON) + "\tsame content as json",
-		string(appctl.FormatName) + "\taddresses only",
+		string(appctl.FormatYAML),
+		string(appctl.FormatJSON),
+		string(appctl.FormatName),
 	}, cobra.ShellCompDirectiveNoFileComp
 }
 

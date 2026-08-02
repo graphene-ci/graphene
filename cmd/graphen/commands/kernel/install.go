@@ -56,10 +56,12 @@ func completions(command *cobra.Command) map[install.Shell][]byte {
 	root := command.Root()
 	out := map[install.Shell][]byte{}
 
+	// Without descriptions: a tab press then lists plain names in one
+	// column instead of a name/description table.
 	renderers := map[install.Shell]func(io.Writer) error{
-		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, true) },
-		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletion(w) },
-		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, true) },
+		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, false) },
+		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletionNoDesc(w) },
+		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, false) },
 	}
 
 	for shell, render := range renderers {
@@ -331,8 +333,6 @@ func newStatusCommand() *cobra.Command {
 }
 
 func completeScope(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	return []string{
-		string(install.ScopeUser) + "\tXDG directories, no privileges",
-		string(install.ScopeSystem) + "\tFHS directories, needs root",
-	}, cobra.ShellCompDirectiveNoFileComp
+	return []string{string(install.ScopeUser), string(install.ScopeSystem)},
+		cobra.ShellCompDirectiveNoFileComp
 }
