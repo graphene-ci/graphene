@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"math/big"
 	"net"
 	"path/filepath"
@@ -128,6 +129,39 @@ func TestRelayChain(t *testing.T) {
 	go func() { _ = link.ServeRelay(ctx, relay2, link.Via(relay1.Addr().String(), "t1"), "t2") }()
 
 	assertAlive(t, link.Via(relay2.Addr().String(), "t2"), nil)
+}
+
+func TestRelayChainOfFour(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	controlLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newControl(t, nil)
+
+	go func() { _ = srv.Serve(controlLis) }()
+
+	// r1 → control, r2 → r1, r3 → r2, r4 → r3; the client knows only r4.
+	// Every hop has its own token; each relay's OK transitively proves the
+	// rest of the chain is up.
+	upstream := link.TCP(controlLis.Addr().String())
+
+	for hop := 1; hop <= 4; hop++ {
+		lis := listen(t)
+		token := fmt.Sprintf("hop-%d", hop)
+		hopUpstream := upstream
+
+		go func() { _ = link.ServeRelay(ctx, lis, hopUpstream, token) }()
+
+		upstream = link.Via(lis.Addr().String(), token)
+	}
+
+	assertAlive(t, upstream, nil)
 }
 
 func TestRelayRejectsBadToken(t *testing.T) {
