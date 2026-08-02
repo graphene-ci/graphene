@@ -62,7 +62,15 @@ func completions(command *cobra.Command) map[install.Shell][]byte {
 	// is what produces the one-per-line list — and it says what the
 	// candidate means.
 	renderers := map[install.Shell]func(io.Writer) error{
-		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, true) },
+		install.ShellBash: func(w io.Writer) error {
+			if err := root.GenBashCompletionV2(w, true); err != nil {
+				return fmt.Errorf("render bash completion: %w", err)
+			}
+
+			_, err := io.WriteString(w, install.BashOneColumn)
+
+			return err //nolint:wrapcheck // a buffer write, nothing to add
+		},
 		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletion(w) },
 		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, true) },
 	}
