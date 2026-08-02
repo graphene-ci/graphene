@@ -56,12 +56,15 @@ func completions(command *cobra.Command) map[install.Shell][]byte {
 	root := command.Root()
 	out := map[install.Shell][]byte{}
 
-	// Without descriptions: a tab press then lists plain names in one
-	// column instead of a name/description table.
+	// With descriptions: readline lays candidates out in as many columns
+	// as the terminal fits, so bare names get packed several per line.
+	// A description makes each candidate too wide to share a line, which
+	// is what produces the one-per-line list — and it says what the
+	// candidate means.
 	renderers := map[install.Shell]func(io.Writer) error{
-		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, false) },
-		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletionNoDesc(w) },
-		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, false) },
+		install.ShellBash: func(w io.Writer) error { return root.GenBashCompletionV2(w, true) },
+		install.ShellZsh:  func(w io.Writer) error { return root.GenZshCompletion(w) },
+		install.ShellFish: func(w io.Writer) error { return root.GenFishCompletion(w, true) },
 	}
 
 	for shell, render := range renderers {
@@ -333,6 +336,8 @@ func newStatusCommand() *cobra.Command {
 }
 
 func completeScope(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	return []string{string(install.ScopeUser), string(install.ScopeSystem)},
-		cobra.ShellCompDirectiveNoFileComp
+	return []string{
+		string(install.ScopeUser) + "\tXDG directories, no privileges",
+		string(install.ScopeSystem) + "\tFHS directories, needs root",
+	}, cobra.ShellCompDirectiveNoFileComp
 }
