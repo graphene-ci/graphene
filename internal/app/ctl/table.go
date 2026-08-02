@@ -149,6 +149,19 @@ func upper(names []string) []string {
 	return out
 }
 
+// pathShape renders a kind's path as the template an operator fills in:
+// "/<tenant>/<kernel>" — segment names are placeholders, not literals.
+func pathShape(segments []string) string {
+	var shape strings.Builder
+	for _, segment := range segments {
+		shape.WriteString("/<")
+		shape.WriteString(segment)
+		shape.WriteString(">")
+	}
+
+	return shape.String()
+}
+
 // WriteDefinitionsTable prints the kind table: what a kernel knows and the
 // shape of each kind's path.
 func WriteDefinitionsTable(out io.Writer, defs []*graphenepbv1.ResourceDefinition) error {
@@ -163,7 +176,7 @@ func WriteDefinitionsTable(out io.Writer, defs []*graphenepbv1.ResourceDefinitio
 
 	for _, def := range sorted {
 		line := fmt.Sprintf("%s\tv%d\t%s",
-			def.GetKind(), def.GetVersion(), "/"+strings.Join(def.GetPathSegments(), "/"))
+			def.GetKind(), def.GetVersion(), pathShape(def.GetPathSegments()))
 
 		if _, err := fmt.Fprintln(writer, line); err != nil {
 			return fmt.Errorf("ctl: write: %w", err)
