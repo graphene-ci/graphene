@@ -40,6 +40,7 @@ type Target struct {
 // Client is a connected kernel API client.
 type Client struct {
 	conn      *grpc.ClientConn
+	target    Target
 	Resources graphenepbv1.ResourceServiceClient
 	Blobs     graphenepbv1.BlobServiceClient
 }
@@ -63,10 +64,14 @@ func Connect(target Target) (*Client, error) {
 
 	return &Client{
 		conn:      conn,
+		target:    target,
 		Resources: graphenepbv1.NewResourceServiceClient(conn),
 		Blobs:     graphenepbv1.NewBlobServiceClient(conn),
 	}, nil
 }
+
+// Target reports how this client is connected — completion reuses it.
+func (c *Client) Target() Target { return c.target }
 
 // Close releases the connection.
 func (c *Client) Close() error {

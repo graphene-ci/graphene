@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -34,7 +35,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/store/bbolt"
 )
 
-const leaseSweepInterval = 5 * time.Second
+const (
+	leaseSweepInterval = 5 * time.Second
+	dataDirMode        = 0o750
+)
 
 // Kernel is an assembled, not yet running, kernel.
 type Kernel struct {
@@ -76,7 +80,18 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*Kernel, er
 }
 
 func (k *Kernel) openBackends() error {
+	// A fresh install has nothing on disk yet: the data directory (and
+	// with it the parents of the store file and the blob tree) is ours to
+	// create.
+	if err := os.MkdirAll(k.cfg.DataDir, dataDirMode); err != nil {
+		return fmt.Errorf("kernel: create data dir %s: %w", k.cfg.DataDir, err)
+	}
+
 	if k.cfg.Store != nil {
+		if err := os.MkdirAll(filepath.Dir(k.cfg.Store.Path), dataDirMode); err != nil {
+			return fmt.Errorf("kernel: create store dir: %w", err)
+		}
+
 		st, err := bbolt.Open(k.cfg.Store.Path)
 		if err != nil {
 			return fmt.Errorf("kernel: open store: %w", err)

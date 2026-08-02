@@ -16,24 +16,32 @@ import (
 	appctl "github.com/graphene-ci/graphene/internal/app/ctl"
 )
 
-// GetFlags selects what to read: a full path reads one resource, a shorter
-// prefix lists a subtree.
+// Resources are addressed positionally: `get Kernel acme/k1` names one,
+// `get Kernel acme` names the subtree under that prefix. The kind's
+// definition says how many segments a full path takes, so the two cases
+// need no flag to tell them apart.
+
+// GetFlags selects what to read.
 type GetFlags struct {
 	Target   *TargetFlags
-	Kind     string
-	Path     []string
+	Address  appctl.Address
 	Selector []string
-	Exact    bool
+	Format   string
 }
 
-// Get reads resources and prints them as YAML.
+// Get reads resources and prints them.
 func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
 	if flags == nil {
 		return errFlagsRequired
 	}
 
-	if flags.Kind == "" {
+	if flags.Address.Kind == "" {
 		return errKindRequired
+	}
+
+	format, err := appctl.ParseFormat(flags.Format)
+	if err != nil {
+		return fmt.Errorf("output: %w", err)
 	}
 
 	client, err := connect(flags.Target)
@@ -43,37 +51,64 @@ func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
 
 	defer func() { _ = client.Close() }()
 
-	if flags.Exact {
-		res, err := client.Get(ctx, flags.Kind, flags.Path)
+	resources, err := readAddress(ctx, client, flags.Address, flags.Selector)
+	if err != nil {
+		return err
+	}
+
+	if err := appctl.Write(out, format, resources); err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
+
+	return nil
+}
+
+// readAddress fetches one resource for a full path, or the subtree under a
+// shorter one.
+func readAddress(
+	ctx context.Context,
+	client *appctl.Client,
+	addr appctl.Address,
+	selector []string,
+) ([]*graphenepbv1.Resource, error) {
+	exact, err := client.Exact(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", addr, err)
+	}
+
+	if exact {
+		res, err := client.Get(ctx, addr.Kind, addr.Path)
 		if err != nil {
-			return err //nolint:wrapcheck // the client already names the operation
+			return nil, fmt.Errorf("get: %w", err)
 		}
 
-		return appctl.WriteResources(out, []*graphenepbv1.Resource{res}) //nolint:wrapcheck // same
+		return []*graphenepbv1.Resource{res}, nil
 	}
 
-	selector, err := appctl.ParseSelector(flags.Selector)
+	match, err := appctl.ParseSelector(selector)
 	if err != nil {
-		return err //nolint:wrapcheck // same
+		return nil, fmt.Errorf("selector: %w", err)
 	}
 
-	resources, err := client.List(ctx, flags.Kind, flags.Path, selector)
+	resources, err := client.List(ctx, addr.Kind, addr.Path, match)
 	if err != nil {
-		return err //nolint:wrapcheck // same
+		return nil, fmt.Errorf("list: %w", err)
 	}
 
-	return appctl.WriteResources(out, resources) //nolint:wrapcheck // same
+	return resources, nil
 }
 
 func newGetCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:   "get",
+		Use:   "get <kind> [path]",
 		Short: "Read resources",
-		Example: "  graphen ctl get --kind Kernel --path acme\n" +
-			"  graphen ctl get --kind Kernel --path acme,k1 --exact",
-		Args: cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			flags, err := getFlags(command)
+		Example: "  graphen ctl get Kernel acme\n" +
+			"  graphen ctl get Kernel acme/k1\n" +
+			"  graphen ctl get Execution acme/prod --selector spec.placement=k1 -o name",
+		Args:              cobra.RangeArgs(1, 2), //nolint:mnd // kind, optional path
+		ValidArgsFunction: completeAddress,
+		RunE: func(command *cobra.Command, args []string) error {
+			flags, err := getFlags(command, args)
 			if err != nil {
 				return err
 			}
@@ -82,28 +117,16 @@ func newGetCommand() *cobra.Command {
 		},
 	}
 
-	command.Flags().String("kind", "", "resource kind")
-	command.Flags().StringSlice("path", nil, "path segments (a prefix lists, a full path with --exact reads)")
-	command.Flags().StringSlice("selector", nil, "field match, e.g. spec.placement=k1")
-	command.Flags().Bool("exact", false, "read exactly this path instead of listing under it")
+	addSelectorFlag(command)
+	addFormatFlag(command)
 
 	return command
 }
 
-func getFlags(command *cobra.Command) (*GetFlags, error) {
+func getFlags(command *cobra.Command, args []string) (*GetFlags, error) {
 	target, err := newTargetFlags(command)
 	if err != nil {
 		return nil, err
-	}
-
-	kind, err := command.Flags().GetString("kind")
-	if err != nil {
-		return nil, fmt.Errorf("read --kind: %w", err)
-	}
-
-	path, err := command.Flags().GetStringSlice("path")
-	if err != nil {
-		return nil, fmt.Errorf("read --path: %w", err)
 	}
 
 	selector, err := command.Flags().GetStringSlice("selector")
@@ -111,12 +134,30 @@ func getFlags(command *cobra.Command) (*GetFlags, error) {
 		return nil, fmt.Errorf("read --selector: %w", err)
 	}
 
-	exact, err := command.Flags().GetBool("exact")
+	format, err := command.Flags().GetString("output")
 	if err != nil {
-		return nil, fmt.Errorf("read --exact: %w", err)
+		return nil, fmt.Errorf("read --output: %w", err)
 	}
 
-	return &GetFlags{Target: target, Kind: kind, Path: path, Selector: selector, Exact: exact}, nil
+	return &GetFlags{
+		Target:   target,
+		Address:  addressFromArgs(args),
+		Selector: selector,
+		Format:   format,
+	}, nil
+}
+
+func addressFromArgs(args []string) appctl.Address {
+	kind, path := "", ""
+	if len(args) > 0 {
+		kind = args[0]
+	}
+
+	if len(args) > 1 {
+		path = args[1]
+	}
+
+	return appctl.ParseAddress(kind, path)
 }
 
 // ApplyFlags is the input of apply: a file, or "-" for standard input.
@@ -143,15 +184,16 @@ func Apply(ctx context.Context, in io.Reader, out io.Writer, flags *ApplyFlags) 
 
 	defer func() { _ = client.Close() }()
 
-	applied, err := client.Apply(ctx, raw)
+	applied, applyErr := client.Apply(ctx, raw)
 	for _, key := range applied {
-		if _, werr := fmt.Fprintf(out, "applied %s\n", keyText(key)); werr != nil {
-			return fmt.Errorf("write: %w", werr)
+		if _, err := fmt.Fprintf(out, "applied %s %s\n",
+			key.GetKind(), strings.Join(key.GetPath(), "/")); err != nil {
+			return fmt.Errorf("write: %w", err)
 		}
 	}
 
-	if err != nil {
-		return err //nolint:wrapcheck // the client already names the operation
+	if applyErr != nil {
+		return fmt.Errorf("apply: %w", applyErr)
 	}
 
 	return nil
@@ -179,7 +221,7 @@ func newApplyCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "apply",
 		Short:   "Write resources from YAML",
-		Example: "  graphen ctl apply -f role.yaml\n  cat role.yaml | graphen ctl apply",
+		Example: "  graphen ctl apply -f role.yaml\n  graphen ctl get Role acme/admin | graphen ctl apply",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			target, err := newTargetFlags(command)
@@ -199,14 +241,17 @@ func newApplyCommand() *cobra.Command {
 
 	command.Flags().StringP("file", "f", "-", "YAML file with resources, or - for stdin")
 
+	if err := command.RegisterFlagCompletionFunc("file", completeYAMLFile); err != nil {
+		panic(err)
+	}
+
 	return command
 }
 
 // DeleteFlags identifies what to remove.
 type DeleteFlags struct {
 	Target   *TargetFlags
-	Kind     string
-	Path     []string
+	Address  appctl.Address
 	Revision uint64
 }
 
@@ -216,7 +261,7 @@ func Delete(ctx context.Context, out io.Writer, flags *DeleteFlags) error {
 		return errFlagsRequired
 	}
 
-	if flags.Kind == "" {
+	if flags.Address.Kind == "" {
 		return errKindRequired
 	}
 
@@ -227,12 +272,11 @@ func Delete(ctx context.Context, out io.Writer, flags *DeleteFlags) error {
 
 	defer func() { _ = client.Close() }()
 
-	if err := client.Delete(ctx, flags.Kind, flags.Path, flags.Revision); err != nil {
-		return err //nolint:wrapcheck // the client already names the operation
+	if err := client.Delete(ctx, flags.Address.Kind, flags.Address.Path, flags.Revision); err != nil {
+		return fmt.Errorf("delete: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(out, "deleted %s\n",
-		keyText(&graphenepbv1.Key{Kind: flags.Kind, Path: flags.Path})); err != nil {
+	if _, err := fmt.Fprintf(out, "deleted %s\n", flags.Address); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
 
@@ -241,24 +285,15 @@ func Delete(ctx context.Context, out io.Writer, flags *DeleteFlags) error {
 
 func newDeleteCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "delete",
-		Short:   "Remove a resource",
-		Example: "  graphen ctl delete --kind Role --path acme,kernel-default",
-		Args:    cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
+		Use:               "delete <kind> <path>",
+		Short:             "Remove a resource",
+		Example:           "  graphen ctl delete Role acme/kernel-default",
+		Args:              cobra.ExactArgs(2), //nolint:mnd // kind and path
+		ValidArgsFunction: completeAddress,
+		RunE: func(command *cobra.Command, args []string) error {
 			target, err := newTargetFlags(command)
 			if err != nil {
 				return err
-			}
-
-			kind, err := command.Flags().GetString("kind")
-			if err != nil {
-				return fmt.Errorf("read --kind: %w", err)
-			}
-
-			path, err := command.Flags().GetStringSlice("path")
-			if err != nil {
-				return fmt.Errorf("read --path: %w", err)
 			}
 
 			revision, err := command.Flags().GetUint64("revision")
@@ -267,12 +302,10 @@ func newDeleteCommand() *cobra.Command {
 			}
 
 			return Delete(command.Context(), command.OutOrStdout(),
-				&DeleteFlags{Target: target, Kind: kind, Path: path, Revision: revision})
+				&DeleteFlags{Target: target, Address: addressFromArgs(args), Revision: revision})
 		},
 	}
 
-	command.Flags().String("kind", "", "resource kind")
-	command.Flags().StringSlice("path", nil, "full path segments")
 	command.Flags().Uint64("revision", 0, "expected revision (0 reads the current one first)")
 
 	return command
@@ -281,8 +314,7 @@ func newDeleteCommand() *cobra.Command {
 // WatchFlags selects the stream to follow.
 type WatchFlags struct {
 	Target   *TargetFlags
-	Kind     string
-	Path     []string
+	Address  appctl.Address
 	Selector []string
 }
 
@@ -292,13 +324,13 @@ func Watch(ctx context.Context, out io.Writer, flags *WatchFlags) error {
 		return errFlagsRequired
 	}
 
-	if flags.Kind == "" {
+	if flags.Address.Kind == "" {
 		return errKindRequired
 	}
 
 	selector, err := appctl.ParseSelector(flags.Selector)
 	if err != nil {
-		return err //nolint:wrapcheck // the client already names the operation
+		return fmt.Errorf("selector: %w", err)
 	}
 
 	client, err := connect(flags.Target)
@@ -311,10 +343,11 @@ func Watch(ctx context.Context, out io.Writer, flags *WatchFlags) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := client.Watch(ctx, flags.Kind, flags.Path, selector, func(event *graphenepbv1.WatchEvent) error {
-		return appctl.WriteEvent(out, event)
-	}); err != nil {
-		return fmt.Errorf("watch %s: %w", flags.Kind, err)
+	if err := client.Watch(ctx, flags.Address.Kind, flags.Address.Path, selector,
+		func(event *graphenepbv1.WatchEvent) error {
+			return appctl.WriteEvent(out, event)
+		}); err != nil {
+		return fmt.Errorf("watch %s: %w", flags.Address, err)
 	}
 
 	return nil
@@ -322,25 +355,28 @@ func Watch(ctx context.Context, out io.Writer, flags *WatchFlags) error {
 
 func newWatchCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "watch",
-		Short:   "Follow changes of a kind",
-		Example: "  graphen ctl watch --kind Kernel --path acme",
-		Args:    cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			flags, err := getFlags(command)
+		Use:               "watch <kind> [path]",
+		Short:             "Follow changes of a kind",
+		Example:           "  graphen ctl watch Kernel acme\n  graphen ctl watch Execution --selector spec.placement=k1",
+		Args:              cobra.RangeArgs(1, 2), //nolint:mnd // kind, optional path prefix
+		ValidArgsFunction: completeAddress,
+		RunE: func(command *cobra.Command, args []string) error {
+			target, err := newTargetFlags(command)
 			if err != nil {
 				return err
 			}
 
+			selector, err := command.Flags().GetStringSlice("selector")
+			if err != nil {
+				return fmt.Errorf("read --selector: %w", err)
+			}
+
 			return Watch(command.Context(), command.OutOrStdout(),
-				&WatchFlags{Target: flags.Target, Kind: flags.Kind, Path: flags.Path, Selector: flags.Selector})
+				&WatchFlags{Target: target, Address: addressFromArgs(args), Selector: selector})
 		},
 	}
 
-	command.Flags().String("kind", "", "resource kind")
-	command.Flags().StringSlice("path", nil, "path prefix segments")
-	command.Flags().StringSlice("selector", nil, "field match, e.g. spec.placement=k1")
-	command.Flags().Bool("exact", false, "unused for watch; accepted for symmetry with get")
+	addSelectorFlag(command)
 
 	return command
 }
@@ -365,10 +401,14 @@ func Definitions(ctx context.Context, out io.Writer, flags *DefinitionsFlags) er
 
 	defs, err := client.Definitions(ctx)
 	if err != nil {
-		return err //nolint:wrapcheck // the client already names the operation
+		return fmt.Errorf("definitions: %w", err)
 	}
 
-	return appctl.WriteDefinitions(out, defs) //nolint:wrapcheck // same
+	if err := appctl.WriteDefinitions(out, defs); err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
+
+	return nil
 }
 
 func newDefinitionsCommand() *cobra.Command {
@@ -388,15 +428,18 @@ func newDefinitionsCommand() *cobra.Command {
 	}
 }
 
-func keyText(key *graphenepbv1.Key) string {
-	var out strings.Builder
+func addSelectorFlag(command *cobra.Command) {
+	command.Flags().StringSlice("selector", nil, "field match, e.g. spec.placement=k1")
 
-	out.WriteString(key.GetKind())
-
-	for _, seg := range key.GetPath() {
-		out.WriteByte('/')
-		out.WriteString(seg)
+	if err := command.RegisterFlagCompletionFunc("selector", completeSelector); err != nil {
+		panic(err)
 	}
+}
 
-	return out.String()
+func addFormatFlag(command *cobra.Command) {
+	command.Flags().StringP("output", "o", string(appctl.FormatYAML), "output format: yaml, json or name")
+
+	if err := command.RegisterFlagCompletionFunc("output", completeFormat); err != nil {
+		panic(err)
+	}
 }
