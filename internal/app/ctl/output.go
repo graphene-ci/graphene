@@ -39,18 +39,20 @@ var ErrUnknownFormat = errors.New("ctl: unknown output format")
 // ParseFormat validates an -o value.
 func ParseFormat(value string) (Format, error) {
 	switch Format(strings.ToLower(value)) {
-	case FormatYAML, "":
+	case FormatYAML:
 		return FormatYAML, nil
+	case FormatTable, "":
+		// Columns are what a person asked for; the exchange forms are for
+		// pipes and are requested explicitly (kubectl's split).
+		return FormatTable, nil
 	case FormatJSON:
 		return FormatJSON, nil
 	case FormatName:
 		return FormatName, nil
-	case FormatTable:
-		return FormatTable, nil
 	case FormatWide:
 		return FormatWide, nil
 	default:
-		return "", fmt.Errorf("%w: %q (want yaml, json, name, table or wide)", ErrUnknownFormat, value)
+		return "", fmt.Errorf("%w: %q (want table, wide, yaml, json or name)", ErrUnknownFormat, value)
 	}
 }
 

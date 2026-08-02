@@ -141,6 +141,26 @@ func TestTableMarksNestedValues(t *testing.T) {
 	}
 }
 
+// The default is what a person gets when they ask for nothing: columns,
+// not the exchange form. The exchange forms are requested explicitly, so
+// `get -o yaml | apply` stays a deliberate act.
+func TestDefaultFormatIsTable(t *testing.T) {
+	t.Parallel()
+
+	format, err := appctl.ParseFormat("")
+	if err != nil {
+		t.Fatalf("parse empty format: %v", err)
+	}
+
+	if format != appctl.FormatTable {
+		t.Fatalf("default format is %q, want table", format)
+	}
+
+	if !format.NeedsDefinition() {
+		t.Fatal("the default format must be told its kind's definition")
+	}
+}
+
 func lines(t *testing.T, text string) (string, string) {
 	t.Helper()
 

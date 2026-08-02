@@ -52,17 +52,9 @@ func Get(ctx context.Context, out io.Writer, flags *GetFlags) error {
 
 	defer func() { _ = client.Close() }()
 
-	resources, err := readAddress(ctx, client, flags.Address, flags.Selector)
+	def, resources, err := readAddress(ctx, client, flags.Address, flags.Selector)
 	if err != nil {
 		return err
-	}
-
-	var def *graphenepbv1.ResourceDefinition
-
-	if format.NeedsDefinition() {
-		if def, err = client.Definition(ctx, flags.Address.Kind); err != nil {
-			return fmt.Errorf("render: %w", err)
-		}
 	}
 
 	if err := appctl.Write(out, format, def, resources); err != nil {
@@ -79,32 +71,32 @@ func readAddress(
 	client *appctl.Client,
 	addr appctl.Address,
 	selector []string,
-) ([]*graphenepbv1.Resource, error) {
-	exact, err := client.Exact(ctx, addr)
+) (*graphenepbv1.ResourceDefinition, []*graphenepbv1.Resource, error) {
+	def, exact, err := client.Resolve(ctx, addr)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", addr, err)
+		return nil, nil, fmt.Errorf("resolve %s: %w", addr, err)
 	}
 
 	if exact {
 		res, err := client.Get(ctx, addr.Kind, addr.Path)
 		if err != nil {
-			return nil, fmt.Errorf("get: %w", err)
+			return nil, nil, fmt.Errorf("get: %w", err)
 		}
 
-		return []*graphenepbv1.Resource{res}, nil
+		return def, []*graphenepbv1.Resource{res}, nil
 	}
 
 	match, err := appctl.ParseSelector(selector)
 	if err != nil {
-		return nil, fmt.Errorf("selector: %w", err)
+		return nil, nil, fmt.Errorf("selector: %w", err)
 	}
 
 	resources, err := client.List(ctx, addr.Kind, addr.Path, match)
 	if err != nil {
-		return nil, fmt.Errorf("list: %w", err)
+		return nil, nil, fmt.Errorf("list: %w", err)
 	}
 
-	return resources, nil
+	return def, resources, nil
 }
 
 func newGetCommand() *cobra.Command {
@@ -436,6 +428,7 @@ func addSelectorFlag(command *cobra.Command) {
 }
 
 func addFormatFlag(command *cobra.Command) {
-	command.Flags().StringP("output", "o", string(appctl.FormatYAML), "output format: yaml, json, name, table or wide")
+	command.Flags().StringP("output", "o", string(appctl.FormatTable),
+		"output format: table, wide, yaml, json or name")
 	cmdflags.RegisterCompletion(command, "output", completeFormat)
 }

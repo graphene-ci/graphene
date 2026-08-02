@@ -44,22 +44,29 @@ func (a Address) String() string {
 	return a.Kind + " " + strings.Join(a.Path, "/")
 }
 
-// Exact reports whether the path names a single resource: the kind's
-// definition says how many segments that takes.
-func (c *Client) Exact(ctx context.Context, addr Address) (bool, error) {
-	arity, err := c.KindArity(ctx, addr.Kind)
+// Resolve looks an address up against its kind's definition: the caller
+// gets both answers a read needs — the definition (column names, arity)
+// and whether the path names one resource or a subtree — from a single
+// round trip.
+func (c *Client) Resolve(ctx context.Context, addr Address) (*graphenepbv1.ResourceDefinition, bool, error) {
+	def, err := c.Definition(ctx, addr.Kind)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
-	switch {
-	case len(addr.Path) > arity:
-		return false, fmt.Errorf("%w: %s wants %d", ErrPathTooLong, addr.Kind, arity)
-	case len(addr.Path) == arity:
-		return true, nil
-	default:
-		return false, nil
+	arity := len(def.GetPathSegments())
+	if len(addr.Path) > arity {
+		return nil, false, fmt.Errorf("%w: %s wants %d", ErrPathTooLong, addr.Kind, arity)
 	}
+
+	return def, len(addr.Path) == arity, nil
+}
+
+// Exact reports whether the path names a single resource.
+func (c *Client) Exact(ctx context.Context, addr Address) (bool, error) {
+	_, exact, err := c.Resolve(ctx, addr)
+
+	return exact, err
 }
 
 // Definition returns one kind's definition.
