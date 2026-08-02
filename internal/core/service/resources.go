@@ -399,6 +399,12 @@ func keyString(k *graphenepbv1.Key) string {
 	return k.GetKind() + "/" + strings.Join(k.GetPath(), "/")
 }
 
+// DecodeEntry unmarshals a stored entry into the resource it holds —
+// shared with in-process consumers of raw store events (controllers).
+func DecodeEntry(e store.Entry) (*graphenepbv1.Resource, error) {
+	return decodeResource(e)
+}
+
 // decodeResource unmarshals the stored payload and stamps the store-owned
 // fields from the entry.
 func decodeResource(e store.Entry) (*graphenepbv1.Resource, error) {

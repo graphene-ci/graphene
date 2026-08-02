@@ -30,6 +30,9 @@ const (
 	PrincipalKernel PrincipalKind = "kernel"
 	// PrincipalProcess — a spawned user-code process on the worker's uds.
 	PrincipalProcess PrincipalKind = "process"
+	// PrincipalSystem — in-process system components (controllers) of the
+	// control kernel itself.
+	PrincipalSystem PrincipalKind = "system"
 )
 
 // Principal is an authenticated identity.
