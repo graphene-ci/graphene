@@ -41,6 +41,25 @@ func CheckWrite(ctx context.Context, kind string, path []string, parts []Part, r
 	return nil
 }
 
+// Check authorizes an object-less operation on a kind (the byte-plane
+// services: blob upload/download). Grants carrying Where constraints can
+// never authorize object-less calls — there is no object to constrain.
+func Check(ctx context.Context, verb Verb, kind string) error {
+	creds, ok := FromContext(ctx)
+	if !ok {
+		return ErrDenied
+	}
+
+	for i := range creds.Grants {
+		grant := &creds.Grants[i]
+		if grantCovers(grant, creds.Principal, verb, kind, nil) && len(grant.Where) == 0 {
+			return nil
+		}
+	}
+
+	return ErrDenied
+}
+
 // CheckDefine authorizes definition writes.
 func CheckDefine(ctx context.Context) error {
 	creds, ok := FromContext(ctx)

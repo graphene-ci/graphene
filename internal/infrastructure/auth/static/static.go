@@ -75,6 +75,12 @@ func Kernel(kernelID string) auth.Credentials {
 				Kind:  "Program",
 			},
 			{
+				// The byte plane: fetch programs/artifact content, upload
+				// outputs. Object-less — deliberately Where-free.
+				Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
+				Kind:  "Blob",
+			},
+			{
 				Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch},
 				Kind:  "Kind",
 			},
