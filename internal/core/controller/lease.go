@@ -36,12 +36,12 @@ type Lease struct {
 	now       func() time.Time
 
 	mu    sync.Mutex
-	seen  map[string]*leaseState // key: tenant/kernel path joined
+	seen  map[string]*leaseState // key: the kernel path joined
 	putMu sync.Mutex             // serializes status flips
 }
 
 type leaseState struct {
-	path     []string // {tenant, kernel}
+	path     []string // {kernel}
 	lastSeen time.Time
 	ttl      time.Duration
 	online   bool

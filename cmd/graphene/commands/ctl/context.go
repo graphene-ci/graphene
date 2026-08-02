@@ -47,8 +47,7 @@ func ListContexts(out io.Writer, configPath string) error {
 			endpoint = resolved.Kernel.Socket
 		}
 
-		if _, err := fmt.Fprintf(out, "%s %s\t%s\t%s\n",
-			marker, name, endpoint, resolved.Context.Tenant); err != nil {
+		if _, err := fmt.Fprintf(out, "%s %s\t%s\n", marker, name, endpoint); err != nil {
 			return writeErr(err)
 		}
 	}

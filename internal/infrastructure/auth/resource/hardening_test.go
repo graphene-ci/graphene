@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	schemapb "github.com/gopherex/schemapb/go/schemapb"
+
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
@@ -19,19 +21,18 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/store/bbolt"
 )
 
-// tenantAdmin is the shape the review's attack used: full rights over the
-// authority kinds INSIDE one tenant, nothing beyond it.
-func tenantAdmin() []auth.Grant {
+// authorityAdmin is the shape the review's attack used: full rights over
+// the authority kinds themselves, and nothing else. Administering roles is
+// NOT holding what they grant — that gap is the whole point.
+func authorityAdmin() []auth.Grant {
 	return []auth.Grant{
 		{
-			Verbs:      []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
-			Kind:       builtin.KindRole,
-			PathPrefix: []string{tenant},
+			Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
+			Kind:  builtin.KindRole,
 		},
 		{
-			Verbs:      []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
-			Kind:       builtin.KindIdentity,
-			PathPrefix: []string{tenant},
+			Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
+			Kind:  builtin.KindIdentity,
 		},
 	}
 }
@@ -44,7 +45,7 @@ func superRole() []auth.Grant {
 }
 
 // setupDisarmScenario builds the reviewed attack setup: a "super" role held
-// by root, and a tenant admin (alice) who cannot mint it.
+// by root, and an authority admin (alice) who cannot mint it.
 func setupDisarmScenario(t *testing.T) (*harness, context.Context) {
 	t.Helper()
 
@@ -58,12 +59,12 @@ func setupDisarmScenario(t *testing.T) (*harness, context.Context) {
 		t.Fatalf("put root identity: %v", err)
 	}
 
-	if err := harn.putRole(harn.admin, t, "tenant-admin", tenantAdmin()); err != nil {
-		t.Fatalf("put tenant-admin role: %v", err)
+	if err := harn.putRole(harn.admin, t, "authority-admin", authorityAdmin()); err != nil {
+		t.Fatalf("put authority-admin role: %v", err)
 	}
 
 	if err := harn.putIdentity(harn.admin, t, "alice", auth.PrincipalUser,
-		[]string{"tenant-admin"}, "alice-token"); err != nil {
+		[]string{"authority-admin"}, "alice-token"); err != nil {
 		t.Fatalf("put alice identity: %v", err)
 	}
 
@@ -86,7 +87,7 @@ func TestCannotDeleteAuthorityItDoesNotHold(t *testing.T) {
 
 	// Deleting the role those grants come from: denied as well.
 	got, err := harn.resources.Get(harn.admin, &graphenepbv1.GetRequest{
-		Key: &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{tenant, "super"}},
+		Key: &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{"super"}},
 	})
 	if err != nil {
 		t.Fatalf("read super role: %v", err)
@@ -102,7 +103,7 @@ func TestCannotDeleteAuthorityItDoesNotHold(t *testing.T) {
 
 	// Overwriting the role with harmless grants: denied (same authority
 	// would be destroyed).
-	err = harn.putRole(alice, t, "super", tenantAdmin())
+	err = harn.putRole(alice, t, "super", authorityAdmin())
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("neutering the super role: want PermissionDenied, got %v", err)
 	}
@@ -129,12 +130,12 @@ func TestCanDeleteAuthorityItHolds(t *testing.T) {
 
 	// Alice re-issues her own role under another name (the parameterized
 	// re-issue path, L2) and then removes it.
-	if err := harn.putRole(alice, t, "copy", tenantAdmin()); err != nil {
+	if err := harn.putRole(alice, t, "copy", authorityAdmin()); err != nil {
 		t.Fatalf("re-issuing a held role: %v", err)
 	}
 
 	got, err := harn.resources.Get(alice, &graphenepbv1.GetRequest{
-		Key: &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{tenant, "copy"}},
+		Key: &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{"copy"}},
 	})
 	if err != nil {
 		t.Fatalf("read copy: %v", err)
@@ -158,7 +159,7 @@ func TestParameterizedRoleIsDelegable(t *testing.T) {
 	operator := []auth.Grant{{
 		Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut},
 		Kind:       builtin.KindKernelLease,
-		PathPrefix: []string{tenant, "${principal.name}"},
+		PathPrefix: []string{"${principal.name}"},
 		Where:      []auth.Constraint{{Path: "spec.kernel", Equal: "${principal.name}"}},
 	}}
 
@@ -171,11 +172,10 @@ func TestParameterizedRoleIsDelegable(t *testing.T) {
 		t.Fatalf("put ops identity: %v", err)
 	}
 
-	// Ops also administers roles inside the tenant.
+	// Ops also administers roles.
 	if err := harn.putRole(harn.admin, t, "role-admin", []auth.Grant{{
-		Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut},
-		Kind:       builtin.KindRole,
-		PathPrefix: []string{tenant},
+		Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
+		Kind:  builtin.KindRole,
 	}}); err != nil {
 		t.Fatalf("put role-admin: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestParameterizedRoleIsDelegable(t *testing.T) {
 	err := harn.putRole(opsCtx, t, "kernel-operator-fixed", []auth.Grant{{
 		Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut},
 		Kind:       builtin.KindKernelLease,
-		PathPrefix: []string{tenant, "victim"},
+		PathPrefix: []string{"victim"},
 		Where:      []auth.Constraint{{Path: "spec.kernel", Equal: "victim"}},
 	}})
 	if status.Code(err) != codes.PermissionDenied {
@@ -205,10 +205,72 @@ func TestParameterizedRoleIsDelegable(t *testing.T) {
 	}
 }
 
-// Grants resolved from a role are confined to the tenant the role lives
-// in: identities of different tenants sharing a name are different
-// principals.
-func TestGrantsAreTenantConfined(t *testing.T) {
+// PathPrefix is the ONLY spatial confinement in the system: nothing scopes
+// a role behind the escalation guard's back. So the guard alone has to
+// stop a confined holder from writing a role that reaches wider — sideways
+// into another subtree, or upwards into no confinement at all.
+func TestConfinedHolderCannotWidenItsScope(t *testing.T) {
+	t.Parallel()
+
+	harn := newHarness(t)
+
+	// An admin over roles, itself confined to the "a" subtree of Deployment.
+	confined := []auth.Grant{
+		{
+			Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
+			Kind:  builtin.KindRole,
+		},
+		{
+			Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut, auth.VerbDelete},
+			Kind:       "Deployment",
+			PathPrefix: []string{"a"},
+		},
+	}
+
+	if err := harn.putRole(harn.admin, t, "a-admin", confined); err != nil {
+		t.Fatalf("put role: %v", err)
+	}
+
+	if err := harn.putIdentity(harn.admin, t, "ann", auth.PrincipalUser,
+		[]string{"a-admin"}, "ann-token"); err != nil {
+		t.Fatalf("put identity: %v", err)
+	}
+
+	annCtx := auth.WithCredentials(context.Background(), harn.waitToken(t, "ann-token"))
+
+	// Re-issuing her own confinement: allowed.
+	if err := harn.putRole(annCtx, t, "a-admin-copy", confined); err != nil {
+		t.Fatalf("re-issuing a held confinement denied: %v", err)
+	}
+
+	deployment := func(prefix []string) []auth.Grant {
+		return []auth.Grant{{
+			Verbs:      []auth.Verb{auth.VerbGet, auth.VerbPut, auth.VerbDelete},
+			Kind:       "Deployment",
+			PathPrefix: prefix,
+		}}
+	}
+
+	// Sideways into another subtree: denied.
+	if err := harn.putRole(annCtx, t, "b-admin", deployment([]string{"b"})); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("writing a grant on a foreign subtree: want PermissionDenied, got %v", err)
+	}
+
+	// Upwards to no confinement at all: denied.
+	if err := harn.putRole(annCtx, t, "all-admin", deployment(nil)); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("dropping the confinement: want PermissionDenied, got %v", err)
+	}
+
+	// Deeper into her own subtree: allowed — narrowing is always safe.
+	if err := harn.putRole(annCtx, t, "a-one-admin", deployment([]string{"a", "one"})); err != nil {
+		t.Fatalf("narrowing a held confinement denied: %v", err)
+	}
+}
+
+// A Where-constrained kernel identity reaches only its own lease. With one
+// flat name per kernel there is no second "k1" anywhere to confuse it with,
+// and the constraint — not the path — is what binds.
+func TestFieldConstraintBindsToTheName(t *testing.T) {
 	t.Parallel()
 
 	harn := newHarness(t)
@@ -227,26 +289,29 @@ func TestGrantsAreTenantConfined(t *testing.T) {
 	}
 
 	creds := harn.waitToken(t, "k1-token")
-
-	if creds.Principal.Tenant != tenant {
-		t.Fatalf("principal tenant: got %q, want %q", creds.Principal.Tenant, tenant)
-	}
-
-	for _, grant := range creds.Grants {
-		if grant.Tenant != tenant {
-			t.Fatalf("grant not confined to its role's tenant: %+v", grant)
-		}
-	}
-
-	// A lease of ANOTHER tenant with the same kernel name is out of reach.
-	lease := &graphenepbv1.Resource{
-		Key: &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"other", "k1"}},
+	if creds.Principal.Name != "k1" {
+		t.Fatalf("principal name: %+v", creds.Principal)
 	}
 
 	kernelCtx := auth.WithCredentials(context.Background(), creds)
-	if err := auth.CheckWrite(kernelCtx, builtin.KindKernelLease, lease.GetKey().GetPath(),
-		[]auth.Part{auth.PartSpec}, lease); !errors.Is(err, auth.ErrDenied) {
-		t.Fatalf("cross-tenant write: want ErrDenied, got %v", err)
+
+	own := &graphenepbv1.Resource{
+		Key:  &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"k1"}},
+		Spec: schemapb.MustStructFromGo(map[string]any{"kernel": "k1", "ttl_seconds": int64(30)}),
+	}
+	if err := auth.CheckWrite(kernelCtx, builtin.KindKernelLease, own.GetKey().GetPath(),
+		[]auth.Part{auth.PartSpec}, own); err != nil {
+		t.Fatalf("writing its own lease: %v", err)
+	}
+
+	// Another kernel's lease is out of reach, whatever path it is written at.
+	foreign := &graphenepbv1.Resource{
+		Key:  &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"k2"}},
+		Spec: schemapb.MustStructFromGo(map[string]any{"kernel": "k2", "ttl_seconds": int64(30)}),
+	}
+	if err := auth.CheckWrite(kernelCtx, builtin.KindKernelLease, foreign.GetKey().GetPath(),
+		[]auth.Part{auth.PartSpec}, foreign); !errors.Is(err, auth.ErrDenied) {
+		t.Fatalf("writing a foreign lease: want ErrDenied, got %v", err)
 	}
 }
 

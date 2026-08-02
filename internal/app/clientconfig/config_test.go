@@ -46,8 +46,7 @@ func TestUpsertResolveRoundTrip(t *testing.T) {
 	cfg := &clientconfig.Config{}
 	cfg.Upsert("local",
 		clientconfig.Kernel{Socket: "/run/graphene/kernel.sock"},
-		clientconfig.Identity{Token: secret.Value{Inline: "t"}},
-		"acme")
+		clientconfig.Identity{Token: secret.Value{Inline: "t"}})
 
 	// The first context installed becomes the current one.
 	if cfg.CurrentContext != "local" {
@@ -68,7 +67,7 @@ func TestUpsertResolveRoundTrip(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 
-	if resolved.Kernel.Socket != "/run/graphene/kernel.sock" || resolved.Context.Tenant != "acme" {
+	if resolved.Kernel.Socket != "/run/graphene/kernel.sock" {
 		t.Fatalf("resolved: %+v", resolved)
 	}
 
@@ -84,8 +83,9 @@ func TestSecondKernelIsAdditive(t *testing.T) {
 	t.Parallel()
 
 	cfg := &clientconfig.Config{}
-	cfg.Upsert("local", clientconfig.Kernel{Socket: "/s"}, clientconfig.Identity{Token: secret.Value{Inline: "a"}}, "acme")
-	cfg.Upsert("prod", clientconfig.Kernel{Address: "srv:9000", CAFile: "/ca"}, clientconfig.Identity{Token: secret.Value{Inline: "b"}}, "acme")
+	cfg.Upsert("local", clientconfig.Kernel{Socket: "/s"}, clientconfig.Identity{Token: secret.Value{Inline: "a"}})
+	cfg.Upsert("prod", clientconfig.Kernel{Address: "srv:9000", CAFile: "/ca"},
+		clientconfig.Identity{Token: secret.Value{Inline: "b"}})
 
 	if cfg.CurrentContext != "local" {
 		t.Fatalf("adding a context stole the selection: %q", cfg.CurrentContext)
@@ -118,8 +118,8 @@ func TestRemoveSelectsAnother(t *testing.T) {
 	t.Parallel()
 
 	cfg := &clientconfig.Config{}
-	cfg.Upsert("local", clientconfig.Kernel{Socket: "/s"}, clientconfig.Identity{}, "acme")
-	cfg.Upsert("prod", clientconfig.Kernel{Address: "srv:9000"}, clientconfig.Identity{}, "acme")
+	cfg.Upsert("local", clientconfig.Kernel{Socket: "/s"}, clientconfig.Identity{})
+	cfg.Upsert("prod", clientconfig.Kernel{Address: "srv:9000"}, clientconfig.Identity{})
 
 	cfg.Remove("local")
 

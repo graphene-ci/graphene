@@ -22,10 +22,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/store/bbolt"
 )
 
-const (
-	bootstrapToken = "bootstrap-secret"
-	tenant         = "acme"
-)
+const bootstrapToken = "bootstrap-secret"
 
 type harness struct {
 	resources *service.Resources
@@ -77,7 +74,7 @@ func (h *harness) putRole(ctx context.Context, t *testing.T, name string, grants
 
 	_, err := h.resources.Put(ctx, &graphenepbv1.PutRequest{
 		Resource: &graphenepbv1.Resource{
-			Key:  &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{tenant, name}},
+			Key:  &graphenepbv1.Key{Kind: builtin.KindRole, Path: []string{name}},
 			Spec: auth.GrantsToSpec(grants),
 		},
 	})
@@ -97,7 +94,7 @@ func (h *harness) putIdentity(ctx context.Context, t *testing.T, name string,
 
 	_, err := h.resources.Put(ctx, &graphenepbv1.PutRequest{
 		Resource: &graphenepbv1.Resource{
-			Key: &graphenepbv1.Key{Kind: builtin.KindIdentity, Path: []string{tenant, name}},
+			Key: &graphenepbv1.Key{Kind: builtin.KindIdentity, Path: []string{name}},
 			Spec: schemapb.MustStructFromGo(map[string]any{
 				"principal_kind": string(kind),
 				"roles":          rolesAny,
@@ -255,7 +252,7 @@ func TestGrantEncodingRoundTrip(t *testing.T) {
 		t.Fatalf("round trip lost data: %+v", got)
 	}
 
-	if !errors.Is(auth.CheckEscalation(context.Background(), decoded, "acme"), auth.ErrDenied) {
+	if !errors.Is(auth.CheckEscalation(context.Background(), decoded), auth.ErrDenied) {
 		t.Fatal("unauthenticated escalation check must deny")
 	}
 }

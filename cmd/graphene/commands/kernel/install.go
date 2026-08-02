@@ -24,7 +24,6 @@ var (
 // InstallFlags configures the installation.
 type InstallFlags struct {
 	Scope   string
-	Tenant  string
 	Name    string
 	TCP     string
 	Force   bool
@@ -106,7 +105,6 @@ func Install(ctx context.Context, out io.Writer, flags *InstallFlags, command *c
 
 	result, err := install.Install(ctx, &install.Options{
 		Scope:       scope,
-		Tenant:      flags.Tenant,
 		Name:        flags.Name,
 		TCP:         flags.TCP,
 		Force:       flags.Force,
@@ -135,9 +133,8 @@ func printPlan(out io.Writer, layout *install.Layout, flags *InstallFlags) error
 	}
 
 	config, err := install.RenderConfig(layout, install.ConfigOptions{
-		Tenant: flags.Tenant,
-		Name:   flags.Name,
-		TCP:    flags.TCP,
+		Name: flags.Name,
+		TCP:  flags.TCP,
 	})
 	if err != nil {
 		return fmt.Errorf("kernel install: %w", err)
@@ -205,7 +202,6 @@ func newInstallCommand() *cobra.Command {
 	}
 
 	command.Flags().String("scope", string(install.ScopeUser), "install scope: system or user")
-	command.Flags().String("tenant", "default", "tenant this kernel belongs to")
 	command.Flags().String("name", "local", "name of this kernel")
 	command.Flags().String("tcp", "", "also serve this address over TLS, e.g. 0.0.0.0:9000")
 	command.Flags().Bool("force", false, "overwrite an existing configuration and token")
@@ -218,7 +214,7 @@ func newInstallCommand() *cobra.Command {
 }
 
 func installFlags(command *cobra.Command) (*InstallFlags, error) {
-	values, err := cmdflags.Strings(command, "scope", "tenant", "name", "tcp")
+	values, err := cmdflags.Strings(command, "scope", "name", "tcp")
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +235,7 @@ func installFlags(command *cobra.Command) (*InstallFlags, error) {
 	}
 
 	return &InstallFlags{
-		Scope: values[0], Tenant: values[1], Name: values[2], TCP: values[3],
+		Scope: values[0], Name: values[1], TCP: values[2],
 		Force: force, NoStart: noStart, Print: printOnly,
 	}, nil
 }

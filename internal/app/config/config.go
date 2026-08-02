@@ -35,11 +35,11 @@ type Config struct {
 	Lease *Lease `mapstructure:"lease"`
 }
 
-// Identity is who this kernel is: the tenant it belongs to and its own
-// name — the path segments of its Kernel and KernelLease resources.
+// Identity is who this kernel is: one name, unique across the
+// installation — the path of its Kernel and KernelLease resources and the
+// value ${principal.name} resolves to in its grants.
 type Identity struct {
-	Tenant string `default:"default" mapstructure:"tenant" validate:"required"`
-	Name   string `default:"local"   mapstructure:"name"   validate:"required"`
+	Name string `default:"local" mapstructure:"name" validate:"required"`
 }
 
 // Log configures the structured logger.

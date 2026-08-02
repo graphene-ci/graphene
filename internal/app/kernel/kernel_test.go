@@ -28,7 +28,6 @@ import (
 const (
 	bootstrapToken = "bootstrap-secret"
 	workerToken    = "k1-secret"
-	tenant         = "acme"
 )
 
 func testLogger(t *testing.T) *slog.Logger {
@@ -152,30 +151,30 @@ func TestTwoKernels(t *testing.T) {
 
 	startKernel(ctx, t, fmt.Sprintf(`
 data_dir: %s
-identity: { tenant: %s, name: control }
+identity: { name: control }
 log: { level: warn }
 store: {}
 blobs: {}
 listen: { tcp: %q, disable_uds: true }
 tls: { mode: auto }
 auth: { bootstrap: { token: { inline: %s } } }
-`, controlDir, tenant, addr, bootstrapToken))
+`, controlDir, addr, bootstrapToken))
 
 	client := dialControl(t, addr, filepath.Join(controlDir, "tls"), bootstrapToken)
 	waitServing(ctx, t, client)
 
 	// The operator registers the worker kernel and provisions its identity.
-	putResource(ctx, t, client, builtin.KindKernel, []string{tenant, "k1"},
+	putResource(ctx, t, client, builtin.KindKernel, []string{"k1"},
 		schemapb.MustStructFromGo(map[string]any{"os": "linux", "arch": "amd64"}))
 
-	putResource(ctx, t, client, builtin.KindRole, []string{tenant, "kernel-default"},
+	putResource(ctx, t, client, builtin.KindRole, []string{"kernel-default"},
 		auth.GrantsToSpec([]auth.Grant{{
 			Verbs: []auth.Verb{auth.VerbGet, auth.VerbPut},
 			Kind:  builtin.KindKernelLease,
 			Where: []auth.Constraint{{Path: "spec.kernel", Equal: "${principal.name}"}},
 		}}))
 
-	putResource(ctx, t, client, builtin.KindIdentity, []string{tenant, "k1"},
+	putResource(ctx, t, client, builtin.KindIdentity, []string{"k1"},
 		schemapb.MustStructFromGo(map[string]any{
 			"principal_kind": string(auth.PrincipalKernel),
 			"roles":          []any{"kernel-default"},
@@ -188,7 +187,7 @@ auth: { bootstrap: { token: { inline: %s } } }
 
 	startKernel(ctx, t, fmt.Sprintf(`
 data_dir: %s
-identity: { tenant: %s, name: k1 }
+identity: { name: k1 }
 log: { level: warn }
 link:
   mode: dialout
@@ -196,7 +195,7 @@ link:
   ca_file: %s
   token: { inline: %s }
 lease: { ttl: 5s, renew_interval: 200ms }
-`, workerDir, tenant, addr, caFile, workerToken))
+`, workerDir, addr, caFile, workerToken))
 
 	waitOnline(ctx, t, client)
 }
@@ -250,7 +249,7 @@ func waitOnline(ctx context.Context, t *testing.T, client graphenepbv1.ResourceS
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		got, err := client.Get(ctx, &graphenepbv1.GetRequest{
-			Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{tenant, "k1"}},
+			Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"k1"}},
 		})
 		if err == nil {
 			if online, _ := got.GetResource().GetStatus().ToGo()["online"].(bool); online {

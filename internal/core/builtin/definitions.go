@@ -2,6 +2,13 @@
 // in the binary. They pass through the SAME Define machinery as user
 // kinds: the only privileges built-ins have are being ensured at startup
 // and being system-owned in authorization.
+//
+// Their paths are flat, one name each. These are objects of the
+// installation itself — identities, roles, kernels — the way Node and
+// ClusterRole are cluster-scoped in k8s. Grouping, ownership and isolation
+// are things an operator expresses on their OWN kinds, by giving them
+// whatever path shape they need and confining grants with PathPrefix; the
+// kernel attaches no meaning to any segment.
 package builtin
 
 import (
@@ -20,9 +27,6 @@ const (
 
 	// schemaNS namespaces the schemapb identities of built-in kinds.
 	schemaNS = "graphene"
-
-	// segTenant is the first path segment of every tenant-scoped kind.
-	segTenant = "tenant"
 )
 
 // Definitions returns the compiled-in kind definitions, version field
@@ -55,7 +59,7 @@ func kernelDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindKernel,
-		PathSegments: []string{segTenant, "kernel"},
+		PathSegments: []string{"kernel"},
 		SpecSchema:   spec,
 		StatusSchema: status,
 	}
@@ -77,7 +81,7 @@ func kernelLeaseDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindKernelLease,
-		PathSegments: []string{segTenant, "kernel"},
+		PathSegments: []string{"kernel"},
 		SpecSchema:   spec,
 	}
 }
@@ -116,7 +120,7 @@ func roleDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindRole,
-		PathSegments: []string{segTenant, "name"},
+		PathSegments: []string{"name"},
 		SpecSchema:   spec,
 	}
 }
@@ -138,7 +142,7 @@ func identityDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindIdentity,
-		PathSegments: []string{segTenant, "name"},
+		PathSegments: []string{"name"},
 		SpecSchema:   spec,
 	}
 }

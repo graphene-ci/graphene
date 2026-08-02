@@ -88,7 +88,7 @@ func (e *env) registerKernel(t *testing.T) {
 
 	_, err := e.resources.Put(e.operator, &graphenepbv1.PutRequest{
 		Resource: &graphenepbv1.Resource{
-			Key:  &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"acme", "k1"}},
+			Key:  &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"k1"}},
 			Spec: schemapb.MustStructFromGo(map[string]any{"os": "linux", "arch": "amd64"}),
 		},
 	})
@@ -100,7 +100,7 @@ func (e *env) registerKernel(t *testing.T) {
 func (e *env) renewLease(t *testing.T) {
 	t.Helper()
 
-	key := &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"acme", "k1"}}
+	key := &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"k1"}}
 
 	var expected uint64
 	if got, err := e.resources.Get(e.worker, &graphenepbv1.GetRequest{Key: key}); err == nil {
@@ -123,7 +123,7 @@ func (e *env) online(t *testing.T) bool {
 	t.Helper()
 
 	got, err := e.resources.Get(e.operator, &graphenepbv1.GetRequest{
-		Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"acme", "k1"}},
+		Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: []string{"k1"}},
 	})
 	if err != nil {
 		t.Fatalf("get kernel: %v", err)
@@ -195,7 +195,7 @@ func TestLeaseDeleteMarksOffline(t *testing.T) {
 	e.waitOnline(t, true)
 
 	got, err := e.resources.Get(e.operator, &graphenepbv1.GetRequest{
-		Key: &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"acme", "k1"}},
+		Key: &graphenepbv1.Key{Kind: builtin.KindKernelLease, Path: []string{"k1"}},
 	})
 	if err != nil {
 		t.Fatal(err)

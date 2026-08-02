@@ -19,10 +19,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/core/builtin"
 )
 
-const (
-	bootstrapToken = "bootstrap-secret"
-	tenant         = "acme"
-)
+const bootstrapToken = "bootstrap-secret"
 
 // startKernel runs a kernel serving a unix socket and returns a connected
 // ctl client — the same client the command layer uses.
@@ -33,13 +30,13 @@ func startKernel(ctx context.Context, t *testing.T) *appctl.Client {
 	socket := filepath.Join(dir, "graphene.sock")
 	body := fmt.Sprintf(`
 data_dir: %s
-identity: { tenant: %s, name: control }
+identity: { name: control }
 log: { level: error }
 store: {}
 blobs: {}
 listen: { uds: %s }
 auth: { bootstrap: { token: { inline: %s } } }
-`, dir, tenant, socket, bootstrapToken)
+`, dir, socket, bootstrapToken)
 
 	path := filepath.Join(dir, "graphene.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -106,12 +103,12 @@ func TestApplyGetDelete(t *testing.T) {
 	doc := fmt.Sprintf(`
 key:
   kind: %s
-  path: [%s, k1]
+  path: [k1]
 spec:
   fields:
     os: { stringValue: linux }
     arch: { stringValue: amd64 }
-`, builtin.KindKernel, tenant)
+`, builtin.KindKernel)
 
 	applied, err := client.Apply(ctx, []byte(doc))
 	if err != nil {
@@ -122,7 +119,7 @@ spec:
 		t.Fatalf("apply: %+v", applied)
 	}
 
-	got, err := client.Get(ctx, builtin.KindKernel, []string{tenant, "k1"})
+	got, err := client.Get(ctx, builtin.KindKernel, []string{"k1"})
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -142,7 +139,7 @@ spec:
 		t.Fatalf("re-apply printed form: %v", err)
 	}
 
-	listed, err := client.List(ctx, builtin.KindKernel, []string{tenant}, nil)
+	listed, err := client.List(ctx, builtin.KindKernel, nil, nil)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -151,11 +148,11 @@ spec:
 		t.Fatalf("list: got %d resources, want 1", len(listed))
 	}
 
-	if err := client.Delete(ctx, builtin.KindKernel, []string{tenant, "k1"}, 0); err != nil {
+	if err := client.Delete(ctx, builtin.KindKernel, []string{"k1"}, 0); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	if _, err := client.Get(ctx, builtin.KindKernel, []string{tenant, "k1"}); err == nil {
+	if _, err := client.Get(ctx, builtin.KindKernel, []string{"k1"}); err == nil {
 		t.Fatal("resource still readable after delete")
 	}
 }
@@ -188,8 +185,8 @@ func TestWatchStream(t *testing.T) {
 		t.Fatalf("first event: got %v, want sync", first.GetType())
 	}
 
-	doc := fmt.Sprintf("key:\n  kind: %s\n  path: [%s, k2]\nspec:\n  fields:\n    os: { stringValue: linux }\n    arch: { stringValue: arm64 }\n",
-		builtin.KindKernel, tenant)
+	doc := fmt.Sprintf("key:\n  kind: %s\n  path: [k2]\nspec:\n  fields:\n    os: { stringValue: linux }\n    arch: { stringValue: arm64 }\n",
+		builtin.KindKernel)
 	if _, err := client.Apply(ctx, []byte(doc)); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -199,7 +196,7 @@ func TestWatchStream(t *testing.T) {
 		t.Fatalf("live event: got %v, want put", live.GetType())
 	}
 
-	if got := live.GetResource().GetKey().GetPath()[1]; got != "k2" {
+	if got := live.GetResource().GetKey().GetPath()[0]; got != "k2" {
 		t.Fatalf("live event key: got %q", got)
 	}
 }

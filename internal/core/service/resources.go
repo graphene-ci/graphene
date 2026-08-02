@@ -491,8 +491,6 @@ func (r *Resources) checkAuthority(ctx context.Context, kind string, res, curren
 // an Identity hands those grants out. Either way the writer must already
 // hold everything it gives away (auth.CheckEscalation).
 func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
-	tenant := key.FromProto(res.GetKey()).Tenant()
-
 	switch kind {
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(res.GetSpec())
@@ -500,7 +498,7 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 			return fmt.Errorf("decode role grants: %w", err)
 		}
 
-		if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
 			return fmt.Errorf("role grants: %w", err)
 		}
 
@@ -510,12 +508,12 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 		spec := auth.IdentityFromSpec(res.GetSpec())
 
 		for _, role := range spec.Roles {
-			grants, err := r.roleGrants(ctx, tenant, role)
+			grants, err := r.roleGrants(ctx, role)
 			if err != nil {
 				return err
 			}
 
-			if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+			if err := auth.CheckEscalation(ctx, grants); err != nil {
 				return fmt.Errorf("binding role %q: %w", role, err)
 			}
 		}
@@ -540,22 +538,20 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 		return nil // nothing existed, nothing is lost
 	}
 
-	tenant := key.FromProto(current.GetKey()).Tenant()
-
 	switch kind {
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(current.GetSpec())
 		if err != nil {
 			// An undecodable role is authority nobody can account for:
 			// only an unconfined holder may remove it.
-			if err := auth.CheckEscalation(ctx, []auth.Grant{{Kind: "*"}}, tenant); err != nil {
+			if err := auth.CheckEscalation(ctx, []auth.Grant{{Kind: "*"}}); err != nil {
 				return fmt.Errorf("removing an undecodable role: %w", err)
 			}
 
 			return nil
 		}
 
-		if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
 			return fmt.Errorf("removing role grants: %w", err)
 		}
 
@@ -565,13 +561,13 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 		spec := auth.IdentityFromSpec(current.GetSpec())
 
 		for _, role := range spec.Roles {
-			grants, err := r.roleGrants(ctx, tenant, role)
+			grants, err := r.roleGrants(ctx, role)
 			if err != nil {
 				// The bound role is already gone: nothing to hold.
 				continue
 			}
 
-			if err := auth.CheckEscalation(ctx, grants, tenant); err != nil {
+			if err := auth.CheckEscalation(ctx, grants); err != nil {
 				return fmt.Errorf("unbinding role %q: %w", role, err)
 			}
 		}
@@ -586,10 +582,10 @@ func (r *Resources) checkAuthorityLoss(ctx context.Context, kind string, current
 // roleGrants reads a Role's grants; binding a role that does not exist is
 // refused rather than deferred — an identity must never carry a name that
 // silently gains meaning later.
-func (r *Resources) roleGrants(ctx context.Context, tenant, role string) ([]auth.Grant, error) {
-	entry, err := r.st.Get(ctx, key.New(builtin.KindRole, tenant, role).Encode())
+func (r *Resources) roleGrants(ctx context.Context, role string) ([]auth.Grant, error) {
+	entry, err := r.st.Get(ctx, key.New(builtin.KindRole, role).Encode())
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("%w: role %s/%s does not exist", auth.ErrDenied, tenant, role)
+		return nil, fmt.Errorf("%w: role %s does not exist", auth.ErrDenied, role)
 	}
 
 	if err != nil {

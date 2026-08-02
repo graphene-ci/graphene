@@ -36,7 +36,7 @@ import (
 const (
 	scanPage    = 512
 	retryPause  = time.Second
-	pathSegKind = 2 // Role and Identity both live at {tenant, name}
+	pathSegKind = 1 // Role and Identity both live at {name}
 )
 
 // Source implements auth.TokenSource over Role/Identity resources, with a
@@ -50,8 +50,8 @@ type Source struct {
 	bootstrap       auth.Credentials
 
 	mu         sync.RWMutex
-	identities map[string]identity     // key: tenant/name
-	roles      map[string][]auth.Grant // key: tenant/name
+	identities map[string]identity     // key: the identity name
+	roles      map[string][]auth.Grant // key: the role name
 	byDigest   map[string]auth.Credentials
 
 	warmOnce sync.Once
@@ -59,7 +59,6 @@ type Source struct {
 }
 
 type identity struct {
-	tenant  string
 	name    string
 	kind    auth.PrincipalKind
 	roles   []string
@@ -252,9 +251,10 @@ func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
 		return
 	}
 
-	// The grants of a role are confined to the tenant that role lives in,
-	// whatever its author wrote: authority never crosses tenants.
-	s.roles[pathName] = auth.ScopeToTenant(grants, key.FromProto(res.GetKey()).Tenant())
+	// What the role says is what the role grants. Nothing narrows it
+	// afterwards — the escalation guard already refused to store any grant
+	// its author did not itself hold.
+	s.roles[pathName] = auth.Clone(grants)
 	s.reindexLocked()
 }
 
@@ -274,12 +274,10 @@ func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 		return
 	}
 
-	path := res.GetKey().GetPath()
 	spec := auth.IdentityFromSpec(res.GetSpec())
 
 	s.identities[pathName] = identity{
-		tenant:  key.FromProto(res.GetKey()).Tenant(),
-		name:    path[1],
+		name:    pathName,
 		kind:    spec.PrincipalKind,
 		roles:   spec.Roles,
 		digests: spec.TokenSHA256,
@@ -301,12 +299,8 @@ func (s *Source) reindexLocked() {
 	for pathName := range s.identities {
 		ident := s.identities[pathName]
 		creds := auth.Credentials{
-			Principal: auth.Principal{
-				Kind:   ident.kind,
-				Tenant: ident.tenant,
-				Name:   ident.name,
-			},
-			Grants: s.grantsForLocked(&ident),
+			Principal: auth.Principal{Kind: ident.kind, Name: ident.name},
+			Grants:    s.grantsForLocked(&ident),
 		}
 
 		for _, digest := range ident.digests {
@@ -330,7 +324,7 @@ func (s *Source) grantsForLocked(ident *identity) []auth.Grant {
 	var grants []auth.Grant
 
 	for _, role := range ident.roles {
-		grants = append(grants, s.roles[ident.tenant+"/"+role]...)
+		grants = append(grants, s.roles[role]...)
 	}
 
 	return grants

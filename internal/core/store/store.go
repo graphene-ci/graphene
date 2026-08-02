@@ -72,7 +72,7 @@ type Event struct {
 	StoreRevision uint64
 }
 
-// Keys are opaque bytes here: their shape (kind, path, tenant) belongs to
+// Keys are opaque bytes here: their shape (kind, path) belongs to
 // core/key, which produces them. The store only needs the one property
 // that encoding guarantees — a shorter key is a byte prefix of everything
 // beneath it — so scans and watches take plain byte prefixes.

@@ -105,7 +105,7 @@ func TestConfigMatchesLayout(t *testing.T) {
 
 	layout, _ := install.NewLayout(install.ScopeUser)
 
-	body, err := install.RenderConfig(&layout, install.ConfigOptions{Tenant: "acme", Name: "k1"})
+	body, err := install.RenderConfig(&layout, install.ConfigOptions{Name: "k1"})
 	if err != nil {
 		t.Fatalf("render config: %v", err)
 	}
@@ -115,7 +115,6 @@ func TestConfigMatchesLayout(t *testing.T) {
 		"data_dir: " + layout.Data,
 		"uds: " + layout.Socket,
 		"file: " + layout.TokenFile,
-		"tenant: acme",
 		"name: k1",
 	} {
 		if !strings.Contains(text, want) {
@@ -128,7 +127,7 @@ func TestConfigMatchesLayout(t *testing.T) {
 		t.Fatalf("socket-only config configures tls:\n%s", text)
 	}
 
-	withTCP, err := install.RenderConfig(&layout, install.ConfigOptions{Tenant: "acme", Name: "k1", TCP: "0.0.0.0:9000"})
+	withTCP, err := install.RenderConfig(&layout, install.ConfigOptions{Name: "k1", TCP: "0.0.0.0:9000"})
 	if err != nil {
 		t.Fatalf("render config: %v", err)
 	}
@@ -153,7 +152,6 @@ func TestInstallCreatesDataDirectory(t *testing.T) {
 
 	result, err := install.Install(context.Background(), &install.Options{
 		Scope:      install.ScopeUser,
-		Tenant:     "acme",
 		Name:       "local",
 		SkipEnable: true,
 	})

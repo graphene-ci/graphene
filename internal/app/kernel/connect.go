@@ -120,7 +120,7 @@ func (k *Kernel) renewLease(ctx context.Context, client graphenepbv1.ResourceSer
 func (k *Kernel) renewOnce(ctx context.Context, client graphenepbv1.ResourceServiceClient) error {
 	key := &graphenepbv1.Key{
 		Kind: leaseKind,
-		Path: []string{k.cfg.Identity.Tenant, k.cfg.Identity.Name},
+		Path: []string{k.cfg.Identity.Name},
 	}
 
 	var expected uint64

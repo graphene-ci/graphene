@@ -3,8 +3,11 @@
 // Everything that names a resource goes through this type — the store's
 // byte encoding, the wire message, what an operator types, what a log
 // line prints — so the rules live in one place: how segments are joined,
-// which segment is the tenant, when a path names one resource instead of
-// a subtree.
+// when a path names one resource instead of a subtree.
+//
+// Segments carry no meaning here. What a path means — an owner, an
+// environment, a version — is declared by the kind's definition and
+// interpreted by whoever wrote it; the kernel only ever compares prefixes.
 package key
 
 import (
@@ -91,17 +94,6 @@ func (k Key) String() string {
 // PathString is the path alone: "acme/k1".
 func (k Key) PathString() string {
 	return strings.Join(k.Path, SepPath)
-}
-
-// Tenant is the first segment: every kind's path starts with the tenant
-// that owns the resource, which is what makes tenant confinement a
-// prefix check rather than a per-kind rule.
-func (k Key) Tenant() string {
-	if len(k.Path) == 0 {
-		return ""
-	}
-
-	return k.Path[0]
 }
 
 // IsExact reports whether the path names ONE resource of a kind with the

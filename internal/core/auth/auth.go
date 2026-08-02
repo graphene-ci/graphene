@@ -38,13 +38,11 @@ const (
 // Principal is an authenticated identity.
 type Principal struct {
 	Kind PrincipalKind
-	// Tenant the identity belongs to. Names are unique only WITHIN a
-	// tenant, so anything comparing names must carry this alongside:
-	// without it "k1" of one tenant and "k1" of another are the same
-	// principal to every ${principal.name} constraint.
-	Tenant string
-	// Name: user name, kernel id, or execution path — the value the
-	// ${principal.name} grant variable interpolates to.
+	// Name is the identity's whole path joined — one string, globally
+	// unique, the value ${principal.name} interpolates to. The kernel
+	// never splits it: a path segment carries no meaning here, so
+	// comparing names is comparing one string (k8s does the same with
+	// "system:serviceaccount:<ns>:<name>").
 	Name string
 }
 
@@ -91,12 +89,6 @@ type Grant struct {
 	Where []Constraint
 	// Parts writable by Put. Empty = all parts (full write).
 	Parts []Part
-	// Tenant confines the grant to resources whose first path segment is
-	// this tenant. It is NOT part of the Role document: the system sets it
-	// from the tenant the Role lives in, so a role can never hand out
-	// authority in another tenant — no matter what its author wrote.
-	// Empty means unconfined (the bootstrap credential only).
-	Tenant string
 }
 
 // Credentials is an authenticated principal with its grants; the transport
@@ -127,16 +119,12 @@ type TokenSource interface {
 	Lookup(token string) (Credentials, bool)
 }
 
-// Grant variables, interpolated into PathPrefix segments and Where values.
-const (
-	principalNameVar   = "${principal.name}"
-	principalTenantVar = "${principal.tenant}"
-)
+// principalNameVar is the one grant variable, interpolated into PathPrefix
+// segments and Where values.
+const principalNameVar = "${principal.name}"
 
 func interpolate(s string, p Principal) string {
-	s = strings.ReplaceAll(s, principalNameVar, p.Name)
-
-	return strings.ReplaceAll(s, principalTenantVar, p.Tenant)
+	return strings.ReplaceAll(s, principalNameVar, p.Name)
 }
 
 // AllVerbs is every operation the API defines.
@@ -154,16 +142,12 @@ func FullAccess(kind PrincipalKind, name string) Credentials {
 	}
 }
 
-// ScopeToTenant returns the grants confined to the given tenant. The token
-// source applies this when resolving a Role: the resulting grants can only
-// ever touch that tenant's resources.
-func ScopeToTenant(grants []Grant, tenant string) []Grant {
+// Clone deep-copies grants: the index and every credential handed out must
+// not share mutable slices with the resource they were decoded from.
+func Clone(grants []Grant) []Grant {
 	out := make([]Grant, 0, len(grants))
-
 	for i := range grants {
-		scoped := grants[i].clone()
-		scoped.Tenant = tenant
-		out = append(out, scoped)
+		out = append(out, grants[i].clone())
 	}
 
 	return out
@@ -178,6 +162,5 @@ func (g *Grant) clone() Grant {
 		PathPrefix: append([]string(nil), g.PathPrefix...),
 		Where:      append([]Constraint(nil), g.Where...),
 		Parts:      append([]Part(nil), g.Parts...),
-		Tenant:     g.Tenant,
 	}
 }

@@ -18,21 +18,19 @@ import (
 // write), and constraints (the holder's Where must be implied by the
 // written one — a writer restricted to spec.placement==self cannot mint an
 // unconstrained grant).
-// tenant is where the written grants will live: a Role document carries no
-// tenant of its own (the system assigns it from the Role's path), so the
-// guard must compare the holder's confinement against that destination —
-// not against the empty field of the document.
-func CheckEscalation(ctx context.Context, written []Grant, tenant string) error {
+//
+// This guard is the ONLY thing standing between a Role author and any
+// authority they care to write down. There is no second confinement
+// applied behind it: what a Role says is what a Role grants, and the only
+// question ever asked is whether its author already held as much.
+func CheckEscalation(ctx context.Context, written []Grant) error {
 	creds, ok := FromContext(ctx)
 	if !ok {
 		return ErrDenied
 	}
 
 	for i := range written {
-		scoped := written[i].clone()
-		scoped.Tenant = tenant
-
-		if !heldCovers(creds, &scoped) {
+		if !heldCovers(creds, &written[i]) {
 			return ErrDenied
 		}
 	}
@@ -52,12 +50,6 @@ func heldCovers(creds Credentials, written *Grant) bool {
 
 func covers(held, written *Grant, principal Principal) bool {
 	if held.Kind != "*" && held.Kind != written.Kind {
-		return false
-	}
-
-	// A tenant-confined holder can only write grants confined to the same
-	// tenant; an unconfined holder (bootstrap) can write anything.
-	if held.Tenant != "" && held.Tenant != written.Tenant {
 		return false
 	}
 

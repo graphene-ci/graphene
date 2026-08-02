@@ -5,8 +5,6 @@ import (
 	"slices"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
-
-	"github.com/graphene-ci/graphene/internal/core/key"
 )
 
 // CheckRead authorizes a Get of the fetched resource.
@@ -177,13 +175,10 @@ func kindMatches(grant *Grant, kind string) bool {
 	return grant.Kind == "*" || grant.Kind == kind
 }
 
-// objectInScope: the object lies inside the grant's tenant confinement and
-// its path starts with the (interpolated) grant prefix.
+// objectInScope: the object's path starts with the (interpolated) grant
+// prefix. The prefix is the ONLY spatial confinement there is — the kernel
+// attaches no meaning to any particular segment.
 func objectInScope(grant *Grant, p Principal, path []string) bool {
-	if !tenantAllows(grant, path) {
-		return false
-	}
-
 	if len(grant.PathPrefix) > len(path) {
 		return false
 	}
@@ -197,25 +192,10 @@ func objectInScope(grant *Grant, p Principal, path []string) bool {
 	return true
 }
 
-// tenantAllows enforces the grant's tenant confinement: a tenant-scoped
-// grant reaches only resources whose first path segment is that tenant.
-// Object-less operations (no path — the byte plane) are unaffected.
-func tenantAllows(grant *Grant, path []string) bool {
-	if grant.Tenant == "" || len(path) == 0 {
-		return true
-	}
-
-	return key.New("", path...).Tenant() == grant.Tenant
-}
-
 // scopesOverlap: a List/Watch request prefix and a grant scope can share
 // objects — either may be the narrower one; the predicate settles per
 // object.
 func scopesOverlap(grant *Grant, p Principal, prefix []string) bool {
-	if !tenantAllows(grant, prefix) {
-		return false
-	}
-
 	shorter := min(len(grant.PathPrefix), len(prefix))
 
 	for i := range shorter {

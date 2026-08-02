@@ -36,9 +36,8 @@ var (
 // Options steer an installation.
 type Options struct {
 	Scope Scope
-	// Tenant and Name identify the kernel in its own resources.
-	Tenant string
-	Name   string
+	// Name identifies the kernel in its own resources.
+	Name string
 	// TCP, when set, also serves the network endpoint (TLS is minted).
 	TCP string
 	// Force overwrites an existing configuration.
@@ -143,7 +142,6 @@ func recordContext(layout *Layout, opts *Options) error {
 	cfg.Upsert(name,
 		clientconfig.Kernel{Socket: layout.Socket},
 		clientconfig.Identity{Token: secret.Value{File: layout.TokenFile}},
-		opts.Tenant,
 	)
 
 	if err := clientconfig.Save(cfg, path); err != nil {
@@ -210,9 +208,8 @@ func writeConfig(layout *Layout, opts *Options) error {
 	}
 
 	body, err := RenderConfig(layout, ConfigOptions{
-		Tenant: opts.Tenant,
-		Name:   opts.Name,
-		TCP:    opts.TCP,
+		Name: opts.Name,
+		TCP:  opts.TCP,
 	})
 	if err != nil {
 		return err

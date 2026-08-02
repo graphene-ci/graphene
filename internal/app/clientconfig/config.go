@@ -55,8 +55,6 @@ type Config struct {
 type Context struct {
 	Kernel   string `json:"kernel"`
 	Identity string `json:"identity"`
-	// Tenant is the default tenant for commands that need one.
-	Tenant string `json:"tenant,omitempty"`
 }
 
 // Kernel is where a kernel is and how its certificate is trusted.
@@ -172,7 +170,7 @@ func (c *Config) Resolve(name string) (Resolved, error) {
 
 // Upsert records a kernel, an identity and the context pairing them,
 // selecting it when nothing was selected before.
-func (c *Config) Upsert(name string, kernel Kernel, identity Identity, tenant string) {
+func (c *Config) Upsert(name string, kernel Kernel, identity Identity) {
 	if c.Kernels == nil {
 		c.Kernels = map[string]Kernel{}
 	}
@@ -187,7 +185,7 @@ func (c *Config) Upsert(name string, kernel Kernel, identity Identity, tenant st
 
 	c.Kernels[name] = kernel
 	c.Identities[name] = identity
-	c.Contexts[name] = Context{Kernel: name, Identity: name, Tenant: tenant}
+	c.Contexts[name] = Context{Kernel: name, Identity: name}
 
 	if c.CurrentContext == "" {
 		c.CurrentContext = name

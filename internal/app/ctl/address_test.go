@@ -60,7 +60,7 @@ func TestAddressArity(t *testing.T) {
 
 	client := startKernel(ctx, t)
 
-	exact, err := client.Exact(ctx, appctl.ParseAddress(builtin.KindKernel, "acme/k1"))
+	exact, err := client.Exact(ctx, appctl.ParseAddress(builtin.KindKernel, "k1"))
 	if err != nil {
 		t.Fatalf("exact: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestAddressArity(t *testing.T) {
 		t.Fatal("a full path must name one resource")
 	}
 
-	prefix, err := client.Exact(ctx, appctl.ParseAddress(builtin.KindKernel, "acme"))
+	prefix, err := client.Exact(ctx, appctl.ParseAddress(builtin.KindKernel, ""))
 	if err != nil {
 		t.Fatalf("prefix: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSuggester(t *testing.T) {
 
 	client := startKernel(ctx, t)
 
-	doc := "key:\n  kind: " + builtin.KindKernel + "\n  path: [acme, k9]\n" +
+	doc := "key:\n  kind: " + builtin.KindKernel + "\n  path: [k9]\n" +
 		"spec:\n  fields:\n    os: { stringValue: linux }\n    arch: { stringValue: amd64 }\n"
 	if _, err := client.Apply(ctx, []byte(doc)); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -173,14 +173,13 @@ func TestSuggester(t *testing.T) {
 		t.Fatalf("prefix ignored: %v", kinds)
 	}
 
-	tenants := suggester.Paths(builtin.KindKernel, "")
-	if !contains(tenants, "acme") {
-		t.Fatalf("tenant suggestions: %v", tenants)
+	names := suggester.Paths(builtin.KindKernel, "")
+	if !contains(names, "k9") {
+		t.Fatalf("name suggestions: %v", names)
 	}
 
-	names := suggester.Paths(builtin.KindKernel, "acme/")
-	if !contains(names, "acme/k9") {
-		t.Fatalf("name suggestions: %v", names)
+	if contains(suggester.Paths(builtin.KindKernel, "z"), "k9") {
+		t.Fatalf("prefix ignored: %v", names)
 	}
 
 	// Selector fields come from the kind's schema — a generic client

@@ -26,7 +26,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 
 	client := startKernel(ctx, t)
 
-	doc := "key:\n  kind: " + builtin.KindKernel + "\n  path: [acme, k1]\n" +
+	doc := "key:\n  kind: " + builtin.KindKernel + "\n  path: [k1]\n" +
 		"spec:\n  fields:\n    os: { stringValue: linux }\n    arch: { stringValue: amd64 }\n"
 	if _, err := client.Apply(ctx, []byte(doc)); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -37,7 +37,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 		t.Fatalf("definition: %v", err)
 	}
 
-	resources, err := client.List(ctx, builtin.KindKernel, []string{"acme"}, nil)
+	resources, err := client.List(ctx, builtin.KindKernel, nil, nil)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 	head, row := lines(t, table.String())
 
 	// Path columns are named by the definition, not invented.
-	for _, want := range []string{"TENANT", "KERNEL", "REVISION", "ONLINE"} {
+	for _, want := range []string{"KERNEL", "REVISION", "ONLINE"} {
 		if !strings.Contains(head, want) {
 			t.Fatalf("table header %q misses %s", head, want)
 		}
@@ -61,7 +61,7 @@ func TestTableColumnsComeFromTheSchema(t *testing.T) {
 		t.Fatalf("plain table shows spec columns: %q", head)
 	}
 
-	if !strings.Contains(row, "acme") || !strings.Contains(row, "k1") {
+	if !strings.Contains(row, "k1") {
 		t.Fatalf("table row %q misses the path", row)
 	}
 

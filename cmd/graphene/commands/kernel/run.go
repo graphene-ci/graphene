@@ -76,7 +76,7 @@ func Run(flags *RunFlags) error {
 		}
 	}()
 
-	log.Info("kernel starting", "tenant", cfg.Identity.Tenant, "name", cfg.Identity.Name)
+	log.Info("kernel starting", "name", cfg.Identity.Name)
 
 	if err := kern.Run(ctx); err != nil {
 		return fmt.Errorf("kernel run: %w", err)
