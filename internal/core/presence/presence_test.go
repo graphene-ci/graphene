@@ -12,6 +12,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/controller"
 	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/presence"
 	"github.com/graphene-ci/graphene/internal/core/registry"
@@ -21,7 +22,7 @@ import (
 
 // newWriter builds a writer over a real store and service: presence is
 // worth testing against the same validation everything else goes through.
-func newWriter(t *testing.T) (presence.Writer, context.Context) {
+func newWriter(t *testing.T) (controller.Writer, context.Context) {
 	t.Helper()
 
 	st, err := bbolt.Open(filepath.Join(t.TempDir(), "store.db"))
@@ -38,7 +39,7 @@ func newWriter(t *testing.T) (presence.Writer, context.Context) {
 		t.Fatalf("ensure builtins: %v", err)
 	}
 
-	return presence.OverService(service.NewResources(st, reg)), ctx
+	return controller.OverService(service.NewResources(st, reg)), ctx
 }
 
 func kernelResource(arch string) *graphenepbv1.Resource {
@@ -48,7 +49,7 @@ func kernelResource(arch string) *graphenepbv1.Resource {
 	}
 }
 
-func read(ctx context.Context, t *testing.T, writer presence.Writer) *graphenepbv1.Resource {
+func read(ctx context.Context, t *testing.T, writer controller.Writer) *graphenepbv1.Resource {
 	t.Helper()
 
 	got, err := writer.Get(ctx, kernelKey())
@@ -173,7 +174,7 @@ func TestAbsentIsUniform(t *testing.T) {
 
 	writer, ctx := newWriter(t)
 
-	if _, err := writer.Get(ctx, kernelKey()); !errors.Is(err, presence.ErrAbsent) {
+	if _, err := writer.Get(ctx, kernelKey()); !errors.Is(err, controller.ErrAbsent) {
 		t.Fatalf("missing resource: got %v, want ErrAbsent", err)
 	}
 }

@@ -167,7 +167,7 @@ func (k *Kernel) bootstrapCredentials() (string, auth.Credentials, error) {
 // Where it writes is the only difference between a worker announcing
 // itself across a link and a control kernel announcing itself into the
 // store it holds — so there is one construction, not two.
-func (k *Kernel) presence(writer presence.Writer) *presence.Kernel {
+func (k *Kernel) presence(writer controller.Writer) *presence.Kernel {
 	return &presence.Kernel{
 		Writer:   writer,
 		Name:     k.cfg.Identity.Name,
@@ -205,7 +205,7 @@ func (k *Kernel) Run(ctx context.Context) error {
 	// link it registers over there instead (connect does that) — a kernel
 	// announces itself once, to whoever is keeping track of it.
 	if k.resources != nil && k.cfg.Link == nil {
-		announce := k.presence(presence.OverService(k.resources))
+		announce := k.presence(controller.OverService(k.resources))
 
 		group.Go(func() error { return announce.Run(controller.SystemContext(ctx)) })
 	}

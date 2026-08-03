@@ -2,12 +2,10 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	schemapb "github.com/gopherex/schemapb/go/schemapb"
 
@@ -15,7 +13,6 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/builtin"
 	"github.com/graphene-ci/graphene/internal/core/key"
-	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
 
@@ -30,9 +27,9 @@ import (
 // Kernel.status.online is written by this controller only; the Kernel
 // resource itself is registered by the kernel it describes.
 type Lease struct {
-	resources *service.Resources
-	st        store.Store
-	now       func() time.Time
+	writer Writer
+	st     store.Store
+	now    func() time.Time
 
 	mu    sync.Mutex
 	seen  map[string]*leaseState // key: the kernel path joined
@@ -47,12 +44,12 @@ type leaseState struct {
 }
 
 // NewLease wires the controller; now is injectable for deterministic tests.
-func NewLease(resources *service.Resources, st store.Store, now func() time.Time) *Lease {
+func NewLease(resources graphenepbv1.ResourceServiceServer, st store.Store, now func() time.Time) *Lease {
 	return &Lease{
-		resources: resources,
-		st:        st,
-		now:       now,
-		seen:      make(map[string]*leaseState),
+		writer: OverService(resources),
+		st:     st,
+		now:    now,
+		seen:   make(map[string]*leaseState),
 	}
 }
 
@@ -138,46 +135,32 @@ func (l *Lease) Sweep(ctx context.Context) {
 	}
 }
 
-// setOnline writes Kernel.status.online with a small CAS retry.
+// setOnline writes Kernel.status.online. A kernel that has not registered
+// itself yet is not an error: there is simply nothing to mark, and the
+// next renewal will find the record there.
 func (l *Lease) setOnline(ctx context.Context, path []string, online bool) error {
 	l.putMu.Lock()
 	defer l.putMu.Unlock()
 
-	ctx = SystemContext(ctx)
+	err := Update(SystemContext(ctx), l.writer, key.New(builtin.KindKernel, path...),
+		func(res *graphenepbv1.Resource) bool {
+			if kernelOnline(res) == online {
+				return false
+			}
 
-	for {
-		got, err := l.resources.Get(ctx, &graphenepbv1.GetRequest{
-			Key: &graphenepbv1.Key{Kind: builtin.KindKernel, Path: path},
+			res.Status = schemapb.MustStructFromGo(map[string]any{"online": online})
+
+			return true
 		})
-		if status.Code(err) == codes.NotFound {
-			return nil // the operator has not registered this kernel; nothing to mark
-		}
-
-		if err != nil {
-			return fmt.Errorf("lease: read kernel: %w", err)
-		}
-
-		res := got.GetResource()
-		if kernelOnline(res) == online {
-			return nil
-		}
-
-		res.Status = schemapb.MustStructFromGo(map[string]any{"online": online})
-
-		_, err = l.resources.Put(ctx, &graphenepbv1.PutRequest{
-			Resource:         res,
-			ExpectedRevision: res.GetRevision(),
-		})
-		if status.Code(err) == codes.Aborted {
-			continue // lost a CAS race; re-read
-		}
-
-		if err != nil {
-			return fmt.Errorf("lease: write kernel status: %w", err)
-		}
-
+	if errors.Is(err, ErrAbsent) {
 		return nil
 	}
+
+	if err != nil {
+		return fmt.Errorf("lease: mark kernel %v: %w", path, err)
+	}
+
+	return nil
 }
 
 func leaseTTLSeconds(res *graphenepbv1.Resource) int64 {

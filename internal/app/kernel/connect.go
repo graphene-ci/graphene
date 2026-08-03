@@ -9,8 +9,8 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
+	"github.com/graphene-ci/graphene/internal/core/controller"
 	corelink "github.com/graphene-ci/graphene/internal/core/link"
-	"github.com/graphene-ci/graphene/internal/core/presence"
 	"github.com/graphene-ci/graphene/internal/infrastructure/link"
 	tlsutil "github.com/graphene-ci/graphene/internal/infrastructure/tls"
 )
@@ -43,7 +43,7 @@ func (k *Kernel) connect(ctx context.Context, group *errgroup.Group) error {
 	k.closers = append(k.closers, conn.Close)
 	k.log.Info("linked", "mode", k.cfg.Link.Mode, "address", k.cfg.Link.Address)
 
-	announce := k.presence(presence.OverClient(graphenepbv1.NewResourceServiceClient(conn)))
+	announce := k.presence(controller.OverClient(graphenepbv1.NewResourceServiceClient(conn)))
 
 	group.Go(func() error { return announce.Run(ctx) })
 

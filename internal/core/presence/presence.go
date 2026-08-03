@@ -30,28 +30,17 @@ import (
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/controller"
 	"github.com/graphene-ci/graphene/internal/core/key"
 )
 
-// ErrAbsent — the resource does not exist. Writers report it uniformly so
-// this package never has to know whether the truth is local or a link away.
-var ErrAbsent = errors.New("presence: resource absent")
-
-// Writer is the slice of the resource API presence needs. Both sides of a
-// link satisfy it: the service a control kernel holds in-process, and the
-// client a worker kernel talks through.
-type Writer interface {
-	Get(ctx context.Context, k key.Key) (*graphenepbv1.Resource, error)
-	Put(ctx context.Context, res *graphenepbv1.Resource, expected uint64) error
-}
-
 // Ensure makes res present with exactly its spec: absent → create,
 // drifted → overwrite by CAS, identical → leave alone.
-func Ensure(ctx context.Context, writer Writer, res *graphenepbv1.Resource) error {
+func Ensure(ctx context.Context, writer controller.Writer, res *graphenepbv1.Resource) error {
 	current, err := writer.Get(ctx, key.FromProto(res.GetKey()))
 
 	switch {
-	case errors.Is(err, ErrAbsent):
+	case errors.Is(err, controller.ErrAbsent):
 		return put(ctx, writer, res, 0)
 	case err != nil:
 		return fmt.Errorf("presence: read %s: %w", key.FromProto(res.GetKey()), err)
@@ -67,13 +56,13 @@ func Ensure(ctx context.Context, writer Writer, res *graphenepbv1.Resource) erro
 }
 
 // Renew writes res unconditionally, at whatever revision it currently has.
-func Renew(ctx context.Context, writer Writer, res *graphenepbv1.Resource) error {
+func Renew(ctx context.Context, writer controller.Writer, res *graphenepbv1.Resource) error {
 	var expected uint64
 
 	current, err := writer.Get(ctx, key.FromProto(res.GetKey()))
 
 	switch {
-	case errors.Is(err, ErrAbsent):
+	case errors.Is(err, controller.ErrAbsent):
 	case err != nil:
 		return fmt.Errorf("presence: read %s: %w", key.FromProto(res.GetKey()), err)
 	default:
@@ -83,7 +72,7 @@ func Renew(ctx context.Context, writer Writer, res *graphenepbv1.Resource) error
 	return put(ctx, writer, res, expected)
 }
 
-func put(ctx context.Context, writer Writer, res *graphenepbv1.Resource, expected uint64) error {
+func put(ctx context.Context, writer controller.Writer, res *graphenepbv1.Resource, expected uint64) error {
 	if err := writer.Put(ctx, res, expected); err != nil {
 		return fmt.Errorf("presence: write %s: %w", key.FromProto(res.GetKey()), err)
 	}
@@ -94,7 +83,7 @@ func put(ctx context.Context, writer Writer, res *graphenepbv1.Resource, expecte
 // Kernel is one kernel's presence: the Kernel resource describing it and
 // the KernelLease proving it is still running.
 type Kernel struct {
-	Writer Writer
+	Writer controller.Writer
 	// Name is this kernel's identity — the path of both resources and the
 	// value its grants interpolate as ${principal.name}.
 	Name string
