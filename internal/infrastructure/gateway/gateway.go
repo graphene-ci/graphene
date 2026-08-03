@@ -21,6 +21,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -41,6 +42,19 @@ import (
 // isolation between processes (see the package comment) — only a fence
 // against everyone else on the machine.
 const dirMode = 0o700
+
+// maxSocketPath is the kernel's limit on a unix socket address
+// (sun_path), minus the terminating zero. Linux gives 108 bytes; the
+// other unixes give less, and 104 is the smallest anyone still ships.
+//
+// Worth a sentence of its own because of how it fails otherwise: bind
+// returns EINVAL, which prints as "invalid argument" and says nothing
+// about length. A kernel installed under a long data directory would
+// simply refuse to run anything, with an error nobody could act on.
+const maxSocketPath = 104
+
+// errSocketPathTooLong — the door cannot be opened where it was asked for.
+var errSocketPathTooLong = errors.New("socket path is longer than the operating system allows")
 
 // build assembles the server a single process talks to. It is a whole
 // server per process rather than one shared: the process's identity is
@@ -149,6 +163,10 @@ func (g *Gateway) Open(process string) (agent.Opened, error) {
 	}
 
 	path := filepath.Join(g.dir, process+".sock")
+	if len(path) > maxSocketPath {
+		return nil, fmt.Errorf("gateway: %s: %w (%d > %d bytes) — a shorter data directory",
+			path, errSocketPathTooLong, len(path), maxSocketPath)
+	}
 
 	// A socket left behind by a process that died with the kernel would
 	// otherwise make the new one unbindable.

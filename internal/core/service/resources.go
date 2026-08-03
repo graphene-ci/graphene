@@ -543,7 +543,7 @@ func matchSelector(res *graphenepbv1.Resource, sel []*graphenepbv1.FieldMatch) b
 // authority it does not hold, and none may destroy authority it does not
 // hold either.
 func (r *Resources) checkAuthority(ctx context.Context, kind string, res, current *graphenepbv1.Resource) error {
-	if err := r.checkAuthorityWrite(ctx, kind, res); err != nil {
+	if err := r.checkAuthorityWrite(ctx, kind, res, current); err != nil {
 		return err
 	}
 
@@ -554,7 +554,9 @@ func (r *Resources) checkAuthority(ctx context.Context, kind string, res, curren
 // that CARRY authority: defining a Role mints grants, and binding roles to
 // an Identity hands those grants out. Either way the writer must already
 // hold everything it gives away (auth.CheckEscalation).
-func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *graphenepbv1.Resource) error {
+func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string,
+	res, current *graphenepbv1.Resource,
+) error {
 	switch kind {
 	case builtin.KindRole:
 		grants, err := auth.GrantsFromSpec(res.GetSpec())
@@ -574,14 +576,22 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 		return r.checkRoles(ctx, spec.Roles, "binding role")
 
 	case builtin.KindProcess:
-		// A Process runs AS an identity: the kernel mints it a token, so
-		// writing one hands out that identity's whole authority. Without
-		// this check the escalation guard has an open door — you cannot
-		// mint a powerful Role, but you could start a process running as
-		// one and have it act for you.
+		// A Process runs AS an identity, so asking for one hands out that
+		// identity's whole authority. Without this the escalation guard
+		// has an open door: you cannot mint a powerful Role, but you could
+		// start a process running as one and have it act for you.
+		//
+		// Only a CHANGE of identity is a handing-out. Everything else
+		// about a Process — and its status above all — is written by the
+		// kernel running it, which holds the authority to run things and
+		// not necessarily the authority it was told to run them with.
+		// Checking every write would mean a kernel could never report what
+		// happened to a process more privileged than itself, which is the
+		// normal case: an agent is not supposed to be able to do what it
+		// starts.
 		identity := processIdentity(res.GetSpec())
-		if identity == "" {
-			return nil // no credentials asked for, none given
+		if identity == "" || identity == processIdentity(current.GetSpec()) {
+			return nil
 		}
 
 		roles, err := r.identityRoles(ctx, identity)

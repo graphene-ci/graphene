@@ -541,3 +541,70 @@ func TestProcessWithoutIdentityCannotBeVouchedFor(t *testing.T) {
 		t.Fatal("a process without an identity was vouched for")
 	}
 }
+
+// A kernel reports what became of the processes it runs, and it is not
+// supposed to be able to do what they do: an agent that could only write
+// the status of processes weaker than itself could not report the ones
+// that matter. Only a CHANGE of identity hands authority out.
+func TestReportingAProcessIsNotHandingOutItsIdentity(t *testing.T) {
+	t.Parallel()
+
+	harn := newHarness(t)
+
+	if err := harn.putRole(harn.admin, t, "strong", superRole()); err != nil {
+		t.Fatalf("put role: %v", err)
+	}
+
+	if err := harn.putIdentity(harn.admin, t, "privileged", auth.PrincipalProcess,
+		[]string{"strong"}, "privileged-token"); err != nil {
+		t.Fatalf("put identity: %v", err)
+	}
+
+	// An agent may run processes and say what happened to them, and holds
+	// nothing else.
+	if err := harn.putRole(harn.admin, t, "agent", []auth.Grant{{
+		Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut},
+		Kind:  builtin.KindProcess,
+	}}); err != nil {
+		t.Fatalf("put agent role: %v", err)
+	}
+
+	if err := harn.putIdentity(harn.admin, t, "k1", auth.PrincipalKernel,
+		[]string{"agent"}, "k1-token"); err != nil {
+		t.Fatalf("put kernel identity: %v", err)
+	}
+
+	agentCtx := auth.WithCredentials(context.Background(), harn.waitToken(t, "k1-token"))
+
+	// The agent may not START a process running as something stronger.
+	if err := harn.putProcess(agentCtx, t, "strong-one", "privileged"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("agent minting a privileged process: want PermissionDenied, got %v", err)
+	}
+
+	// The operator starts it.
+	if err := harn.putProcess(harn.admin, t, "strong-one", "privileged"); err != nil {
+		t.Fatalf("operator put process: %v", err)
+	}
+
+	// And now the agent CAN say what became of it.
+	current, err := harn.resources.Get(agentCtx, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: builtin.KindProcess, Path: []string{"k1", "strong-one"}},
+	})
+	if err != nil {
+		t.Fatalf("agent read: %v", err)
+	}
+
+	reported := current.GetResource()
+	reported.Status = schemapb.MustStructFromGo(map[string]any{"phase": "running"})
+
+	if _, err := harn.resources.Put(agentCtx, &graphenepbv1.PutRequest{
+		Resource: reported, ExpectedRevision: reported.GetRevision(),
+	}); err != nil {
+		t.Fatalf("agent reporting a privileged process: %v", err)
+	}
+
+	// And it still may not start another one that way.
+	if err := harn.putProcess(agentCtx, t, "another", "privileged"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("agent minting another privileged process: want PermissionDenied, got %v", err)
+	}
+}
