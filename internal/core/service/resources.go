@@ -164,6 +164,13 @@ func (r *Resources) Put(ctx context.Context, req *graphenepbv1.PutRequest) (*gra
 }
 
 func (r *Resources) Delete(ctx context.Context, req *graphenepbv1.DeleteRequest) (*graphenepbv1.DeleteResponse, error) {
+	// Symmetric with Put: definitions are managed by Define/Undefine. The
+	// wire formats happen to be incompatible enough that this path errors
+	// on its own today, but that is luck, not a rule.
+	if req.GetKey().GetKind() == registry.KindKind {
+		return nil, status.Error(codes.InvalidArgument, "definitions are managed via Undefine, not Delete")
+	}
+
 	storedKey, err := storeKey(req.GetKey())
 	if err != nil {
 		return nil, err
@@ -338,6 +345,60 @@ func (r *Resources) Define(ctx context.Context, req *graphenepbv1.DefineRequest)
 	}
 
 	return &graphenepbv1.DefineResponse{Version: version}, nil
+}
+
+// Undefine removes a kind. Three things have to be true, and each is
+// refused loudly rather than worked around:
+//
+//   - it is not built in: those ship with the binary and would simply be
+//     re-created at the next start, so removing one is churn pretending
+//     to be an operation;
+//   - nothing is still an instance of it: a schema operation must never
+//     delete someone's data as a side effect. Deleting the instances
+//     first is a sentence to type; losing them silently is not;
+//   - the caller may define kinds at all.
+func (r *Resources) Undefine(
+	ctx context.Context,
+	req *graphenepbv1.UndefineRequest,
+) (*graphenepbv1.UndefineResponse, error) {
+	if err := auth.CheckDefine(ctx); err != nil {
+		return nil, denied(err)
+	}
+
+	kind := req.GetKind()
+	if builtin.IsBuiltin(kind) {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"%s ships with the kernel and would be defined again at the next start", kind)
+	}
+
+	used, err := r.hasInstances(ctx, kind)
+	if err != nil {
+		return nil, internal(err)
+	}
+
+	if used {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"%s still has instances; delete them first", kind)
+	}
+
+	versions, err := r.reg.Undefine(ctx, kind)
+	if err != nil {
+		return nil, mapRegistryErr(err)
+	}
+
+	return &graphenepbv1.UndefineResponse{Versions: versions}, nil
+}
+
+// hasInstances answers with one entry, not a count: the question is
+// whether the kind is in use, and a kind with a million instances is no
+// more in use than one with a single instance.
+func (r *Resources) hasInstances(ctx context.Context, kind string) (bool, error) {
+	entries, _, err := r.st.Scan(ctx, key.New(kind).Encode(), 1, nil)
+	if err != nil {
+		return false, fmt.Errorf("scan %s: %w", kind, err)
+	}
+
+	return len(entries) > 0, nil
 }
 
 func (r *Resources) GetDefinition(

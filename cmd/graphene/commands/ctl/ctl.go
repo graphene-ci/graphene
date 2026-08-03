@@ -117,6 +117,7 @@ func newCommand() *cobra.Command {
 		newDeleteCommand(),
 		newWatchCommand(),
 		newDefinitionsCommand(),
+		newUndefineCommand(),
 		newBlobCommand(),
 		newContextCommand(),
 	)

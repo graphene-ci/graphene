@@ -116,6 +116,16 @@ func (c *Client) Delete(ctx context.Context, kind string, path []string, revisio
 	return nil
 }
 
+// Undefine removes a kind from the kernel.
+func (c *Client) Undefine(ctx context.Context, kind string) (uint32, error) {
+	done, err := c.Resources.Undefine(ctx, &graphenepbv1.UndefineRequest{Kind: kind})
+	if err != nil {
+		return 0, fmt.Errorf("ctl: undefine: %w", err)
+	}
+
+	return done.GetVersions(), nil
+}
+
 // WatchFunc consumes one watch event; returning an error stops the watch.
 type WatchFunc func(event *graphenepbv1.WatchEvent) error
 

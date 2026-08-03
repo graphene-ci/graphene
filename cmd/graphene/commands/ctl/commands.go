@@ -443,6 +443,56 @@ func newDefinitionsCommand() *cobra.Command {
 	}
 }
 
+// UndefineFlags names the kind to remove.
+type UndefineFlags struct {
+	Target *TargetFlags
+	Kind   string
+}
+
+// Undefine removes a kind the kernel no longer needs to know.
+func Undefine(ctx context.Context, out io.Writer, flags *UndefineFlags) error {
+	if flags == nil {
+		return errFlagsRequired
+	}
+
+	client, err := connect(flags.Target)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = client.Close() }()
+
+	versions, err := client.Undefine(ctx, flags.Kind)
+	if err != nil {
+		return fmt.Errorf("undefine: %w", err)
+	}
+
+	if _, err := fmt.Fprintf(out, "removed %s (%d versions)\n", flags.Kind, versions); err != nil {
+		return fmt.Errorf("undefine: %w", err)
+	}
+
+	return nil
+}
+
+func newUndefineCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "undefine <kind>",
+		Short: "Remove a kind this kernel no longer needs to know",
+		Example: "  graphene ctl undefine aws.vm\n\n" +
+			"Refused while instances of the kind still exist: delete those first.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			target, err := newTargetFlags(command)
+			if err != nil {
+				return err
+			}
+
+			return Undefine(command.Context(), command.OutOrStdout(),
+				&UndefineFlags{Target: target, Kind: args[0]})
+		},
+	}
+}
+
 func addSelectorFlag(command *cobra.Command) {
 	command.Flags().StringSlice("selector", nil, "field match, e.g. spec.placement=k1")
 	cmdflags.RegisterCompletion(command, "selector", completeSelector)

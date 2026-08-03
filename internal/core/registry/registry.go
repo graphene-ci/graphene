@@ -180,6 +180,52 @@ func (r *Registry) List(ctx context.Context) ([]*graphenepbv1.ResourceDefinition
 	return out, nil
 }
 
+// Undefine removes a kind: every version of it, at once.
+//
+// Not one version — instances pin the version they were validated
+// against, so an old version is load-bearing for as long as anything
+// still carries it. Removing them one at a time would offer a way to
+// leave a resource pointing at a definition that no longer exists.
+//
+// Whether removing the kind is ALLOWED — no instances left, not a
+// built-in — is decided a layer up, where instances are visible. Here it
+// only happens.
+func (r *Registry) Undefine(ctx context.Context, kind string) (uint32, error) {
+	if kind == KindKind {
+		return 0, ErrReservedKind
+	}
+
+	var (
+		cursor  []byte
+		removed uint32
+	)
+
+	for {
+		entries, next, err := r.st.Scan(ctx, key.New(KindKind, kind).Encode(), scanPage, cursor)
+		if err != nil {
+			return 0, fmt.Errorf("registry: scan definitions: %w", err)
+		}
+
+		if len(entries) == 0 && cursor == nil {
+			return 0, fmt.Errorf("%w: %s", ErrUnknownKind, kind)
+		}
+
+		for _, entry := range entries {
+			if _, err := r.st.Delete(ctx, entry.Key, entry.Revision); err != nil {
+				return 0, fmt.Errorf("registry: remove definition %s: %w", kind, err)
+			}
+
+			removed++
+		}
+
+		if next == nil {
+			return removed, nil
+		}
+
+		cursor = next
+	}
+}
+
 // ValidateInstance checks an instance against its kind's definition:
 // path shape, spec values, and status values (when present). version 0
 // resolves to latest and is returned so the caller can pin it.

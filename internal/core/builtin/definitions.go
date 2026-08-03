@@ -33,6 +33,19 @@ const (
 	segName   = "name"
 )
 
+// IsBuiltin reports whether the kind ships with the binary. Built-ins are
+// ensured at every start, so removing one is churn pretending to be an
+// operation: it would be back before anyone looked.
+func IsBuiltin(kind string) bool {
+	for _, def := range Definitions() {
+		if def.GetKind() == kind {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Definitions returns the compiled-in kind definitions, version field
 // unset (assigned by Define).
 func Definitions() []*graphenepbv1.ResourceDefinition {

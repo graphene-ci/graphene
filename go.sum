@@ -17,8 +17,10 @@ github.com/gopherex/schemapb/go v0.0.0-20260731140901-09887d4fe14e h1:5olw+eRwFE
 github.com/gopherex/schemapb/go v0.0.0-20260731140901-09887d4fe14e/go.mod h1:g9W8TC7ZZyPXKp+eQuPv612T2d0ZGs/Y+AIR2RA8KYw=
 github.com/gopherex/xconf v1.1.1 h1:qJryp5TIt2Jp37i7nSeX/vUKmH2emhNjlO4xApPq+QU=
 github.com/gopherex/xconf v1.1.1/go.mod h1:m1SmVHeOkFCuNHkIUCbTABsIGObgW0v5IqLntH5Ia+Q=
-github.com/graphene-ci/graphenepb v0.0.0-20260802181547-5a942ecf67eb h1:nH/FP4fqxz2IEGsGWPtGQCZSuj7vHih/cEfcPrCny9Q=
-github.com/graphene-ci/graphenepb v0.0.0-20260802181547-5a942ecf67eb/go.mod h1:+2r01XnhYNEmR6m1lh30A73WSraUXQ3vVGY97dWWRxU=
+github.com/graphene-ci/graphenepb v0.0.0-20260803131733-c991a33722ef h1:9QNFiCH8h+MIp4U7s5a5XCCprjstpYHL7889/8BgnKk=
+github.com/graphene-ci/graphenepb v0.0.0-20260803131733-c991a33722ef/go.mod h1:+2r01XnhYNEmR6m1lh30A73WSraUXQ3vVGY97dWWRxU=
+github.com/graphene-ci/graphenepb v0.0.0-20260803141538-d0c2b461f5cb h1:2HcsJGQcNDvjEn6xDBXSlT7J5/NXXylzVtH/SjvenYQ=
+github.com/graphene-ci/graphenepb v0.0.0-20260803141538-d0c2b461f5cb/go.mod h1:+2r01XnhYNEmR6m1lh30A73WSraUXQ3vVGY97dWWRxU=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

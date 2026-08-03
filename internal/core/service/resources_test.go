@@ -18,6 +18,7 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
+	"github.com/graphene-ci/graphene/internal/core/builtin"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/infrastructure/auth/static"
@@ -663,5 +664,83 @@ func TestUnauthenticatedRejected(t *testing.T) {
 	_, err := bad.List(context.Background(), &graphenepbv1.ListRequest{Kind: "Execution"})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unknown token: want Unauthenticated, got %v", err)
+	}
+}
+
+// Removing a kind takes the whole kind, and only when nothing is left
+// standing on it: a schema operation that deleted data as a side effect
+// would be the worst kind of surprise.
+func TestUndefineRefusesWhatIsInUse(t *testing.T) {
+	t.Parallel()
+
+	c := newClient(t)
+	ctx := context.Background()
+
+	defineVM(t, c)
+
+	if _, err := c.Put(ctx, &graphenepbv1.PutRequest{
+		Resource: vmResource("app", map[string]any{"type": "t3.medium"}),
+	}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if _, err := c.Undefine(ctx, &graphenepbv1.UndefineRequest{Kind: "aws.vm"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("undefine with instances: want FailedPrecondition, got %v", err)
+	}
+
+	// A built-in would be defined again at the next start, so removing it
+	// is refused rather than quietly undone later.
+	if _, err := c.Undefine(ctx, &graphenepbv1.UndefineRequest{
+		Kind: builtin.KindKernel,
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("undefine a built-in: want InvalidArgument, got %v", err)
+	}
+
+	// With the instance gone the kind can go too.
+	got, err := c.Get(ctx, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: "aws.vm", Path: []string{"acme", "prod", "deploy", "app"}},
+	})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if _, err := c.Delete(ctx, &graphenepbv1.DeleteRequest{
+		Key:              got.GetResource().GetKey(),
+		ExpectedRevision: got.GetResource().GetRevision(),
+	}); err != nil {
+		t.Fatalf("delete instance: %v", err)
+	}
+
+	done, err := c.Undefine(ctx, &graphenepbv1.UndefineRequest{Kind: "aws.vm"})
+	if err != nil {
+		t.Fatalf("undefine: %v", err)
+	}
+
+	if done.GetVersions() != 1 {
+		t.Fatalf("removed %d versions, want 1", done.GetVersions())
+	}
+
+	// And the kernel no longer knows it.
+	if _, err := c.GetDefinition(ctx, &graphenepbv1.GetDefinitionRequest{
+		Kind: "aws.vm",
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("definition survived: %v", err)
+	}
+}
+
+// Definitions are not resources: the ordinary Delete path must refuse
+// them outright rather than depend on their bytes failing to parse.
+func TestDefinitionsAreNotDeletableAsResources(t *testing.T) {
+	t.Parallel()
+
+	c := newClient(t)
+	ctx := context.Background()
+
+	defineVM(t, c)
+
+	if _, err := c.Delete(ctx, &graphenepbv1.DeleteRequest{
+		Key: &graphenepbv1.Key{Kind: "Kind", Path: []string{"aws.vm", "0000000001"}},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("deleting a definition as a resource: want InvalidArgument, got %v", err)
 	}
 }
