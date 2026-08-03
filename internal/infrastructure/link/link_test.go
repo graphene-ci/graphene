@@ -45,8 +45,8 @@ func newControl(t *testing.T, creds credentials.TransportCredentials) *grpc.Serv
 	source := static.New(static.Entry{Token: adminToken, Credentials: static.Admin("root")})
 
 	opts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(server.UnaryAuth(source)),
-		grpc.StreamInterceptor(server.StreamAuth(source)),
+		grpc.UnaryInterceptor(server.UnaryAuth(source, nil)),
+		grpc.StreamInterceptor(server.StreamAuth(source, nil)),
 	}
 	if creds != nil {
 		opts = append(opts, grpc.Creds(creds))

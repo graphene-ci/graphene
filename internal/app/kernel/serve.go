@@ -94,9 +94,11 @@ func (k *Kernel) transportCredentials() (credentials.TransportCredentials, error
 func (k *Kernel) startServer(ctx context.Context, group *errgroup.Group,
 	lis net.Listener, extra grpc.ServerOption, kind, addr string,
 ) {
+	// The token source is also what answers a vouch: both are questions
+	// about identities, and both are answered from the same live index.
 	opts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(server.UnaryAuth(k.tokens)),
-		grpc.StreamInterceptor(server.StreamAuth(k.tokens)),
+		grpc.UnaryInterceptor(server.UnaryAuth(k.tokens, k.tokens)),
+		grpc.StreamInterceptor(server.StreamAuth(k.tokens, k.tokens)),
 	}
 	if extra != nil {
 		opts = append(opts, extra)

@@ -119,6 +119,27 @@ type TokenSource interface {
 	Lookup(token string) (Credentials, bool)
 }
 
+// Vouching authenticates a principal that holds no credentials at all.
+//
+// A spawned process has none by design: minting it a token would mean
+// writing a digest into an Identity (handing the kernel that spawns
+// processes authority over the strongest kind in the system), and putting
+// a token in the Process spec would mean a secret readable by anyone with
+// get on it. So instead the kernel that spawned the process VOUCHES for
+// it, signing the request with its own credentials.
+//
+// This adds no trust: a kernel already holds the bytes and runs them, so
+// anything on it is already within its reach. What it does is make the
+// existing trust checkable — the vouch names a process, and the answer
+// comes from the store, where a Process record exists only because
+// someone authorized to hand out that identity wrote it. Revocation is
+// deleting the record; there is no secret anywhere to leak or rotate.
+type Vouching interface {
+	// ActingFor returns the credentials of the named process on the named
+	// kernel; false when that kernel has no such process.
+	ActingFor(kernel, process string) (Credentials, bool)
+}
+
 // principalNameVar is the one grant variable, interpolated into PathPrefix
 // segments and Where values.
 const principalNameVar = "${principal.name}"

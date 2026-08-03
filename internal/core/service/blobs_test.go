@@ -42,8 +42,8 @@ func newBlobEnv(t *testing.T) func(token string) graphenepbv1.BlobServiceClient 
 	)
 
 	srv := grpc.NewServer(
-		grpc.UnaryInterceptor(server.UnaryAuth(source)),
-		grpc.StreamInterceptor(server.StreamAuth(source)),
+		grpc.UnaryInterceptor(server.UnaryAuth(source, nil)),
+		grpc.StreamInterceptor(server.StreamAuth(source, nil)),
 	)
 	graphenepbv1.RegisterBlobServiceServer(srv, service.NewBlobs(st))
 

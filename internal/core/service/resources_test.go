@@ -48,8 +48,8 @@ func newEnv(t *testing.T) func(token string) graphenepbv1.ResourceServiceClient 
 	)
 
 	srv := grpc.NewServer(
-		grpc.UnaryInterceptor(server.UnaryAuth(source)),
-		grpc.StreamInterceptor(server.StreamAuth(source)),
+		grpc.UnaryInterceptor(server.UnaryAuth(source, nil)),
+		grpc.StreamInterceptor(server.StreamAuth(source, nil)),
 	)
 	graphenepbv1.RegisterResourceServiceServer(srv, service.NewResources(st, registry.New(st)))
 

@@ -125,6 +125,22 @@ func (h *harness) putProcess(ctx context.Context, t *testing.T, name, identity s
 	return err
 }
 
+// waitProcess blocks until the process index has caught up with the write.
+func (h *harness) waitProcess(t *testing.T, kernel, process string) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := h.source.ActingFor(kernel, process); ok {
+			return
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatalf("process %s/%s never appeared in the index", kernel, process)
+}
+
 func (h *harness) waitToken(t *testing.T, token string) auth.Credentials {
 	t.Helper()
 

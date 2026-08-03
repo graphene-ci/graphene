@@ -37,6 +37,8 @@ const (
 	scanPage    = 512
 	retryPause  = time.Second
 	pathSegKind = 1 // Role and Identity both live at {name}
+	// processSegments — a Process lives at {kernel, name}.
+	processSegments = 2
 )
 
 // Source implements auth.TokenSource over Role/Identity resources, with a
@@ -52,7 +54,13 @@ type Source struct {
 	mu         sync.RWMutex
 	identities map[string]identity     // key: the identity name
 	roles      map[string][]auth.Grant // key: the role name
-	byDigest   map[string]auth.Credentials
+	// byDigest maps a token digest to the identity NAME holding it, not to
+	// credentials: grants are resolved on lookup so they always reflect
+	// the roles known right now.
+	byDigest map[string]string
+	// processes maps "<kernel>/<process>" to the identity that process
+	// runs as — the whole of what a vouch is checked against.
+	processes map[string]string
 
 	warmOnce sync.Once
 	warm     chan struct{}
@@ -75,7 +83,8 @@ func New(st store.Store, bootstrapToken string, bootstrap auth.Credentials) *Sou
 		bootstrap:  bootstrap,
 		identities: map[string]identity{},
 		roles:      map[string][]auth.Grant{},
-		byDigest:   map[string]auth.Credentials{},
+		byDigest:   map[string]string{},
+		processes:  map[string]string{},
 		warm:       make(chan struct{}),
 	}
 
@@ -111,9 +120,12 @@ func (s *Source) Lookup(token string) (auth.Credentials, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	creds, ok := s.byDigest[digest]
+	name, ok := s.byDigest[digest]
+	if !ok {
+		return auth.Credentials{}, false
+	}
 
-	return creds, ok
+	return s.credentialsLocked(name)
 }
 
 // Run loads the index and keeps it current until ctx is done.
@@ -138,6 +150,7 @@ func (s *Source) Run(ctx context.Context) error {
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { return s.watch(ctx, builtin.KindRole, head, s.handleRole) })
 	group.Go(func() error { return s.watch(ctx, builtin.KindIdentity, head, s.handleIdentity) })
+	group.Go(func() error { return s.watch(ctx, builtin.KindProcess, head, s.handleProcess) })
 
 	if err := group.Wait(); err != nil {
 		return fmt.Errorf("auth: token source: %w", err)
@@ -163,7 +176,11 @@ func (s *Source) load(ctx context.Context) error {
 		return err
 	}
 
-	return s.scanKind(ctx, builtin.KindIdentity, s.handleIdentity)
+	if err := s.scanKind(ctx, builtin.KindIdentity, s.handleIdentity); err != nil {
+		return err
+	}
+
+	return s.scanKind(ctx, builtin.KindProcess, s.handleProcess)
 }
 
 type handler func(res *graphenepbv1.Resource, gone bool)
@@ -258,6 +275,73 @@ func (s *Source) handleRole(res *graphenepbv1.Resource, gone bool) {
 	s.reindexLocked()
 }
 
+// handleProcess indexes which identity a process runs as. A Process
+// exists only because someone allowed to hand out that identity wrote it
+// — the escalation guard saw to that — so its mere presence IS the
+// authorization. Its status is irrelevant here: whether the process is
+// running is the kernel's business, whether it may act is ours.
+func (s *Source) handleProcess(res *graphenepbv1.Resource, gone bool) {
+	path := res.GetKey().GetPath()
+	if len(path) != processSegments {
+		return
+	}
+
+	name := strings.Join(path, "/")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Deleting a Process is how a vouch is revoked, so the mark has to
+	// take effect at once, not at the end of finalization.
+	if gone || res.GetDeleting() {
+		delete(s.processes, name)
+
+		return
+	}
+
+	identity, _ := res.GetSpec().ToGo()["identity"].(string)
+	if identity == "" {
+		delete(s.processes, name) // asked for no credentials, gets none
+
+		return
+	}
+
+	s.processes[name] = identity
+}
+
+// ActingFor implements auth.Vouching.
+func (s *Source) ActingFor(kernel, process string) (auth.Credentials, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	name, ok := s.processes[kernel+"/"+process]
+	if !ok {
+		return auth.Credentials{}, false
+	}
+
+	return s.credentialsLocked(name)
+}
+
+// credentialsLocked resolves an identity name into what it may do, from
+// the roles known at THIS moment.
+//
+// Resolving here rather than at index time is what makes the order in
+// which watch streams deliver irrelevant: an identity that arrives before
+// its role is simply an identity whose role is not known yet, and it
+// becomes whole the moment the role lands — with no stale copy of its
+// grants sitting in an index in the meantime.
+func (s *Source) credentialsLocked(name string) (auth.Credentials, bool) {
+	ident, ok := s.identities[name]
+	if !ok {
+		return auth.Credentials{}, false
+	}
+
+	return auth.Credentials{
+		Principal: auth.Principal{Kind: ident.kind, Name: ident.name},
+		Grants:    s.grantsForLocked(&ident),
+	}, true
+}
+
 func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 	pathName := pathKey(res)
 	if pathName == "" {
@@ -286,24 +370,18 @@ func (s *Source) handleIdentity(res *graphenepbv1.Resource, gone bool) {
 }
 
 // reindexLocked rebuilds the digest index from scratch. Identities are few
-// and changes are rare; a full rebuild makes the invariant — an identity's
-// grants always reflect the CURRENT roles — trivially true.
+// and changes are rare, so a full rebuild keeps the mapping obviously
+// correct instead of subtly incremental.
 //
 // A digest claimed by more than one identity is indexed for NONE of them:
 // ambiguous credentials must not resolve to whichever identity a map
 // iteration happened to visit last.
 func (s *Source) reindexLocked() {
-	index := make(map[string]auth.Credentials, len(s.byDigest))
+	index := make(map[string]string, len(s.byDigest))
 	owner := make(map[string]string, len(s.byDigest))
 
 	for pathName := range s.identities {
-		ident := s.identities[pathName]
-		creds := auth.Credentials{
-			Principal: auth.Principal{Kind: ident.kind, Name: ident.name},
-			Grants:    s.grantsForLocked(&ident),
-		}
-
-		for _, digest := range ident.digests {
+		for _, digest := range s.identities[pathName].digests {
 			if previous, taken := owner[digest]; taken && previous != pathName {
 				s.log.Error("auth: token digest claimed by several identities, disabled",
 					"identities", previous+" and "+pathName)
@@ -313,7 +391,7 @@ func (s *Source) reindexLocked() {
 			}
 
 			owner[digest] = pathName
-			index[digest] = creds
+			index[digest] = pathName
 		}
 	}
 

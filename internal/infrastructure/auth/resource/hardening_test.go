@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -416,5 +417,127 @@ func TestProcessCannotBorrowAnIdentityItCannotMint(t *testing.T) {
 	// a process must never carry a name that gains meaning later.
 	if err := harn.putProcess(harn.admin, t, "ghost", "nobody"); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("running as a missing identity: want PermissionDenied, got %v", err)
+	}
+}
+
+// A vouch is the whole authentication of a spawned process, so every way
+// of forging one has to be shut. The rule: a kernel may act for a process
+// that exists on IT, and for nothing else.
+func TestVouchingIsBoundToTheProcessRecord(t *testing.T) {
+	t.Parallel()
+
+	harn := newHarness(t)
+
+	if err := harn.putRole(harn.admin, t, "watcher", []auth.Grant{{
+		Verbs: []auth.Verb{auth.VerbGet, auth.VerbWatch},
+		Kind:  builtin.KindKernel,
+	}}); err != nil {
+		t.Fatalf("put role: %v", err)
+	}
+
+	if err := harn.putIdentity(harn.admin, t, "driver", auth.PrincipalProcess,
+		[]string{"watcher"}, "driver-token"); err != nil {
+		t.Fatalf("put identity: %v", err)
+	}
+
+	if err := harn.putProcess(harn.admin, t, "d1", "driver"); err != nil {
+		t.Fatalf("put process: %v", err)
+	}
+
+	harn.waitProcess(t, "k1", "d1")
+
+	// The kernel that has the process gets the process's credentials —
+	// not its own, and not more than the identity carries.
+	creds, ok := harn.source.ActingFor("k1", "d1")
+	if !ok {
+		t.Fatal("kernel cannot act for a process it has")
+	}
+
+	if creds.Principal.Name != "driver" || creds.Principal.Kind != auth.PrincipalProcess {
+		t.Fatalf("vouched principal: %+v", creds.Principal)
+	}
+
+	if len(creds.Grants) != 1 || creds.Grants[0].Kind != builtin.KindKernel {
+		t.Fatalf("vouched grants: %+v", creds.Grants)
+	}
+
+	// Another kernel may not borrow it: the vouch is bound to the record's
+	// own path, which names the kernel.
+	if _, borrowed := harn.source.ActingFor("k2", "d1"); borrowed {
+		t.Fatal("a kernel vouched for a process that is not on it")
+	}
+
+	// Nor may a name be invented.
+	if _, invented := harn.source.ActingFor("k1", "ghost"); invented {
+		t.Fatal("a kernel vouched for a process that does not exist")
+	}
+}
+
+// Deleting the Process is the only revocation there is, so it has to bite
+// at once — a vouch outliving the record would be a credential nobody can
+// take back.
+func TestDeletingAProcessRevokesTheVouch(t *testing.T) {
+	t.Parallel()
+
+	harn := newHarness(t)
+
+	if err := harn.putRole(harn.admin, t, "watcher", []auth.Grant{{
+		Verbs: []auth.Verb{auth.VerbGet},
+		Kind:  builtin.KindKernel,
+	}}); err != nil {
+		t.Fatalf("put role: %v", err)
+	}
+
+	if err := harn.putIdentity(harn.admin, t, "driver", auth.PrincipalProcess,
+		[]string{"watcher"}, "driver-token"); err != nil {
+		t.Fatalf("put identity: %v", err)
+	}
+
+	if err := harn.putProcess(harn.admin, t, "d1", "driver"); err != nil {
+		t.Fatalf("put process: %v", err)
+	}
+
+	harn.waitProcess(t, "k1", "d1")
+
+	got, err := harn.resources.Get(harn.admin, &graphenepbv1.GetRequest{
+		Key: &graphenepbv1.Key{Kind: builtin.KindProcess, Path: []string{"k1", "d1"}},
+	})
+	if err != nil {
+		t.Fatalf("read process: %v", err)
+	}
+
+	if _, err := harn.resources.Delete(harn.admin, &graphenepbv1.DeleteRequest{
+		Key:              got.GetResource().GetKey(),
+		ExpectedRevision: got.GetResource().GetRevision(),
+	}); err != nil {
+		t.Fatalf("delete process: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := harn.source.ActingFor("k1", "d1"); !ok {
+			return
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatal("the vouch survived the process record")
+}
+
+// A process that asked for no identity gets no credentials, and no vouch
+// can conjure them.
+func TestProcessWithoutIdentityCannotBeVouchedFor(t *testing.T) {
+	t.Parallel()
+
+	harn := newHarness(t)
+
+	if err := harn.putProcess(harn.admin, t, "anonymous", ""); err != nil {
+		t.Fatalf("put process: %v", err)
+	}
+
+	// Nothing to wait for — the absence must hold at every moment.
+	if _, ok := harn.source.ActingFor("k1", "anonymous"); ok {
+		t.Fatal("a process without an identity was vouched for")
 	}
 }
