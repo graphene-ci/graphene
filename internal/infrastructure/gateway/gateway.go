@@ -37,14 +37,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/core/auth"
 )
 
-const (
-	dirMode = 0o700
-
-	// envSocket and envProcess are all a process is told: where to talk
-	// and what to call itself. No token, because there is none.
-	envSocket  = "GRAPHENE_SOCKET"
-	envProcess = "GRAPHENE_PROCESS"
-)
+// dirMode keeps the socket directory to this kernel's user. It is not
+// isolation between processes (see the package comment) — only a fence
+// against everyone else on the machine.
+const dirMode = 0o700
 
 // build assembles the server a single process talks to. It is a whole
 // server per process rather than one shared: the process's identity is
@@ -189,8 +185,8 @@ type door struct {
 // Env is everything the process is told about the system it is in.
 func (d *door) Env() map[string]string {
 	return map[string]string{
-		envSocket:  d.path,
-		envProcess: filepath.Base(d.path[:len(d.path)-len(".sock")]),
+		agent.EnvSocket:  d.path,
+		agent.EnvProcess: filepath.Base(d.path[:len(d.path)-len(".sock")]),
 	}
 }
 

@@ -257,6 +257,18 @@ type spec struct {
 	restart  string
 }
 
+// EnvSocket and EnvProcess are the whole of what a process is told about
+// the system it is in: where to talk, and what it is called. No token,
+// because there is none — the kernel vouches for it on that socket.
+//
+// They live here because they are a contract between the side that starts
+// a process and any client the process happens to run, and a contract
+// written down twice is a contract that drifts.
+const (
+	EnvSocket  = "GRAPHENE_SOCKET"
+	EnvProcess = "GRAPHENE_PROCESS"
+)
+
 // Gateway gives a process its way back into the system: a door opened
 // before it starts and taken away when it ends.
 //
