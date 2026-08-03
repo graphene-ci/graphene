@@ -181,7 +181,13 @@ func processDefinition() *graphenepbv1.ResourceDefinition {
 			// How to turn them into a process. raw-exec is not a fallback
 			// but the floor: a bare VM has no container runtime, and the
 			// kernel itself has to be startable there.
-			schemapb.Str("format").In("raw-exec", "oci").Required(),
+			//
+			// The vocabulary lists only what a kernel can actually run
+			// today. Accepting "oci" before anything runs it would mean
+			// storing a Process that is valid, scheduled, and silently
+			// never starts; adding it later is one word and a new
+			// definition version, which Ensure already handles.
+			schemapb.Str("format").In("raw-exec").Required(),
 			schemapb.List("args", schemapb.Str("arg")),
 			schemapb.Map("env", schemapb.Str("value")),
 			// Which Identity the process runs as; the kernel mints it a
