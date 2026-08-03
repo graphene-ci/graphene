@@ -79,10 +79,20 @@ func (s *supervisor) once(ctx context.Context, starts int64) (int, error) {
 		return 0, fmt.Errorf("fetch %s: %w", s.spec.blob, err)
 	}
 
+	// The door is opened BEFORE the process starts: a process that came up
+	// and found nothing to talk to would have to be written to retry, and
+	// every SDK in every language would carry that retry forever.
+	door, err := s.agent.Gateway.Open(s.name)
+	if err != nil {
+		return 0, fmt.Errorf("open gateway: %w", err)
+	}
+
+	defer func() { _ = door.Close() }()
+
 	started, err := s.agent.Runner.Start(ctx, Spec{
 		Path:    path,
 		Args:    s.spec.args,
-		Env:     s.spec.env,
+		Env:     merge(s.spec.env, door.Env()),
 		Process: s.name,
 	})
 	if err != nil {
@@ -145,3 +155,19 @@ func phaseFor(code int) string {
 }
 
 const restartAlways = "always"
+
+// merge lays the door's variables over the record's. The record cannot
+// override them: where a process talks and what it is called are facts
+// about how it was started, not preferences someone gets to state.
+func merge(base, over map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(over))
+	for name, value := range base {
+		out[name] = value
+	}
+
+	for name, value := range over {
+		out[name] = value
+	}
+
+	return out
+}

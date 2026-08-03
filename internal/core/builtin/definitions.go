@@ -132,7 +132,12 @@ func identityDefinition() *graphenepbv1.ResourceDefinition {
 		Fields(
 			schemapb.Str("principal_kind").In("user", "kernel", "process").Required(),
 			schemapb.List("roles", schemapb.Str("role")).Required(),
-			schemapb.List("token_sha256", schemapb.Str("digest")).Required(),
+			// Optional, because an identity does not have to authenticate
+			// by token at all: a process holds no credentials and is
+			// vouched for by the kernel that started it. Requiring a
+			// digest would force a fake one to exist, and a fake secret is
+			// a real secret to whoever finds it.
+			schemapb.List("token_sha256", schemapb.Str("digest")),
 		).
 		MustBuild()
 
@@ -202,7 +207,16 @@ func processDefinition() *graphenepbv1.ResourceDefinition {
 			// definition version, which Ensure already handles.
 			schemapb.Str("format").In("raw-exec").Required(),
 			schemapb.List("args", schemapb.Str("arg")),
-			schemapb.Map("env", schemapb.Str("value")),
+			// A list of pairs rather than a map: map VALUES carry a schema
+			// of their own here, which would make every variable an object
+			// wrapping a string. Pairs say what is meant and read the way
+			// k8s writes the same thing.
+			schemapb.List("env",
+				schemapb.Object("variable",
+					schemapb.Str("name").Required(),
+					schemapb.Str("value").Required(),
+				),
+			),
 			// Which Identity the process runs as; the kernel mints it a
 			// short-lived token. Absent = no credentials at all, which is
 			// right for anything that never calls the API.

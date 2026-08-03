@@ -77,12 +77,13 @@ type Runner interface {
 type Agent struct {
 	// Kernel is this kernel's name — the first path segment of every
 	// Process it is responsible for, and nothing else is watched.
-	Kernel string
-	Stream controller.Stream
-	Writer controller.Writer
-	Fetch  Fetcher
-	Runner Runner
-	Log    *slog.Logger
+	Kernel  string
+	Stream  controller.Stream
+	Writer  controller.Writer
+	Fetch   Fetcher
+	Runner  Runner
+	Gateway Gateway
+	Log     *slog.Logger
 
 	mu      sync.Mutex
 	running map[string]*supervisor
@@ -229,10 +230,18 @@ func processSpec(res *graphenepbv1.Resource) spec {
 		}
 	}
 
-	if env, mapped := fields["env"].(map[string]any); mapped {
-		for name, value := range env {
-			if text, isText := value.(string); isText {
-				out.env[name] = text
+	if env, listed := fields["env"].([]any); listed {
+		for _, item := range env {
+			pair, isPair := item.(map[string]any)
+			if !isPair {
+				continue
+			}
+
+			name, named := pair["name"].(string)
+			value, valued := pair["value"].(string)
+
+			if named && valued {
+				out.env[name] = value
 			}
 		}
 	}
@@ -246,4 +255,23 @@ type spec struct {
 	env      map[string]string
 	identity string
 	restart  string
+}
+
+// Gateway gives a process its way back into the system: a door opened
+// before it starts and taken away when it ends.
+//
+// A process holds no credentials — the door is the credential. That is
+// why it is opened per process and why it is closed the moment the
+// process is done with: a door outliving its process would be a way in
+// for whatever came next.
+type Gateway interface {
+	Open(process string) (Opened, error)
+}
+
+// Opened is one process's door.
+type Opened interface {
+	// Env is what the process is told about where it can talk.
+	Env() map[string]string
+	// Close stops answering and takes the door away.
+	Close() error
 }

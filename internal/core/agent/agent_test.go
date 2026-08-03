@@ -78,6 +78,47 @@ func (s *fakeStarted) Stop() error {
 	return nil
 }
 
+// fakeGateway records the doors opened and whether they were shut.
+type fakeGateway struct {
+	mu     sync.Mutex
+	opened []string
+	closed int
+}
+
+func (g *fakeGateway) Open(process string) (agent.Opened, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.opened = append(g.opened, process)
+
+	return &fakeDoor{gateway: g, process: process}, nil
+}
+
+func (g *fakeGateway) counts() (int, int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return len(g.opened), g.closed
+}
+
+type fakeDoor struct {
+	gateway *fakeGateway
+	process string
+}
+
+func (d *fakeDoor) Env() map[string]string {
+	return map[string]string{"GRAPHENE_SOCKET": "/sock/" + d.process, "GRAPHENE_PROCESS": d.process}
+}
+
+func (d *fakeDoor) Close() error {
+	d.gateway.mu.Lock()
+	defer d.gateway.mu.Unlock()
+
+	d.gateway.closed++
+
+	return nil
+}
+
 type fakeFetcher struct{ err error }
 
 func (f fakeFetcher) Fetch(_ context.Context, blobID string) (string, error) {
@@ -92,6 +133,7 @@ type env struct {
 	resources *service.Resources
 	writer    controller.Writer
 	runner    *fakeRunner
+	gateway   *fakeGateway
 	ctx       context.Context
 	t         *testing.T
 }
@@ -118,18 +160,27 @@ func newEnv(t *testing.T, fetcher agent.Fetcher) *env {
 
 	resources := service.NewResources(st, reg)
 	runner := newRunner()
+	gateway := &fakeGateway{}
 
 	worker := &agent.Agent{
-		Kernel: kernelName,
-		Stream: controller.Local(st, builtin.KindProcess, kernelName),
-		Writer: controller.OverService(resources),
-		Fetch:  fetcher,
-		Runner: runner,
+		Kernel:  kernelName,
+		Stream:  controller.Local(st, builtin.KindProcess, kernelName),
+		Writer:  controller.OverService(resources),
+		Fetch:   fetcher,
+		Runner:  runner,
+		Gateway: gateway,
 	}
 
 	go func() { _ = worker.Run(system) }()
 
-	return &env{resources: resources, writer: controller.OverService(resources), runner: runner, ctx: system, t: t}
+	return &env{
+		resources: resources,
+		writer:    controller.OverService(resources),
+		runner:    runner,
+		gateway:   gateway,
+		ctx:       system,
+		t:         t,
+	}
 }
 
 func (e *env) put(name string, fields map[string]any) {
@@ -338,4 +389,62 @@ func TestDeletingTheRecordStopsIt(t *testing.T) {
 	if got := len(e.runner.starts()); got != before {
 		t.Fatalf("a deleted process was started again: %d → %d", before, got)
 	}
+}
+
+// A process is told where to talk and what it is called, and nothing
+// else: it has no token because there is none to have.
+func TestProcessIsToldItsDoor(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, fakeFetcher{})
+
+	e.put("one", runSpec(map[string]any{
+		"env": []any{map[string]any{"name": "MINE", "value": "kept"}},
+	}))
+	e.waitPhase("one", agent.PhaseRunning)
+
+	started := e.runner.starts()[0]
+	if started.Env["GRAPHENE_SOCKET"] != "/sock/one" || started.Env["GRAPHENE_PROCESS"] != "one" {
+		t.Fatalf("door not passed: %v", started.Env)
+	}
+
+	// The record's own variables survive alongside.
+	if started.Env["MINE"] != "kept" {
+		t.Fatalf("the record's environment was lost: %v", started.Env)
+	}
+
+	if len(started.Env) != 3 {
+		t.Fatalf("something else was handed over: %v", started.Env)
+	}
+}
+
+// The door is shut when the process ends. One that outlived its process
+// would be a way in for whatever came next.
+func TestDoorIsShutWhenTheProcessEnds(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, fakeFetcher{})
+
+	e.put("one", runSpec(nil))
+	e.waitPhase("one", agent.PhaseRunning)
+
+	opened, closed := e.gateway.counts()
+	if opened != 1 || closed != 0 {
+		t.Fatalf("while running: %d opened, %d closed", opened, closed)
+	}
+
+	e.runner.exits <- 0
+
+	e.waitPhase("one", agent.PhaseExited)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, shut := e.gateway.counts(); shut == 1 {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("the door outlived the process")
 }
