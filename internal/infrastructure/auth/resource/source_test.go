@@ -106,26 +106,6 @@ func (h *harness) putIdentity(ctx context.Context, t *testing.T, name string,
 	return err
 }
 
-// putBinding writes a Binding for the given kind, with the grants its
-// processes would carry.
-func (h *harness) putBinding(ctx context.Context, t *testing.T, kind string, grants []auth.Grant) error {
-	t.Helper()
-
-	spec := auth.GrantsToSpec(grants)
-	spec.Fields["bundle"] = schemapb.MustFromGo("blocks")
-	spec.Fields["bundle_version"] = schemapb.MustFromGo("v1")
-	spec.Fields["reconcile"] = schemapb.MustFromGo(kind + "/reconcile")
-
-	_, err := h.resources.Put(ctx, &graphenepbv1.PutRequest{
-		Resource: &graphenepbv1.Resource{
-			Key:  &graphenepbv1.Key{Kind: builtin.KindBinding, Path: []string{kind}},
-			Spec: spec,
-		},
-	})
-
-	return err
-}
-
 func (h *harness) waitToken(t *testing.T, token string) auth.Credentials {
 	t.Helper()
 

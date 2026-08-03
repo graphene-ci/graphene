@@ -5,8 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/graphene-ci/graphene/cmd/graphene/commands/block"
-	"github.com/graphene-ci/graphene/cmd/graphene/commands/ci"
 	"github.com/graphene-ci/graphene/cmd/graphene/commands/ctl"
 	"github.com/graphene-ci/graphene/cmd/graphene/commands/kernel"
 )
@@ -19,14 +17,12 @@ var rootCmd = newRootCommand()
 func newRootCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "graphene",
-		Short: "Graphene CI command-line interface",
+		Short: "Graphene command-line interface",
 	}
 
 	command.AddCommand(
 		kernel.Cmd,
 		ctl.Cmd,
-		ci.Cmd,
-		block.Cmd,
 	)
 
 	return command

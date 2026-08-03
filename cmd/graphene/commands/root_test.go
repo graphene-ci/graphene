@@ -15,16 +15,8 @@ func TestCommandTree(t *testing.T) {
 		defaultValue string
 	}{
 		{[]string{"kernel", "run"}, "config", ""},
-		{[]string{"ci", "init"}, "lang", "go"},
-		{[]string{"ci", "init"}, "path", ""},
-		{[]string{"ci", "build"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
-		{[]string{"ci", "plan"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
-		{[]string{"ci", "run"}, "config", "./.graphene-ci/.graphene-ci.yaml"},
-		{[]string{"ci", "run"}, "watch", "false"},
-		{[]string{"block", "init"}, "lang", "go"},
-		{[]string{"block", "init"}, "path", ""},
-		{[]string{"block", "gen"}, "config", ""},
-		{[]string{"block", "build"}, "config", ""},
+		{[]string{"kernel", "install"}, "scope", "user"},
+		{[]string{"ctl", "get"}, "output", "table"},
 	}
 
 	for _, test := range tests {
