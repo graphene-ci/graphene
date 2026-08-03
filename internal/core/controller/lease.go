@@ -58,7 +58,10 @@ func NewLease(resources *service.Resources, st store.Store, now func() time.Time
 
 // Run consumes lease events until ctx is done; pair it with a sweeper.
 func (l *Lease) Run(ctx context.Context) error {
-	loop := &Loop{Store: l.st, Kind: builtin.KindKernelLease, Handle: l.handle}
+	loop := &Loop{
+		Stream: Local(l.st, builtin.KindKernelLease),
+		Handle: l.handle,
+	}
 
 	return loop.Run(ctx)
 }
@@ -78,13 +81,14 @@ func (l *Lease) RunSweeper(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (l *Lease) handle(ctx context.Context, typ store.EventType, res *graphenepbv1.Resource) error {
+func (l *Lease) handle(ctx context.Context, event Event) error {
+	res := event.Resource
 	path := res.GetKey().GetPath()
 	stored := key.New(builtin.KindKernelLease, path...).Encode()
 
 	l.mu.Lock()
 
-	if typ == store.EventDelete {
+	if event.Type == store.EventDelete {
 		delete(l.seen, string(stored))
 		l.mu.Unlock()
 

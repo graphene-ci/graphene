@@ -28,6 +28,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
+	"github.com/graphene-ci/graphene/internal/core/controller"
 	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/service"
 	"github.com/graphene-ci/graphene/internal/core/store"
@@ -217,20 +218,14 @@ func (s *Source) scanKind(ctx context.Context, kind string, handle handler) erro
 // stream after resets (slow-consumer eviction, store restarts) from the
 // last revision it consumed — replay from a revision is gapless.
 func (s *Source) watch(ctx context.Context, kind string, from uint64, handle handler) error {
-	loop := &store.WatchLoop{
-		Store:  s.st,
-		Prefix: key.New(kind).Encode(),
+	loop := &controller.Loop{
+		Stream: controller.Local(s.st, kind),
 		From:   from,
 		OnError: func(err error) {
 			s.log.Error("auth: watch", "kind", kind, "error", err)
 		},
-		Handle: func(_ context.Context, event store.Event) error {
-			res, err := service.DecodeEntry(event.Entry)
-			if err != nil {
-				return fmt.Errorf("auth: decode %s: %w", kind, err)
-			}
-
-			handle(res, event.Type == store.EventDelete)
+		Handle: func(_ context.Context, event controller.Event) error {
+			handle(event.Resource, event.Type == store.EventDelete)
 
 			return nil
 		},

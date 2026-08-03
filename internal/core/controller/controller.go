@@ -1,62 +1,23 @@
-// Package controller is the runtime for the control kernel's built-in
-// reconciliation loops. Controllers are ordinary API consumers
-// (dogfooding): they read raw store events and write through the resource
-// service under a system principal — no private paths into the store's
-// semantics.
+// Package controller is the runtime a reconciliation loop runs in.
+//
+// A controller is an ordinary client: it watches a kind and writes what it
+// decided back through the same API everyone else uses. Nothing here is
+// privileged, and nothing here knows where the truth lives — the Stream it
+// is given may read this process's own store or a kernel a link away.
+//
+// The kernel's own loops (the lease controller, the process agent) are
+// built with exactly this, which is the only way to be sure the thing we
+// hand to others actually works.
 package controller
 
 import (
 	"context"
-	"fmt"
-
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
-	"github.com/graphene-ci/graphene/internal/core/key"
-	"github.com/graphene-ci/graphene/internal/core/service"
-	"github.com/graphene-ci/graphene/internal/core/store"
 )
 
-// SystemContext returns ctx carrying the system principal every built-in
-// controller acts as.
+// SystemContext returns ctx carrying the system principal the kernel's own
+// in-process controllers act as.
 func SystemContext(ctx context.Context) context.Context {
 	return auth.WithCredentials(ctx, auth.FullAccess(auth.PrincipalSystem, "controller"))
-}
-
-// Handler consumes one event of the watched kind. For deletes the
-// resource carries the record's final state (prev_kv semantics).
-type Handler func(ctx context.Context, typ store.EventType, res *graphenepbv1.Resource) error
-
-// Loop watches one kind, handing decoded resources to a handler. The
-// cursor and resume rules live in store.WatchLoop — this only decodes.
-type Loop struct {
-	Store store.Store
-	Kind  string
-	// Handle is called sequentially, in store-revision order.
-	Handle Handler
-	// OnError observes decode and handler failures; optional.
-	OnError func(err error)
-}
-
-// Run blocks until ctx is done.
-func (l *Loop) Run(ctx context.Context) error {
-	loop := &store.WatchLoop{
-		Store:   l.Store,
-		Prefix:  key.New(l.Kind).Encode(),
-		OnError: l.OnError,
-		Handle: func(ctx context.Context, event store.Event) error {
-			res, err := service.DecodeEntry(event.Entry)
-			if err != nil {
-				return fmt.Errorf("controller: decode %s: %w", l.Kind, err)
-			}
-
-			return l.Handle(ctx, event.Type, res)
-		},
-	}
-
-	if err := loop.Run(ctx); err != nil {
-		return fmt.Errorf("controller: %w", err)
-	}
-
-	return nil
 }
