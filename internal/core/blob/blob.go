@@ -46,6 +46,15 @@ type Writer interface {
 	Abort() error
 }
 
+// Reader is the read half alone: whoever holds the bytes, or a link to
+// whoever does. A kernel with no blob store of its own still needs to get
+// bytes, and it gets them through this.
+type Reader interface {
+	// Open returns the content reader and the blob's info; ErrNotFound
+	// for unknown ids.
+	Open(ctx context.Context, id string) (io.ReadCloser, Info, error)
+}
+
 // Store is the port. All methods are safe for concurrent use.
 type Store interface {
 	// Create starts a new blob upload.

@@ -208,6 +208,10 @@ func (k *Kernel) Run(ctx context.Context) error {
 		announce := k.presence(controller.OverService(k.resources))
 
 		group.Go(func() error { return announce.Run(controller.SystemContext(ctx)) })
+
+		if k.blobs != nil {
+			k.runLocalAgent(ctx, group)
+		}
 	}
 
 	if k.cfg.Listen != nil {

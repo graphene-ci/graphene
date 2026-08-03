@@ -16,9 +16,8 @@ import (
 )
 
 // connect establishes the link to another kernel and starts what rides on
-// it. Today that is this kernel's presence — it registers itself and keeps
-// its lease alive on the far side (execution work joins later, over the
-// same connection).
+// it: this kernel's presence, and the agent that runs whatever is placed
+// on it. Both speak the ordinary API over the same connection.
 func (k *Kernel) connect(ctx context.Context, group *errgroup.Group) error {
 	transport, err := k.buildLink()
 	if err != nil {
@@ -46,6 +45,8 @@ func (k *Kernel) connect(ctx context.Context, group *errgroup.Group) error {
 	announce := k.presence(controller.OverClient(graphenepbv1.NewResourceServiceClient(conn)))
 
 	group.Go(func() error { return announce.Run(ctx) })
+
+	k.runLinkedAgent(ctx, group, conn)
 
 	return nil
 }
