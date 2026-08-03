@@ -28,6 +28,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/core/blob"
 	"github.com/graphene-ci/graphene/internal/core/builtin"
 	"github.com/graphene-ci/graphene/internal/core/controller"
+	"github.com/graphene-ci/graphene/internal/core/key"
 	"github.com/graphene-ci/graphene/internal/core/presence"
 	"github.com/graphene-ci/graphene/internal/core/registry"
 	"github.com/graphene-ci/graphene/internal/core/service"
@@ -129,6 +130,14 @@ func (k *Kernel) buildTruth(ctx context.Context) error {
 	}
 
 	k.resources = service.NewResources(k.store, k.registry)
+
+	// The kinds are only half of what ships in the binary: the role a
+	// kernel needs to be a kernel comes with them, so joining a worker is
+	// one resource and not a set of grants for someone to get wrong.
+	if err := k.ensureBuiltinResources(ctx); err != nil {
+		return err
+	}
+
 	if k.blobs != nil {
 		k.blobSvc = service.NewBlobs(k.blobs)
 	}
@@ -140,6 +149,22 @@ func (k *Kernel) buildTruth(ctx context.Context) error {
 
 	k.tokens = authres.New(k.store, bootstrapToken, bootstrapCreds)
 	k.lease = controller.NewLease(k.resources, k.store, time.Now)
+
+	return nil
+}
+
+// ensureBuiltinResources installs what the binary ships as instances.
+// Quiet when nothing changed, and the binary wins: an installation cannot
+// drift away from what the code expects to find.
+func (k *Kernel) ensureBuiltinResources(ctx context.Context) error {
+	writer := controller.OverService(k.resources)
+	system := controller.SystemContext(ctx)
+
+	for _, res := range builtin.Roles() {
+		if err := presence.Ensure(system, writer, res); err != nil {
+			return fmt.Errorf("kernel: ensure %s: %w", key.FromProto(res.GetKey()), err)
+		}
+	}
 
 	return nil
 }

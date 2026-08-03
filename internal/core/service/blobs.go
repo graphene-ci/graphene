@@ -13,11 +13,14 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
 	"github.com/graphene-ci/graphene/internal/core/blob"
+	"github.com/graphene-ci/graphene/internal/core/builtin"
 )
 
 // blobKind is the pseudo-kind blob operations are authorized against:
 // the same grant machinery, object-less (see auth.Check).
-const blobKind = "Blob"
+// blobKind names the byte side in grants; it is defined once in builtin
+// so a grant and its check cannot disagree about the spelling.
+const blobKind = builtin.KindBlob
 
 const (
 	defaultChunk = 256 * 1024

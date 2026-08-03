@@ -13,8 +13,10 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 
 	"github.com/graphene-ci/graphene/internal/core/store"
 )
@@ -65,8 +67,26 @@ type subscriber struct {
 }
 
 // Open creates or opens the store file.
+// openTimeout is how long to wait for the store's lock before saying so.
+// Long enough to ride out a restart that overlaps by a moment, short
+// enough that a mistake is reported while someone is still watching.
+const openTimeout = 3 * time.Second
+
+// ErrStoreInUse — another kernel holds this store.
+var ErrStoreInUse = errors.New("store is held by another kernel; one store, one kernel")
+
 func Open(path string) (*Store, error) {
-	database, err := bolt.Open(path, fileMode, nil)
+	// The timeout is the whole point of passing options here. A store
+	// belongs to ONE kernel: bbolt takes an exclusive lock, and without a
+	// timeout a second kernel on the same file waits for it forever —
+	// silently, with no log line and no error, looking for all the world
+	// like a kernel that is running and simply not doing anything. An
+	// operator who started one twice would have nothing to go on.
+	database, err := bolt.Open(path, fileMode, &bolt.Options{Timeout: openTimeout})
+	if errors.Is(err, bolterrors.ErrTimeout) {
+		return nil, fmt.Errorf("bbolt: %s: %w", path, ErrStoreInUse)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("bbolt: open: %w", err)
 	}

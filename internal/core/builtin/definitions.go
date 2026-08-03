@@ -25,6 +25,11 @@ const (
 	KindIdentity    = "Identity"
 	KindProcess     = "Process"
 
+	// KindBlob is not a resource kind: it names the byte side in grants,
+	// which is how a blob call is authorized (there is no path to
+	// confine, so the grant is object-less).
+	KindBlob = "Blob"
+
 	// schemaNS namespaces the schemapb identities of built-in kinds.
 	schemaNS = "graphene"
 
