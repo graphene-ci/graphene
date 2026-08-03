@@ -23,12 +23,14 @@ const (
 	KindKernelLease = "KernelLease"
 	KindRole        = "Role"
 	KindIdentity    = "Identity"
+	KindProcess     = "Process"
 
 	// schemaNS namespaces the schemapb identities of built-in kinds.
 	schemaNS = "graphene"
 
-	// segKernel names the path segment holding a kernel's name.
+	// Path segment names shared by several built-in kinds.
 	segKernel = "kernel"
+	segName   = "name"
 )
 
 // Definitions returns the compiled-in kind definitions, version field
@@ -39,6 +41,7 @@ func Definitions() []*graphenepbv1.ResourceDefinition {
 		kernelLeaseDefinition(),
 		roleDefinition(),
 		identityDefinition(),
+		processDefinition(),
 	}
 }
 
@@ -100,7 +103,7 @@ func roleDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindRole,
-		PathSegments: []string{"name"},
+		PathSegments: []string{segName},
 		SpecSchema:   spec,
 	}
 }
@@ -122,7 +125,7 @@ func identityDefinition() *graphenepbv1.ResourceDefinition {
 
 	return &graphenepbv1.ResourceDefinition{
 		Kind:         KindIdentity,
-		PathSegments: []string{"name"},
+		PathSegments: []string{segName},
 		SpecSchema:   spec,
 	}
 }
@@ -153,4 +156,60 @@ func grantsField(name schemapb.FieldName) *schemapb.ListB {
 			),
 		),
 	)
+}
+
+// Process — bytes to run on one kernel, and what became of them. This is
+// the whole execution surface of the kernel, and it exists for exactly one
+// reason: a controller is an ordinary client, so anything that can watch
+// and write is already a controller — but on a machine where nothing runs
+// yet, nobody can start the first thing. Only the kernel there can.
+//
+// Everything else people expect from an execution layer — scheduling,
+// packaging, retries with backoff, pipelines, the "controller as a
+// function" pattern — is built ON this by ordinary controllers, and none
+// of it belongs in here. k8s draws the line in the same place: the
+// apiserver knows Pods; Deployment, Job and CronJob live outside it.
+//
+// The path names the kernel, so a kernel watches its own prefix — no
+// selector, no scan, and its grant is an ordinary path prefix.
+func processDefinition() *graphenepbv1.ResourceDefinition {
+	spec := schemapb.NewSchema(&schemapb.SchemaIdentity{Namespace: schemaNS, Name: "process-spec", Version: "v1"}).
+		Fields(
+			// Where the bytes are. A blob id, not a digest: the digest is
+			// an integrity checksum, never an address.
+			schemapb.Str("blob").Required(),
+			// How to turn them into a process. raw-exec is not a fallback
+			// but the floor: a bare VM has no container runtime, and the
+			// kernel itself has to be startable there.
+			schemapb.Str("format").In("raw-exec", "oci").Required(),
+			schemapb.List("args", schemapb.Str("arg")),
+			schemapb.Map("env", schemapb.Str("value")),
+			// Which Identity the process runs as; the kernel mints it a
+			// short-lived token. Absent = no credentials at all, which is
+			// right for anything that never calls the API.
+			schemapb.Str("identity"),
+			// never — run once, and an exit is the end of it.
+			// always — a resident thing (a driver, a daemon); an exit is a
+			// fault to be restarted from.
+			schemapb.Str("restart").In("never", "always"),
+		).
+		MustBuild()
+
+	status := schemapb.NewSchema(&schemapb.SchemaIdentity{Namespace: schemaNS, Name: "process-status", Version: "v1"}).
+		Fields(
+			schemapb.Str("phase").In("pending", "running", "exited", "failed"),
+			schemapb.Int64("exit_code"),
+			schemapb.Str("error"),
+			// How many times the kernel has started it, so a crash loop is
+			// visible in `ctl get` instead of only in a log somewhere.
+			schemapb.Int64("starts"),
+		).
+		MustBuild()
+
+	return &graphenepbv1.ResourceDefinition{
+		Kind:         KindProcess,
+		PathSegments: []string{segKernel, segName},
+		SpecSchema:   spec,
+		StatusSchema: status,
+	}
 }

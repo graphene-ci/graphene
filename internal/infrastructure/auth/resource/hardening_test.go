@@ -34,6 +34,12 @@ func authorityAdmin() []auth.Grant {
 			Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
 			Kind:  builtin.KindIdentity,
 		},
+		{
+			// Starting processes is administering authority too: a process
+			// runs as an identity.
+			Verbs: []auth.Verb{auth.VerbGet, auth.VerbList, auth.VerbWatch, auth.VerbPut, auth.VerbDelete},
+			Kind:  builtin.KindProcess,
+		},
 	}
 }
 
@@ -379,5 +385,36 @@ func TestWarmupIsUsableImmediately(t *testing.T) {
 
 	if len(creds.Grants) == 0 {
 		t.Fatal("identity indexed before its role: zero grants right after WaitWarm")
+	}
+}
+
+// A Process runs AS an identity, so writing one hands out that identity's
+// whole authority. Without the guard the escalation rule has an open door:
+// you cannot mint the administrator's Role, but you could start a process
+// running as the administrator and let it act for you.
+func TestProcessCannotBorrowAnIdentityItCannotMint(t *testing.T) {
+	t.Parallel()
+
+	harn, alice := setupDisarmScenario(t)
+
+	// Alice administers roles and identities but does not HOLD "super".
+	if err := harn.putProcess(alice, t, "borrow", "root"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("running as a stronger identity: want PermissionDenied, got %v", err)
+	}
+
+	// An identity she does hold is fine.
+	if err := harn.putProcess(alice, t, "own", "alice"); err != nil {
+		t.Fatalf("running as itself denied: %v", err)
+	}
+
+	// So is asking for no credentials at all.
+	if err := harn.putProcess(alice, t, "anonymous", ""); err != nil {
+		t.Fatalf("running without an identity denied: %v", err)
+	}
+
+	// An identity that does not exist is refused outright, not deferred:
+	// a process must never carry a name that gains meaning later.
+	if err := harn.putProcess(harn.admin, t, "ghost", "nobody"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("running as a missing identity: want PermissionDenied, got %v", err)
 	}
 }

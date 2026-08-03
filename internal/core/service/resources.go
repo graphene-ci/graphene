@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	schemapb "github.com/gopherex/schemapb/go/schemapb"
+
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/core/auth"
@@ -508,22 +510,74 @@ func (r *Resources) checkAuthorityWrite(ctx context.Context, kind string, res *g
 	case builtin.KindIdentity:
 		spec := auth.IdentityFromSpec(res.GetSpec())
 
-		for _, role := range spec.Roles {
-			grants, err := r.roleGrants(ctx, role)
-			if err != nil {
-				return err
-			}
+		return r.checkRoles(ctx, spec.Roles, "binding role")
 
-			if err := auth.CheckEscalation(ctx, grants); err != nil {
-				return fmt.Errorf("binding role %q: %w", role, err)
-			}
+	case builtin.KindProcess:
+		// A Process runs AS an identity: the kernel mints it a token, so
+		// writing one hands out that identity's whole authority. Without
+		// this check the escalation guard has an open door — you cannot
+		// mint a powerful Role, but you could start a process running as
+		// one and have it act for you.
+		identity := processIdentity(res.GetSpec())
+		if identity == "" {
+			return nil // no credentials asked for, none given
 		}
 
-		return nil
+		roles, err := r.identityRoles(ctx, identity)
+		if err != nil {
+			return err
+		}
+
+		return r.checkRoles(ctx, roles, "running as "+identity+" via role")
 
 	default:
 		return nil
 	}
+}
+
+// checkRoles applies the escalation guard to every named role: the writer
+// must already hold everything the roles hand out.
+func (r *Resources) checkRoles(ctx context.Context, roles []string, what string) error {
+	for _, role := range roles {
+		grants, err := r.roleGrants(ctx, role)
+		if err != nil {
+			return err
+		}
+
+		if err := auth.CheckEscalation(ctx, grants); err != nil {
+			return fmt.Errorf("%s %q: %w", what, role, err)
+		}
+	}
+
+	return nil
+}
+
+// identityRoles reads the roles an Identity carries. A process asking for
+// an identity that does not exist is refused rather than deferred — the
+// same rule as binding a missing role.
+func (r *Resources) identityRoles(ctx context.Context, name string) ([]string, error) {
+	entry, err := r.st.Get(ctx, key.New(builtin.KindIdentity, name).Encode())
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("%w: identity %s does not exist", auth.ErrDenied, name)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("read identity: %w", err)
+	}
+
+	res, err := decodeResource(entry)
+	if err != nil {
+		return nil, err
+	}
+
+	return auth.IdentityFromSpec(res.GetSpec()).Roles, nil
+}
+
+// processIdentity reads spec.identity, absent or non-string meaning none.
+func processIdentity(spec *schemapb.StructValue) string {
+	name, _ := spec.ToGo()["identity"].(string)
+
+	return name
 }
 
 // checkAuthorityLoss guards the destruction of authority: removing or

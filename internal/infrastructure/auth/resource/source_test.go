@@ -106,6 +106,25 @@ func (h *harness) putIdentity(ctx context.Context, t *testing.T, name string,
 	return err
 }
 
+// putProcess writes a Process running as the named identity.
+func (h *harness) putProcess(ctx context.Context, t *testing.T, name, identity string) error {
+	t.Helper()
+
+	fields := map[string]any{"blob": "b1", "format": "raw-exec"}
+	if identity != "" {
+		fields["identity"] = identity
+	}
+
+	_, err := h.resources.Put(ctx, &graphenepbv1.PutRequest{
+		Resource: &graphenepbv1.Resource{
+			Key:  &graphenepbv1.Key{Kind: builtin.KindProcess, Path: []string{"k1", name}},
+			Spec: schemapb.MustStructFromGo(fields),
+		},
+	})
+
+	return err
+}
+
 func (h *harness) waitToken(t *testing.T, token string) auth.Credentials {
 	t.Helper()
 
