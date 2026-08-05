@@ -60,24 +60,55 @@ func TestFinalizerIsNormalizedAndChecked(t *testing.T) {
 	}
 }
 
-// The same claim twice would be removed once and still be there, and the
-// resource could never finish being deleted.
-func TestTheSameClaimCannotBeListedTwice(t *testing.T) {
+// Claiming twice leaves one claim, because a claim listed twice would be
+// released once and still be there — and the resource could never finish
+// being deleted.
+//
+// It is idempotent rather than refused: a controller unwinding and
+// starting again should not have to remember whether it already claimed.
+func TestClaimingTwiceLeavesOneClaim(t *testing.T) {
 	t.Parallel()
 
 	definition := definition(t)
+	admitted := admit(t, definition, intent(t, definition, "b1"), resource.Resource{})
 
-	_, err := resource.NewIntent(id(t, definition, "local", "web"), spec("b1"),
-		resource.WithFinalizers(finalizer(t, "gc"), finalizer(t, "GC")))
-	if !errors.Is(err, resource.ErrDuplicateFinalizer) {
-		t.Fatalf("want ErrDuplicateFinalizer, got %v", err)
+	once, err := resource.Claim(admitted, finalizer(t, "gc"))
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	// The same claim, spelled differently: finalizers are folded, so
+	// these are one claim and not two.
+	twice, err := resource.Claim(once, finalizer(t, "GC"))
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	if len(twice.Finalizers()) != 1 {
+		t.Fatalf("claiming twice left %v", twice.Finalizers())
+	}
+
+	// Releasing what was never placed is the same forgiveness.
+	let, err := resource.Release(twice, finalizer(t, "other"))
+	if err != nil {
+		t.Fatalf("release: %v", err)
+	}
+
+	if len(let.Finalizers()) != 1 {
+		t.Fatalf("releasing a claim nobody placed left %v", let.Finalizers())
+	}
+
+	gone, err := resource.Release(let, finalizer(t, "gc"))
+	if err != nil {
+		t.Fatalf("release: %v", err)
+	}
+
+	if len(gone.Finalizers()) != 0 {
+		t.Fatalf("releasing the claim left %v", gone.Finalizers())
 	}
 
 	var unnamed resource.Finalizer
-
-	_, err = resource.NewIntent(id(t, definition, "local", "web"), spec("b1"),
-		resource.WithFinalizers(unnamed))
-	if !errors.Is(err, resource.ErrNoFinalizer) {
+	if _, err := resource.Claim(admitted, unnamed); !errors.Is(err, resource.ErrNoFinalizer) {
 		t.Fatalf("want ErrNoFinalizer, got %v", err)
 	}
 }

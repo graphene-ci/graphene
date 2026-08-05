@@ -22,8 +22,13 @@ import (
 // carries, which are read out of the spec when they are wanted rather
 // than copied here to go stale.
 type Resource struct {
-	intent     Intent
-	status     *schemapb.StructValue
+	intent Intent
+	status *schemapb.StructValue
+	// finalizers are on the resource and not on the intent, because they
+	// are not an author's intent: a claim is placed by whoever will do
+	// the cleaning, which is usually somebody else entirely. Claim and
+	// Release are the only things that move them.
+	finalizers []Finalizer
 	generation Generation
 	version    def.Version
 	deleting   bool
@@ -51,7 +56,7 @@ func (r Resource) Status() *schemapb.StructValue { return r.status }
 
 // Finalizers are the claims that must be released before this may be
 // removed.
-func (r Resource) Finalizers() []Finalizer { return slices.Clone(r.intent.finalizers) }
+func (r Resource) Finalizers() []Finalizer { return slices.Clone(r.finalizers) }
 
 // Generation counts intent: it moves when the spec moves and at no other
 // time. A controller compares it against what it last acted on.

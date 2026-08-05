@@ -43,13 +43,6 @@ func (k Kernel) Watch(
 // the revision it saw. It is checked before any work is done rather than
 // left to the store, so a caller working from a stale read is told that
 // and not something further down about its spec.
-//
-// The last act of a deletion happens here. A resource marked for deletion
-// stays until its finalizers are released, and releasing the last one is
-// an ordinary write — so a write that leaves a marked resource with no
-// claims on it is what finally removes the record. The alternative is a
-// sweeper looking for tombstones, which is a moving part for something
-// that is already known at exactly this moment.
 func (k Kernel) Put(
 	ctx context.Context,
 	intent resource.Intent,
@@ -82,11 +75,82 @@ func (k Kernel) Put(
 		return revision.None, err
 	}
 
-	if admitted.IsDeleting() && len(admitted.Finalizers()) == 0 {
-		return k.resources.Delete(ctx, admitted.Id(), expect)
+	return k.resources.Put(ctx, admitted, expect)
+}
+
+// Claim places a claim on a resource's deletion.
+//
+// Its own call, like Report, because it is a different party writing a
+// different part: whoever will do the cleaning is rarely whoever wrote
+// the spec, and the permission to hold a resource open should not carry
+// the permission to rewrite it.
+func (k Kernel) Claim(
+	ctx context.Context,
+	id resource.Id,
+	finalizer resource.Finalizer,
+	expect revision.Revision,
+) (revision.Revision, error) {
+	current, err := k.held(ctx, id, expect)
+	if err != nil {
+		return revision.None, err
 	}
 
-	return k.resources.Put(ctx, admitted, expect)
+	claimed, err := resource.Claim(current, finalizer)
+	if err != nil {
+		return revision.None, err
+	}
+
+	return k.resources.Put(ctx, claimed, expect)
+}
+
+// Release lets go of a claim, and removes the resource if that was the
+// last thing a deletion was waiting for.
+//
+// The deletion finishes HERE, which is the only moment it can: a marked
+// resource with no claims left is a tombstone nobody would ever clear,
+// and this is exactly when that becomes true. The alternative is a
+// sweeper hunting for them, which is a moving part for something already
+// known at the instant it happens.
+func (k Kernel) Release(
+	ctx context.Context,
+	id resource.Id,
+	finalizer resource.Finalizer,
+	expect revision.Revision,
+) (revision.Revision, error) {
+	current, err := k.held(ctx, id, expect)
+	if err != nil {
+		return revision.None, err
+	}
+
+	released, err := resource.Release(current, finalizer)
+	if err != nil {
+		return revision.None, err
+	}
+
+	if released.IsDeleting() && len(released.Finalizers()) == 0 {
+		return k.resources.Delete(ctx, id, expect)
+	}
+
+	return k.resources.Put(ctx, released, expect)
+}
+
+// held reads the resource a claim is being placed on or taken off, and
+// refuses one that is not there.
+func (k Kernel) held(
+	ctx context.Context,
+	id resource.Id,
+	expect revision.Revision,
+) (resource.Resource, error) {
+	current, err := k.previous(ctx, id, expect)
+	if err != nil {
+		return resource.Resource{}, err
+	}
+
+	if current.IsZero() {
+		return resource.Resource{}, fmt.Errorf("%w: %s", store.ErrNotFound, id)
+	}
+
+	return current, nil
 }
 
 // Report records what a controller found.
@@ -101,13 +165,9 @@ func (k Kernel) Report(
 	status *schemapb.StructValue,
 	expect revision.Revision,
 ) (revision.Revision, error) {
-	current, err := k.previous(ctx, id, expect)
+	current, err := k.held(ctx, id, expect)
 	if err != nil {
 		return revision.None, err
-	}
-
-	if current.IsZero() {
-		return revision.None, fmt.Errorf("%w: %s", store.ErrNotFound, id)
 	}
 
 	// The version the resource was ADMITTED under, not the current one: a
@@ -134,13 +194,9 @@ func (k Kernel) Report(
 // caller cannot choose, because the claims are the whole point of the
 // protocol and an override would be a way around somebody else's cleanup.
 func (k Kernel) Delete(ctx context.Context, id resource.Id, expect revision.Revision) (revision.Revision, error) {
-	current, err := k.previous(ctx, id, expect)
+	current, err := k.held(ctx, id, expect)
 	if err != nil {
 		return revision.None, err
-	}
-
-	if current.IsZero() {
-		return revision.None, fmt.Errorf("%w: %s", store.ErrNotFound, id)
 	}
 
 	if err := k.collect(ctx, id); err != nil {

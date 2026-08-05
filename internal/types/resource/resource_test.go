@@ -58,10 +58,10 @@ func spec(bundle string) *schemapb.StructValue {
 	return schemapb.MustStructFromGo(map[string]any{"bundle": bundle})
 }
 
-func intent(t *testing.T, d def.Definition, bundle string, options ...resource.IntentOption) resource.Intent {
+func intent(t *testing.T, d def.Definition, bundle string) resource.Intent {
 	t.Helper()
 
-	stated, err := resource.NewIntent(id(t, d, "local", "web"), spec(bundle), options...)
+	stated, err := resource.NewIntent(id(t, d, "local", "web"), spec(bundle))
 	if err != nil {
 		t.Fatalf("intent: %v", err)
 	}
@@ -163,8 +163,7 @@ func TestAdmissionCarriesTheKernelsOwnFieldsOver(t *testing.T) {
 	t.Parallel()
 
 	definition := definition(t)
-	created := admit(t, definition, intent(t, definition, "b1",
-		resource.WithFinalizers(finalizer(t, "graphene.io/gc"))), resource.Resource{})
+	created := admit(t, definition, intent(t, definition, "b1"), resource.Resource{})
 
 	reported, err := resource.Report(definition, created,
 		schemapb.MustStructFromGo(map[string]any{"phase": "running"}))
@@ -172,15 +171,18 @@ func TestAdmissionCarriesTheKernelsOwnFieldsOver(t *testing.T) {
 		t.Fatalf("report: %v", err)
 	}
 
-	deleting, err := resource.MarkDeleting(reported)
+	claimed, err := resource.Claim(reported, finalizer(t, "gc"))
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	deleting, err := resource.MarkDeleting(claimed)
 	if err != nil {
 		t.Fatalf("mark: %v", err)
 	}
 
-	// The same spec, so the write is allowed even while deleting: this is
-	// how a finalizer is removed.
-	again := admit(t, definition, intent(t, definition, "b1",
-		resource.WithFinalizers(finalizer(t, "graphene.io/gc"))), deleting)
+	// The same spec, so the write is allowed even while deleting.
+	again := admit(t, definition, intent(t, definition, "b1"), deleting)
 
 	if !again.IsDeleting() {
 		t.Fatal("a spec write revived a resource that was going away")
@@ -188,6 +190,10 @@ func TestAdmissionCarriesTheKernelsOwnFieldsOver(t *testing.T) {
 
 	if again.Status().ToGo()["phase"] != "running" {
 		t.Fatal("a spec write erased the controller's report")
+	}
+
+	if len(again.Finalizers()) != 1 {
+		t.Fatalf("a spec write changed the claims on it: %v", again.Finalizers())
 	}
 }
 
@@ -208,14 +214,19 @@ func TestAnAdmissionMustFollowFromWhatIsThere(t *testing.T) {
 		t.Fatalf("writing over another id: want ErrIdChanged, got %v", err)
 	}
 
-	deleting, err := resource.MarkDeleting(admit(t, definition,
-		intent(t, definition, "b1", resource.WithFinalizers(finalizer(t, "gc"))), resource.Resource{}))
+	claimed, err := resource.Claim(
+		admit(t, definition, intent(t, definition, "b1"), resource.Resource{}),
+		finalizer(t, "gc"))
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	deleting, err := resource.MarkDeleting(claimed)
 	if err != nil {
 		t.Fatalf("mark: %v", err)
 	}
 
-	if _, err := resource.Admit(definition, 1,
-		intent(t, definition, "b2", resource.WithFinalizers(finalizer(t, "gc"))),
+	if _, err := resource.Admit(definition, 1, intent(t, definition, "b2"),
 		deleting); !errors.Is(err, resource.ErrDeleting) {
 		t.Fatalf("changing the spec while deleting: want ErrDeleting, got %v", err)
 	}
@@ -322,8 +333,10 @@ func TestDeletionIsOnlyMarkedWhenSomethingIsWaiting(t *testing.T) {
 		t.Fatalf("want ErrNoFinalizers, got %v", err)
 	}
 
-	claimed := admit(t, definition,
-		intent(t, definition, "b1", resource.WithFinalizers(finalizer(t, "gc"))), resource.Resource{})
+	claimed, err := resource.Claim(plain, finalizer(t, "gc"))
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
 
 	marked, err := resource.MarkDeleting(claimed)
 	if err != nil {
@@ -345,7 +358,7 @@ func TestRestoreIsTheInverseOfFlatten(t *testing.T) {
 
 	definition := definition(t)
 	original := admit(t, definition,
-		intent(t, definition, "b1", resource.WithFinalizers(finalizer(t, "gc"))), resource.Resource{})
+		intent(t, definition, "b1"), resource.Resource{})
 
 	restored, err := resource.Restore(original.Flatten())
 	if err != nil {

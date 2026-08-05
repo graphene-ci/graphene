@@ -32,19 +32,8 @@ import (
 // forge — not because those are ignored on input, but because this type
 // does not have them. A client holding an Intent cannot express them.
 type Intent struct {
-	id         Id
-	spec       *schemapb.StructValue
-	finalizers []Finalizer
-}
-
-// IntentOption is one of the parts an author may set beyond the spec.
-// An option and not a parameter because most writes set none.
-type IntentOption func(*Intent)
-
-// WithFinalizers records the claims that must be released before this
-// resource may actually be removed.
-func WithFinalizers(finalizers ...Finalizer) IntentOption {
-	return func(in *Intent) { in.finalizers = slices.Clone(finalizers) }
+	id   Id
+	spec *schemapb.StructValue
 }
 
 // NewIntent states an ask.
@@ -57,7 +46,7 @@ func WithFinalizers(finalizers ...Finalizer) IntentOption {
 // The spec is COPIED in. A protobuf message is a pointer, and an intent
 // that kept the caller's would be an immutable value with a mutable
 // inside — the caller could go on editing what it had already submitted.
-func NewIntent(id Id, spec *schemapb.StructValue, options ...IntentOption) (Intent, error) {
+func NewIntent(id Id, spec *schemapb.StructValue) (Intent, error) {
 	switch {
 	case id.IsZero():
 		return Intent{}, ErrNoId
@@ -67,16 +56,7 @@ func NewIntent(id Id, spec *schemapb.StructValue, options ...IntentOption) (Inte
 		return Intent{}, fmt.Errorf("%w: %s", ErrNoSpec, id)
 	}
 
-	stated := Intent{id: id, spec: proto.CloneOf(spec)}
-	for _, option := range options {
-		option(&stated)
-	}
-
-	if err := checkFinalizers(stated.finalizers); err != nil {
-		return Intent{}, fmt.Errorf("%s: %w", id, err)
-	}
-
-	return stated, nil
+	return Intent{id: id, spec: proto.CloneOf(spec)}, nil
 }
 
 // checkFinalizers refuses an unnamed claim and the same claim twice.
@@ -105,9 +85,6 @@ func (in Intent) Id() Id { return in.id }
 // cloning on every read would cost an allocation on the hottest path
 // there is — so it is to be read and not written.
 func (in Intent) Spec() *schemapb.StructValue { return in.spec }
-
-// Finalizers are the claims on this resource's deletion.
-func (in Intent) Finalizers() []Finalizer { return slices.Clone(in.finalizers) }
 
 // IsZero reports an intent that was never stated.
 func (in Intent) IsZero() bool { return in.id.IsZero() }

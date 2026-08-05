@@ -104,16 +104,27 @@ func id(t *testing.T, values ...string) resource.Id {
 	return resource.NewId(kind.MustNew("Process"), at)
 }
 
-func intent(t *testing.T, bundle string, options ...resource.IntentOption) resource.Intent {
+func intent(t *testing.T, bundle string) resource.Intent {
 	t.Helper()
 
 	stated, err := resource.NewIntent(id(t, "local", "web"),
-		schemapb.MustStructFromGo(map[string]any{"bundle": bundle}), options...)
+		schemapb.MustStructFromGo(map[string]any{"bundle": bundle}))
 	if err != nil {
 		t.Fatalf("intent: %v", err)
 	}
 
 	return stated
+}
+
+func other(t *testing.T, name string) resource.Finalizer {
+	t.Helper()
+
+	built, err := resource.NewFinalizer(name)
+	if err != nil {
+		t.Fatalf("finalizer: %v", err)
+	}
+
+	return built
 }
 
 func define(t *testing.T, k kernel.Kernel, definition def.Definition) def.Head {
@@ -292,9 +303,16 @@ func TestDeletionWaitsForFinalizers(t *testing.T) {
 			t.Fatalf("finalizer: %v", err)
 		}
 
-		at, err := k.Put(ctx, intent(t, "b1", resource.WithFinalizers(claim)), revision.Absent)
+		at, err := k.Put(ctx, intent(t, "b1"), revision.Absent)
 		if err != nil {
 			t.Fatalf("put: %v", err)
+		}
+
+		// A claim is placed by whoever will do the cleaning, which is its
+		// own act — not part of writing the spec.
+		at, err = k.Claim(ctx, id(t, "local", "web"), claim, at)
+		if err != nil {
+			t.Fatalf("claim: %v", err)
 		}
 
 		marked, err := k.Delete(ctx, id(t, "local", "web"), at)
@@ -313,14 +331,19 @@ func TestDeletionWaitsForFinalizers(t *testing.T) {
 
 		// Its spec cannot change while it is going away: the claim is
 		// being worked against the spec it had.
-		_, err = k.Put(ctx, intent(t, "b2", resource.WithFinalizers(claim)), marked)
-		if !errors.Is(err, resource.ErrDeleting) {
+		if _, err := k.Put(ctx, intent(t, "b2"), marked); !errors.Is(err, resource.ErrDeleting) {
 			t.Fatalf("want ErrDeleting, got %v", err)
 		}
 
-		// Releasing the last claim is an ordinary write, and it is what
-		// finally removes the record.
-		if _, err := k.Put(ctx, intent(t, "b1"), marked); err != nil {
+		// And nobody may claim it now either — a claim after the mark
+		// would hold the deletion open forever.
+		_, err = k.Claim(ctx, id(t, "local", "web"), other(t, "graphene.io/late"), marked)
+		if !errors.Is(err, resource.ErrClaimWhileDeleting) {
+			t.Fatalf("want ErrClaimWhileDeleting, got %v", err)
+		}
+
+		// Releasing the last claim is what finally removes the record.
+		if _, err := k.Release(ctx, id(t, "local", "web"), claim, marked); err != nil {
 			t.Fatalf("releasing the claim: %v", err)
 		}
 

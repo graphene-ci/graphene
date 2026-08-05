@@ -54,6 +54,10 @@ var (
 	// ErrIdChanged — an admission over a previous resource with a
 	// different id, which is not an update of anything.
 	ErrIdChanged = errors.New("admission would change the resource's id")
+	// ErrClaimWhileDeleting — a claim placed after a deletion began.
+	// Allowing it would let anyone hold a deletion open forever, and
+	// whoever meant to clean up had its chance before the delete started.
+	ErrClaimWhileDeleting = errors.New("a claim cannot be placed while deleting")
 	// ErrDeleting — a spec change on a resource that is already going
 	// away. Its finalizers are running against the spec it had; changing
 	// it underneath them makes their cleanup wrong.

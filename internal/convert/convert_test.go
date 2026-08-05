@@ -81,7 +81,6 @@ func TestAResourceSurvivesARoundTripWithEveryFieldSet(t *testing.T) {
 	intent, err := resource.NewIntent(
 		id(t, definition, "local", "web"),
 		schemapb.MustStructFromGo(map[string]any{"bundle": "b1"}),
-		resource.WithFinalizers(finalizer),
 	)
 	if err != nil {
 		t.Fatalf("intent: %v", err)
@@ -92,7 +91,12 @@ func TestAResourceSurvivesARoundTripWithEveryFieldSet(t *testing.T) {
 		t.Fatalf("admit: %v", err)
 	}
 
-	reported, err := resource.Report(definition, admitted,
+	claimed, err := resource.Claim(admitted, finalizer)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	reported, err := resource.Report(definition, claimed,
 		schemapb.MustStructFromGo(map[string]any{"phase": "running"}))
 	if err != nil {
 		t.Fatalf("report: %v", err)

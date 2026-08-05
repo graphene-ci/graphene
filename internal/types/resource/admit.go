@@ -2,6 +2,7 @@ package resource
 
 import (
 	"fmt"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -54,17 +55,21 @@ func Admit(
 		return Resource{}, fmt.Errorf("%s: %w", intent.id, err)
 	}
 
-	return Resource{
+	// The spec is the only thing an admission decides. Everything else
+	// belongs to somebody else and is carried over untouched — a status
+	// to whoever reported it, the claims to whoever placed them, the
+	// deletion mark to the delete that set it. An admission that reset
+	// any of them would let a spec write erase another party's work.
+	admitted := Resource{
 		intent:     intent,
 		generation: nextGeneration(previous, intent),
 		version:    version,
-		// The status and the deletion mark are carried over untouched.
-		// Neither is an author's to set, and an admission that reset them
-		// would let any spec write erase a controller's report or revive
-		// something already on its way out.
-		status:   previous.status,
-		deleting: previous.deleting,
-	}, nil
+		status:     previous.status,
+		deleting:   previous.deleting,
+	}
+	admitted.finalizers = slices.Clone(previous.finalizers)
+
+	return admitted, nil
 }
 
 // Report records what a controller found.
@@ -108,7 +113,7 @@ func MarkDeleting(current Resource) (Resource, error) {
 		return Resource{}, ErrNoResource
 	}
 
-	if len(current.intent.finalizers) == 0 {
+	if len(current.finalizers) == 0 {
 		return Resource{}, fmt.Errorf("%w: %s", ErrNoFinalizers, current.Id())
 	}
 

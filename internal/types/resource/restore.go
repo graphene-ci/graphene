@@ -89,10 +89,10 @@ func Restore(snapshot Snapshot) (Resource, error) {
 
 	return Resource{
 		intent: Intent{
-			id:         snapshot.Id,
-			spec:       snapshot.Spec,
-			finalizers: snapshot.Finalizers,
+			id:   snapshot.Id,
+			spec: snapshot.Spec,
 		},
+		finalizers: snapshot.Finalizers,
 		status:     snapshot.Status,
 		generation: snapshot.Generation,
 		version:    snapshot.Version,
