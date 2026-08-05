@@ -1,2 +1,4 @@
-bin/*
-!bin/.gitkeep
+# The old tree, kept on disk for reference and out of the repository.
+.go/
+
+bin/
