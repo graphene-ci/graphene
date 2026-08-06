@@ -94,7 +94,7 @@ func refToPb(ref def.Ref) *graphenepbv1.Ref {
 	return &graphenepbv1.Ref{
 		Field:    field,
 		Kind:     ref.Kind().String(),
-		Strength: strengthToPb(ref.Strength()),
+		Strength: StrengthToPb(ref.Strength()),
 	}
 }
 
@@ -124,7 +124,9 @@ func refFromPb(message *graphenepbv1.Ref) (def.Ref, error) {
 // Written out rather than cast, because the two numberings are allowed to
 // drift: proto reserves zero for "unset" and Go does not have to. A cast
 // would keep working while meaning something else.
-func strengthToPb(strength def.Strength) graphenepbv1.Strength {
+// StrengthToPb is exported because the transport writes holders, and a
+// holder is a reference found rather than declared.
+func StrengthToPb(strength def.Strength) graphenepbv1.Strength {
 	switch strength {
 	case def.Strong:
 		return graphenepbv1.Strength_STRENGTH_STRONG

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -78,23 +79,46 @@ func run(ctx context.Context, out io.Writer) error {
 	// file out from under one of them cannot happen.
 	stop.RegisterFnErr(func(context.Context) error { return kernel.Close() })
 
-	_, _ = fmt.Fprintf(out, "kernel %s on %s\n", name, storePath)
-	_, _ = fmt.Fprintf(out, "configured: %s\n", kernel.Config())
+	log := slog.New(slog.NewTextHandler(out, nil))
 
-	// The one worker. A second arrives with the wire, and it arrives
-	// here, on this line, where it can be seen beside this one.
-	stop.Go(func(ctx context.Context) {
-		if err := kernel.Follow(ctx); err != nil && ctx.Err() == nil {
-			_, _ = fmt.Fprintf(out, "config watch: %v\n", err)
+	server, listener, err := kernel.Server(log)
+	if err != nil {
+		return err
+	}
+
+	// Three workers, and this is the whole list.
+	//
+	//  1. the server, which ends when GracefulStop is called
+	//  2. the stop itself, which is what calls it
+	//  3. the config watch, which ends when the context does
+	//
+	// The second cannot be cleanup instead: cleanup runs after the drain,
+	// and the drain is waiting for the call the second one ends.
+	stop.Go(func(context.Context) {
+		if err := server.Serve(listener); err != nil {
+			log.Error("serve", "err", err)
 		}
 	})
+
+	stop.Go(func(ctx context.Context) {
+		<-ctx.Done()
+		server.GracefulStop()
+	})
+
+	stop.Go(func(ctx context.Context) {
+		if err := kernel.Follow(ctx); err != nil && ctx.Err() == nil {
+			log.Error("config watch", "err", err)
+		}
+	})
+
+	log.Info("serving", "kernel", name, "address", listener.Addr().String())
 
 	// Run installs the signals, blocks, and then drains.
 	if err := stop.Run(); err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintln(out, "stopped")
+	log.Info("stopped")
 
 	return nil
 }

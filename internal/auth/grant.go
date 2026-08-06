@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/gopherex/schemapb/go/schemapb"
 
+	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/types/kind"
 	"github.com/graphene-ci/graphene/internal/types/path"
 	"github.com/graphene-ci/graphene/internal/types/resource"
@@ -159,12 +161,33 @@ func grantsOf(
 			return nil, fmt.Errorf("grant kind: %w", err)
 		}
 
+		prefix := text(one, grantPrefixField)
+
 		shape, err := shapeOf(named)
 		if err != nil {
-			return nil, err
+			// A grant may name a kind nobody has defined yet, and the
+			// commonest one is exactly that: `define Process` is what
+			// brings Process into existence, so requiring Process to exist
+			// before the grant can be read would mean nobody could ever be
+			// allowed to create it.
+			//
+			// Without a shape a prefix cannot become a path, so a grant
+			// that confines itself to one is dropped — it authorises
+			// nothing either way, since a kind with no definition has no
+			// instances. One that confines nothing needs no shape and is
+			// kept, which is what makes the bootstrap possible.
+			if !errors.Is(err, kernel.ErrNoSuchKind) {
+				return nil, err
+			}
+
+			if prefix != "" {
+				continue
+			}
+
+			shape = path.TPath{}
 		}
 
-		grant, err := ParseGrant(verb, namedText, text(one, grantPrefixField), shape)
+		grant, err := ParseGrant(verb, namedText, prefix, shape)
 		if err != nil {
 			return nil, err
 		}

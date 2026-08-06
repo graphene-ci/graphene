@@ -20,8 +20,13 @@ import (
 // spellings of "grants" agree until one of them is changed, and then a
 // role full of permissions reads as a role with none.
 const (
-	rolesField   = "roles"
-	digestsField = "digests"
+	rolesField = "roles"
+
+	// DigestsField is exported because the transport writes and reads it:
+	// a credential is checked at the edge, before there is a session to
+	// check it with, so the one place that knows where digests live has
+	// to be reachable from there.
+	DigestsField = "digests"
 
 	grantsField      = "grants"
 	grantVerbField   = "verb"
@@ -85,7 +90,7 @@ func Identity() def.Definition {
 		def.Spec(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "identity-spec"}).
 			Fields(
 				schemapb.List(rolesField, schemapb.Str("role")),
-				schemapb.List(digestsField, schemapb.Str("digest")),
+				schemapb.List(DigestsField, schemapb.Str("digest")),
 			).
 			MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "identity-status"}).MustBuild()),
