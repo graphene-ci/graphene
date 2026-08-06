@@ -2,8 +2,10 @@ package client
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/graphene-ci/graphene/internal/app/config"
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // Local is the name a discovered kernel is saved under.
@@ -71,5 +73,17 @@ func discover(kernelFile string) (Context, error) {
 			ErrNoContext, kernelFile)
 	}
 
-	return NewContext(Local, read.Listen(), local.Token())
+	// The pin is read off the kernel's own key material rather than
+	// copied by hand. A fingerprint exists so that somebody pointing at a
+	// kernel ACROSS a network can tell which one answered; on the machine
+	// that runs it, the certificate is right there and public, and asking
+	// a person to retype it would be ceremony rather than safety.
+	pinned, err := link.PinIn(filepath.Dir(local.Store()))
+	if err != nil {
+		return Context{}, fmt.Errorf(
+			"%w; the kernel in %s has no key yet, so it has not started: %w",
+			ErrNoContext, kernelFile, err)
+	}
+
+	return NewContext(Local, read.Listen(), local.Token(), pinned.String())
 }

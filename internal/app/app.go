@@ -39,6 +39,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/kv/bbolt"
 	"github.com/graphene-ci/graphene/internal/infrastructure/runner/rawexec"
 	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/link"
 	"github.com/graphene-ci/graphene/internal/process"
 	"github.com/graphene-ci/graphene/internal/store/kv/cache"
 )
@@ -72,7 +73,15 @@ type App struct {
 
 	kept  kernel.Kernel
 	keeps bool
+
+	// as is the key this kernel is recognized by, made at the first start
+	// and kept beside everything else it owns.
+	as link.Identity
 }
+
+// As is the key this kernel answers on, and the pin whoever points at it
+// must be told.
+func (a *App) As() link.Identity { return a.as }
 
 // Open assembles a kernel, publishing what it needs to work.
 //
@@ -124,6 +133,13 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 	if err := os.MkdirAll(filepath.Dir(local.Store()), 0o700); err != nil {
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(local.Store()), err)
 	}
+
+	as, err := link.Open(filepath.Dir(local.Store()))
+	if err != nil {
+		return err
+	}
+
+	a.as = as
 
 	bytes, err := bbolt.Open(local.Store())
 	if err != nil {
@@ -209,8 +225,8 @@ func (a *App) execute(
 // to run is acting on its own account. The door is the one piece that
 // cannot be: a process gets its own, and what it does there is done as
 // the identity its record names, which only the kernel above can say.
-func (a *App) forward(link config.Upstream, above *upstream.Upstream, log *xlog.Logger) {
-	work := link.Work()
+func (a *App) forward(linkTo config.Upstream, above *upstream.Upstream, log *xlog.Logger) {
+	work := linkTo.Work()
 
 	a.agent = a.running(work, above.Watching(), remote.Over(above.Fetching()),
 		gateway.Above(filepath.Join(work, "doors"), above, log), log)
@@ -241,8 +257,18 @@ func (a *App) running(
 // simplification, it is the whole meaning of the mode. A subordinate that
 // authorized anything would be a second opinion about permissions, and
 // two opinions is one more than a system can have.
-func (a *App) subordinate(link config.Upstream, log *xlog.Logger) error {
-	above, err := upstream.Open(link)
+func (a *App) subordinate(linkTo config.Upstream, log *xlog.Logger) error {
+	// A subordinate answers on TCP like any other kernel, so it needs a
+	// key of its own — being subordinate is about where the answers come
+	// from, not about who may listen to them on the way.
+	as, err := link.Open(linkTo.Work())
+	if err != nil {
+		return err
+	}
+
+	a.as = as
+
+	above, err := upstream.Open(linkTo)
 	if err != nil {
 		return err
 	}
@@ -252,7 +278,7 @@ func (a *App) subordinate(link config.Upstream, log *xlog.Logger) error {
 	a.source = above.Recording()
 	a.release = above.Close
 
-	a.forward(link, above, log)
+	a.forward(linkTo, above, log)
 
 	return nil
 }

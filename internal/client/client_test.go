@@ -9,6 +9,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/app/config"
 	"github.com/graphene-ci/graphene/internal/client"
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // Contexts survive being written down, and the first one saved is the one
@@ -27,12 +28,12 @@ func TestContextsSurviveBeingWrittenDown(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 
-	first, err := client.NewContext("local", "127.0.0.1:7373", "root.a")
+	first, err := client.NewContext("local", "127.0.0.1:7373", "root.a", examplePin)
 	if err != nil {
 		t.Fatalf("context: %v", err)
 	}
 
-	second, err := client.NewContext("prod", "kernel.prod:7373", "ci.b")
+	second, err := client.NewContext("prod", "kernel.prod:7373", "ci.b", examplePin)
 	if err != nil {
 		t.Fatalf("context: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestForgettingTheCurrentKernelLeavesNone(t *testing.T) {
 		{"local", "127.0.0.1:7373"},
 		{"prod", "kernel.prod:7373"},
 	} {
-		saved, err := client.NewContext(one.name, one.address, "t.s")
+		saved, err := client.NewContext(one.name, one.address, "t.s", examplePin)
 		if err != nil {
 			t.Fatalf("context: %v", err)
 		}
@@ -119,7 +120,7 @@ func TestForgettingTheCurrentKernelLeavesNone(t *testing.T) {
 func TestPrintingAContextDoesNotPrintTheToken(t *testing.T) {
 	t.Parallel()
 
-	one, err := client.NewContext("local", "127.0.0.1:7373", "root.s3cret")
+	one, err := client.NewContext("local", "127.0.0.1:7373", "root.s3cret", examplePin)
 	if err != nil {
 		t.Fatalf("context: %v", err)
 	}
@@ -148,6 +149,14 @@ func TestAClientFindsTheKernelOnThisMachine(t *testing.T) {
 		t.Fatalf("write kernel: %v", err)
 	}
 
+	// What a kernel makes at its first start. Discovery reads the pin off
+	// it rather than asking a person to retype a fingerprint they could
+	// have read from the file beside them.
+	running, err := link.Open(dir)
+	if err != nil {
+		t.Fatalf("kernel key: %v", err)
+	}
+
 	all, err := client.Read(contexts)
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -160,6 +169,10 @@ func TestAClientFindsTheKernelOnThisMachine(t *testing.T) {
 
 	if found.Address() != "127.0.0.1:9999" || found.Token() != "root.s3cret" {
 		t.Fatalf("found %s with %q", found, found.Token())
+	}
+
+	if !found.Pin().Eq(running.Pin()) {
+		t.Fatalf("discovered the pin %s, the kernel's is %s", found.Pin(), running.Pin())
 	}
 
 	// SAVED, so it is discovered once and is an ordinary context after
@@ -186,7 +199,7 @@ func TestASubordinateIsNotDiscovered(t *testing.T) {
 	dir := t.TempDir()
 	kernelFile := filepath.Join(dir, "kernel.yaml")
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:9999", "above:7373", "edge.s", t.TempDir())
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:9999", "above:7373", "edge.s", t.TempDir(), examplePin)
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}
@@ -216,7 +229,7 @@ func TestTheContextsFileIsPrivate(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 
-	one, err := client.NewContext("local", "127.0.0.1:7373", "root.a")
+	one, err := client.NewContext("local", "127.0.0.1:7373", "root.a", examplePin)
 	if err != nil {
 		t.Fatalf("context: %v", err)
 	}
@@ -234,3 +247,8 @@ func TestTheContextsFileIsPrivate(t *testing.T) {
 		t.Fatalf("the file is %v", written.Mode().Perm())
 	}
 }
+
+// examplePin is a pin's shape, which is all these tests need: they are
+// about contexts and configuration, not about what a key hashes to.
+const examplePin = "sha256:" +
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

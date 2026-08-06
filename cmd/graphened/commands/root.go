@@ -42,6 +42,7 @@ func Root() *cobra.Command {
 
 	root.AddCommand(runCommand())
 	root.AddCommand(configureCommand())
+	root.AddCommand(pinCommand())
 	root.AddCommand(serviceCommands()...)
 
 	return root

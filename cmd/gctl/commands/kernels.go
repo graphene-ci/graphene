@@ -59,6 +59,11 @@ func useCommand() *cobra.Command {
 	}
 }
 
+// savedFields is what `save` is told: a name, an address, a token and a
+// pin. Four things because a context is four things, and one missing is
+// a context that cannot be used.
+const savedFields = 4
+
 // saveCommand writes down a kernel somebody else's machine is running.
 //
 // The credential is an ARGUMENT and not a prompt, because this is the
@@ -67,18 +72,22 @@ func useCommand() *cobra.Command {
 // tool of this shape makes.
 func saveCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "save <name> <address> <token>",
+		Use:   "save <name> <address> <token> <pin>",
 		Short: "Write down a kernel to talk to",
 		Long: "Save a kernel under a name. The first one saved becomes the " +
-			"one commands mean.",
-		Args: cobra.ExactArgs(3),
+			"one commands mean.\n\n" +
+			"The pin says WHICH kernel is at that address — the kernel " +
+			"prints its own with `graphened pin`. Without it a client " +
+			"cannot tell the kernel it means from whoever else answers " +
+			"there, and it is about to send that kernel a credential.",
+		Args: cobra.ExactArgs(savedFields),
 		RunE: func(command *cobra.Command, args []string) error {
 			all, err := client.Read(contextsPath)
 			if err != nil {
 				return err
 			}
 
-			one, err := client.NewContext(args[0], args[1], args[2])
+			one, err := client.NewContext(args[0], args[1], args[2], args[3])
 			if err != nil {
 				return err
 			}

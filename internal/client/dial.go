@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // Where a credential rides, and how it is introduced. The same two words
@@ -32,11 +33,15 @@ type Kernel struct {
 // the call somebody made rather than the connection they did not know
 // they were opening.
 func Dial(one Context) (*Kernel, error) {
-	// Insecure because there is no transport security anywhere in this
-	// system yet, and a client that pretended otherwise would be worse
-	// than one that says what it is.
-	conn, err := grpc.NewClient(one.Address(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// WHICH kernel this is, decided before anything is sent. A client
+	// carries a credential and is about to hand it over, so an address
+	// that turned out to be somebody else would be handing it to them.
+	creds, err := link.Reaching(one.Pin())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", one, err)
+	}
+
+	conn, err := grpc.NewClient(one.Address(), grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", one, err)
 	}

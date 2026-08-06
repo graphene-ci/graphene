@@ -19,12 +19,12 @@ import (
 	"fmt"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app/config"
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // Where a credential rides, and how it is introduced. The same two words
@@ -52,12 +52,22 @@ type Upstream struct {
 // refusing to start and needing somebody to notice it later. Its health
 // says what is actually true, which is the point of having health.
 func Open(to config.Upstream) (*Upstream, error) {
-	// Insecure because there is no transport security anywhere in this
-	// system yet, and a connection that pretended otherwise would be
-	// worse than one that says what it is. When TLS arrives it arrives
-	// here and at the listener together.
-	conn, err := grpc.NewClient(to.Address(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// WHICH kernel is up there is decided here, before anything is sent.
+	// A subordinate hands its own credential to the kernel above and
+	// forwards everybody else's, so an address that turned out to be
+	// somebody else would hand them every credential that ever crossed
+	// this link.
+	pinned, err := link.NewPin(to.Pin())
+	if err != nil {
+		return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
+	}
+
+	creds, err := link.Reaching(pinned)
+	if err != nil {
+		return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
+	}
+
+	conn, err := grpc.NewClient(to.Address(), grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
 	}

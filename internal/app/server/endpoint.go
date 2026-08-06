@@ -24,6 +24,8 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
+
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // Configured is what an endpoint needs to know about configuration:
@@ -54,7 +56,9 @@ type Configured interface {
 // has rebound a hundred times has the same two goroutines it started
 // with.
 type Endpoint struct {
-	config  Configured
+	config Configured
+	// as is the key this kernel is recognized by.
+	as      link.Identity
 	service graphenepbv1.KernelServiceServer
 	// bytes may be nil: a subordinate keeps none and answers for none.
 	bytes  blobpb.BlobServiceServer
@@ -78,14 +82,23 @@ type Endpoint struct {
 // somewhere else is a check on somewhere else: a separate port can be
 // listening while this one is not, and then a supervisor is told the
 // kernel is fine by a socket that is not the kernel.
+//
+// The credentials are required, not optional. This listens on TCP, and a
+// kernel is reached with a bearer credential — one on a plaintext socket
+// belongs to whoever is on the path. There is no setting for it because a
+// setting for it is a setting somebody turns off.
 func New(
 	configured Configured,
+	identity link.Identity,
 	service graphenepbv1.KernelServiceServer,
 	bytes blobpb.BlobServiceServer,
 	health hv1.HealthServer,
 	log *xlog.Logger,
 ) *Endpoint {
-	return &Endpoint{config: configured, service: service, bytes: bytes, health: health, log: log}
+	return &Endpoint{
+		config: configured, as: identity,
+		service: service, bytes: bytes, health: health, log: log,
+	}
 }
 
 // Serve keeps a server standing until ctx is done.
@@ -146,7 +159,10 @@ func (e *Endpoint) run(ctx context.Context, listener net.Listener) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	server := grpc.NewServer(grpc.StreamInterceptor(bound(ctx)))
+	server := grpc.NewServer(
+		grpc.Creds(e.as.Serving()),
+		grpc.StreamInterceptor(bound(ctx)),
+	)
 	graphenepbv1.RegisterKernelServiceServer(server, e.service)
 	hv1.RegisterHealthServer(server, e.health)
 

@@ -34,6 +34,7 @@ const (
 	addressKey  = "upstream.address"
 	tokenKey    = "upstream.token"
 	workKey     = "upstream.work"
+	pinKey      = "upstream.pin"
 )
 
 // What a configuration can be wrong about.
@@ -49,6 +50,8 @@ var (
 	// credential is a subordinate that is refused everything, including
 	// the record that says it exists.
 	ErrNoToken = errors.New("upstream needs a token")
+	// ErrNoPin — an address with nothing saying which kernel is there.
+	ErrNoPin = errors.New("upstream needs the pin of the kernel above")
 )
 
 // Config is how a kernel is configured, and it comes from a FILE.
@@ -118,6 +121,7 @@ type Upstream struct {
 	address string
 	token   string
 	work    string
+	pin     string
 }
 
 // Address is the kernel this one forwards to.
@@ -128,6 +132,14 @@ func (u Upstream) Address() string { return u.address }
 // fetching what it was told to run. A forwarded call carries its caller's
 // credential instead.
 func (u Upstream) Token() string { return u.token }
+
+// Pin is WHICH kernel is above: the hash of its key.
+//
+// Required, and there is no trust-on-first-use to fall back to. The first
+// connection is exactly the one worth being in the middle of, and a
+// subordinate that remembered whoever answered first would have spent its
+// security to save a line of configuration.
+func (u Upstream) Pin() string { return u.pin }
 
 // Work is the directory a subordinate runs things out of: fetched bytes,
 // working directories, and the sockets processes talk back through.
@@ -166,12 +178,14 @@ func NewLocal(name, listen, store string, cache int, token string) Config {
 // Both halves are required, and neither has a default worth guessing: an
 // address nobody gave is a kernel talking to itself, and a credential
 // nobody gave is a kernel refused everything it asks for.
-func NewUpstream(name, listen, address, token, work string) (Config, error) {
+func NewUpstream(name, listen, address, token, work, pin string) (Config, error) {
 	switch {
 	case address == "":
 		return Config{}, ErrNoAddress
 	case token == "":
 		return Config{}, ErrNoToken
+	case pin == "":
+		return Config{}, ErrNoPin
 	}
 
 	if work == "" {
@@ -181,7 +195,7 @@ func NewUpstream(name, listen, address, token, work string) (Config, error) {
 	return Config{
 		name:   named(name),
 		listen: listening(listen),
-		up:     Upstream{address: address, token: token, work: work},
+		up:     Upstream{address: address, token: token, work: work, pin: pin},
 	}, nil
 }
 
@@ -294,7 +308,7 @@ func Read(path string) (Config, error) {
 	case loaded.Exists(upstreamKey):
 		read, err := NewUpstream(name, listen,
 			loaded.String(addressKey), loaded.String(tokenKey),
-			loaded.String(workKey))
+			loaded.String(workKey), loaded.String(pinKey))
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
 		}
@@ -351,11 +365,17 @@ func written(config Config) string {
 			"# Work is where it runs things out of: fetched bytes, working\n"+
 			"# directories, and the sockets processes talk back through. A\n"+
 			"# kernel with a store puts these beside it; this one has none.\n"+
+			"#\n"+
+			"# The pin says WHICH kernel is up there: the hash of its key,\n"+
+			"# which that kernel prints with `graphened pin`. Without it\n"+
+			"# there is nothing to tell the right kernel from whoever else\n"+
+			"# answers at that address.\n"+
 			"%s:\n"+
 			"  address: %s\n"+
 			"  token: %s\n"+
+			"  pin: %s\n"+
 			"  work: %s\n",
-			upstreamKey, up.address, up.token, up.work)
+			upstreamKey, up.address, up.token, up.pin, up.work)
 	}
 
 	written := head + fmt.Sprintf(""+

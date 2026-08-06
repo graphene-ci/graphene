@@ -58,7 +58,7 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 	stop.RegisterFnErr(func(context.Context) error { return kernel.Close() })
 
 	checks := health.New(kernel.Source(), log)
-	endpoint := server.New(kernel, kernel.Service(), kernel.Bytes(), checks.Server(), log)
+	endpoint := server.New(kernel, kernel.As(), kernel.Service(), kernel.Bytes(), checks.Server(), log)
 
 	log.Info("kernel",
 		xlog.String("config", boot.Config),

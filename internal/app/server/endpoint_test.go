@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/app/server"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/link"
 	"github.com/graphene-ci/graphene/internal/store/kv/memory"
 	"github.com/graphene-ci/graphene/internal/types/def"
 	"github.com/graphene-ci/graphene/internal/types/kind"
@@ -188,7 +188,7 @@ func serving(t *testing.T, ctx context.Context) (string, kernel.Kernel, func()) 
 
 	at := free(t)
 	checks := health.New(k, discard())
-	endpoint := server.New(fixed(at),
+	endpoint := server.New(fixed(at), keyForTests(t),
 		api.New(auth.New(k), k, discard()), nil, checks.Server(), discard())
 
 	var workers sync.WaitGroup
@@ -312,7 +312,7 @@ func grpcClient(t *testing.T, at string) graphenepbv1.KernelServiceClient {
 func dial(t *testing.T, at string) *grpc.ClientConn {
 	t.Helper()
 
-	conn, err := grpc.NewClient(at, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(at, reaching(t))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -359,4 +359,39 @@ func discard() *xlog.Logger {
 	}
 
 	return xlog.New(xlog.NopCore{})
+}
+
+// keyForTests is one key for the whole test binary: these tests are about
+// what an endpoint does with a listener, not about which kernel is on the
+// far end of one.
+var testKey = sync.OnceValues(func() (link.Identity, error) {
+	dir, err := os.MkdirTemp("", "graphene-link-")
+	if err != nil {
+		return link.Identity{}, err
+	}
+
+	return link.Open(dir)
+})
+
+func keyForTests(t *testing.T) link.Identity {
+	t.Helper()
+
+	identity, err := testKey()
+	if err != nil {
+		t.Fatalf("link key: %v", err)
+	}
+
+	return identity
+}
+
+// reaching is how every test in this package dials.
+func reaching(t *testing.T) grpc.DialOption {
+	t.Helper()
+
+	creds, err := link.Reaching(keyForTests(t).Pin())
+	if err != nil {
+		t.Fatalf("reaching: %v", err)
+	}
+
+	return grpc.WithTransportCredentials(creds)
 }

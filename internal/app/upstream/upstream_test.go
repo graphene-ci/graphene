@@ -5,11 +5,11 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/app/upstream"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/link"
 	"github.com/graphene-ci/graphene/internal/store/kv/memory"
 	"github.com/graphene-ci/graphene/internal/types/def"
 	"github.com/graphene-ci/graphene/internal/types/kind"
@@ -153,7 +154,7 @@ func TestASubordinateRecordsItselfAbove(t *testing.T) {
 	ctx := context.Background()
 	above, at := standing(t)
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir())
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir(), pinOf(t, at))
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -229,7 +230,7 @@ func standing(t *testing.T) (kernel.Kernel, string) {
 func subordinate(t *testing.T, at string) graphenepbv1.KernelServiceClient {
 	t.Helper()
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir())
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir(), pinOf(t, at))
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -255,7 +256,7 @@ func serve(t *testing.T, service graphenepbv1.KernelServiceServer) string {
 		t.Fatalf("listen: %v", err)
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(keyForTests(t).Serving()))
 	graphenepbv1.RegisterKernelServiceServer(server, service)
 
 	go func() { _ = server.Serve(listener) }()
@@ -268,7 +269,7 @@ func serve(t *testing.T, service graphenepbv1.KernelServiceServer) string {
 func dial(t *testing.T, at string) *grpc.ClientConn {
 	t.Helper()
 
-	conn, err := grpc.NewClient(at, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(at, reaching(t))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -375,4 +376,47 @@ func discard() *xlog.Logger {
 	}
 
 	return xlog.New(xlog.NopCore{})
+}
+
+// One key for the whole test binary. These tests are about forwarding
+// and not about pinning — link_test.go is about pinning — so a single
+// identity keeps them from standing up a certificate authority's worth of
+// scaffolding to say "the far side is the far side".
+var testKey = sync.OnceValues(func() (link.Identity, error) {
+	dir, err := os.MkdirTemp("", "graphene-link-")
+	if err != nil {
+		return link.Identity{}, err
+	}
+
+	return link.Open(dir)
+})
+
+func keyForTests(t *testing.T) link.Identity {
+	t.Helper()
+
+	identity, err := testKey()
+	if err != nil {
+		t.Fatalf("link key: %v", err)
+	}
+
+	return identity
+}
+
+// pinOf is what a client is told to expect.
+func pinOf(t *testing.T, _ string) string {
+	t.Helper()
+
+	return keyForTests(t).Pin().String()
+}
+
+// reaching is how every test in this package dials.
+func reaching(t *testing.T) grpc.DialOption {
+	t.Helper()
+
+	creds, err := link.Reaching(keyForTests(t).Pin())
+	if err != nil {
+		t.Fatalf("reaching: %v", err)
+	}
+
+	return grpc.WithTransportCredentials(creds)
 }

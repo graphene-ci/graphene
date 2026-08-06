@@ -24,6 +24,8 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // The names the file uses. A format: changing one silently drops every
@@ -34,6 +36,12 @@ const (
 
 	addressField = "address"
 	tokenField   = "token"
+	pinField     = "pin"
+
+	dirMode = 0o700
+	// fileMode is 0600 because this file IS credentials. It belongs to
+	// whoever runs the client and to nobody else on the machine.
+	fileMode = 0o600
 )
 
 // What a set of contexts can be wrong about.
@@ -42,9 +50,13 @@ var (
 	ErrNoContext = errors.New("no kernel is configured")
 	// ErrNoSuchContext — a name nobody has saved.
 	ErrNoSuchContext = errors.New("no such kernel")
-	// ErrNoAddress and ErrNoToken — half a context is not one.
+	// ErrNoAddress, ErrNoToken and ErrNoPin — a third of a context is not
+	// one. The pin is not optional: without it a client cannot tell the
+	// kernel it means from whoever answers at that address, and it is
+	// about to send that kernel a credential.
 	ErrNoAddress = errors.New("a kernel needs an address")
 	ErrNoToken   = errors.New("a kernel needs a token")
+	ErrNoPin     = errors.New("a kernel needs a pin; ask it for one with `graphened pin`")
 )
 
 // Context is one kernel a client can reach.
@@ -52,12 +64,13 @@ type Context struct {
 	name    string
 	address string
 	token   string
+	pin     link.Pin
 }
 
 // NewContext states one, refusing the halves that mean nothing on their
 // own: an address with no credential is refused by every call, and a
 // credential with no address has nowhere to go.
-func NewContext(name, address, token string) (Context, error) {
+func NewContext(name, address, token, pin string) (Context, error) {
 	switch {
 	case strings.TrimSpace(name) == "":
 		return Context{}, ErrNoSuchContext
@@ -65,9 +78,16 @@ func NewContext(name, address, token string) (Context, error) {
 		return Context{}, ErrNoAddress
 	case token == "":
 		return Context{}, ErrNoToken
+	case pin == "":
+		return Context{}, ErrNoPin
 	}
 
-	return Context{name: name, address: address, token: token}, nil
+	pinned, err := link.NewPin(pin)
+	if err != nil {
+		return Context{}, fmt.Errorf("%w: %w", ErrNoPin, err)
+	}
+
+	return Context{name: name, address: address, token: token, pin: pinned}, nil
 }
 
 // Name is what this kernel is called here — a label of the operator's,
@@ -79,6 +99,9 @@ func (c Context) Address() string { return c.address }
 
 // Token is what to call it with.
 func (c Context) Token() string { return c.token }
+
+// Pin is which kernel that address has to turn out to be.
+func (c Context) Pin() link.Pin { return c.pin }
 
 // IsZero reports a context that was never stated.
 func (c Context) IsZero() bool { return c.address == "" }
@@ -119,7 +142,8 @@ func Read(path string) (*Contexts, error) {
 	for _, name := range names(loaded) {
 		read, err := NewContext(name,
 			loaded.String(kernelsKey+"."+name+"."+addressField),
-			loaded.String(kernelsKey+"."+name+"."+tokenField))
+			loaded.String(kernelsKey+"."+name+"."+tokenField),
+			loaded.String(kernelsKey+"."+name+"."+pinField))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %s: %w", path, name, err)
 		}
@@ -236,11 +260,13 @@ func (c *Contexts) Forget(name string) error {
 // is written is read by a person, and a marshaller strips the comments
 // out of the file it rewrites.
 func (c *Contexts) write() error {
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.path), dirMode); err != nil {
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(c.path), err)
 	}
 
-	written := "" +
+	var written strings.Builder
+
+	written.WriteString("" +
 		"# Every kernel this client knows, and which one it means now.\n" +
 		"#\n" +
 		"# These are CREDENTIALS. The file is written 0600 and belongs to\n" +
@@ -249,14 +275,15 @@ func (c *Contexts) write() error {
 		"# kernel's own file describes one kernel on one machine.\n" +
 		"\n" +
 		currentKey + ": " + c.current + "\n\n" +
-		kernelsKey + ":\n"
+		kernelsKey + ":\n")
 
 	for _, one := range c.All() {
-		written += fmt.Sprintf("  %s:\n    %s: %s\n    %s: %s\n",
-			one.name, addressField, one.address, tokenField, one.token)
+		fmt.Fprintf(&written, "  %s:\n    %s: %s\n    %s: %s\n    %s: %s\n",
+			one.name, addressField, one.address, tokenField, one.token,
+			pinField, one.pin)
 	}
 
-	if err := os.WriteFile(c.path, []byte(written), 0o600); err != nil {
+	if err := os.WriteFile(c.path, []byte(written.String()), fileMode); err != nil {
 		return fmt.Errorf("write %s: %w", c.path, err)
 	}
 

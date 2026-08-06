@@ -18,7 +18,7 @@ func TestAnUpstreamSurvivesBeingWrittenDown(t *testing.T) {
 
 	at := filepath.Join(t.TempDir(), "kernel.yaml")
 
-	original, err := config.NewUpstream("edge", "0.0.0.0:9999", "above:7373", "edge.s3cret", "/var/lib/edge")
+	original, err := config.NewUpstream("edge", "0.0.0.0:9999", "above:7373", "edge.s3cret", "/var/lib/edge", examplePin)
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestAnUpstreamNeedsBothHalves(t *testing.T) {
 func TestPrintingAConfigDoesNotPrintTheToken(t *testing.T) {
 	t.Parallel()
 
-	forwarding, err := config.NewUpstream("edge", "", "above:7373", "edge.s3cret", "/var/lib/edge")
+	forwarding, err := config.NewUpstream("edge", "", "above:7373", "edge.s3cret", "/var/lib/edge", examplePin)
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}
@@ -141,3 +141,8 @@ func TestOnlyTheAddressMoves(t *testing.T) {
 		t.Fatalf("moving the address changed the store: %s", moved)
 	}
 }
+
+// examplePin is a pin's shape, which is all these tests need: they are
+// about contexts and configuration, not about what a key hashes to.
+const examplePin = "sha256:" +
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

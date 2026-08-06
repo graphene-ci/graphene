@@ -197,6 +197,10 @@ linters:
         - github.com/graphene-ci/graphene/internal/store
         - github.com/graphene-ci/graphene/internal/kernel
         - github.com/graphene-ci/graphene/internal/process
+        # grpc's transport credentials are an interface and there is no
+        # concrete type to hand back: what this returns is what grpc.Creds
+        # takes.
+        - google.golang.org/grpc/credentials
     lll:
       line-length: 120
     revive:
@@ -341,6 +345,13 @@ linters:
       - linters:
           - govet
         text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
+      # This one test is about a TLS handshake and needs the configuration
+      # the package builds, not the transport wrapper around it. An
+      # external test package could not see it, and exporting it so a test
+      # could would widen the surface for the test's sake.
+      - linters:
+          - testpackage
+        path: internal/link/resume_test\.go
       # A subordinate kernel hands back the far side's answer unaltered —
       # error included. Wrapping there would put this kernel's name on a
       # refusal the kernel above made, and a caller comparing errors would

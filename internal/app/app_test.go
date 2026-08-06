@@ -21,6 +21,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/app/server"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/link"
 )
 
 // patience bounds a wait that is expected to end at once. Nothing here
@@ -233,7 +234,8 @@ func TestChangingTheAddressMovesTheSocket(t *testing.T) {
 	on := write(t, first)
 	running := open(t, on)
 
-	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{}, nil,
+	endpoint := server.New(running, keyForTests(t),
+		graphenepbv1.UnimplementedKernelServiceServer{}, nil,
 		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
@@ -261,7 +263,8 @@ func TestAnAddressThatWillNotBindIsWaitedOn(t *testing.T) {
 	on := write(t, "256.0.0.1:1")
 	running := open(t, on)
 
-	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{}, nil,
+	endpoint := server.New(running, keyForTests(t),
+		graphenepbv1.UnimplementedKernelServiceServer{}, nil,
 		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
@@ -439,4 +442,27 @@ func TestAGivenCredentialIsTheOneMade(t *testing.T) {
 	if len(digests) != 1 || digests[0].GetStringValue() != auth.Digest(secret) {
 		t.Fatalf("the identity does not know the given secret")
 	}
+}
+
+// keyForTests is one key for the whole test binary. These tests are about
+// addresses moving and configuration being reread, not about which kernel
+// answered, so one identity is the whole of what they need.
+var testKey = sync.OnceValues(func() (link.Identity, error) {
+	dir, err := os.MkdirTemp("", "graphene-link-")
+	if err != nil {
+		return link.Identity{}, err
+	}
+
+	return link.Open(dir)
+})
+
+func keyForTests(t *testing.T) link.Identity {
+	t.Helper()
+
+	identity, err := testKey()
+	if err != nil {
+		t.Fatalf("link key: %v", err)
+	}
+
+	return identity
 }
