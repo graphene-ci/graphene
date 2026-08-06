@@ -152,6 +152,16 @@ linters:
       disabled-checks:
         - dupImport
         - octalLiteral
+        # A domain type here is immutable and is passed by value on
+        # purpose. The decisive reason is nil: a pointer can be one, so
+        # every method would have to tolerate it and every caller would
+        # have to remember — while a value's zero is safe, composes as a
+        # map key, and compares with ==. Copying a Resource costs a few
+        # words; the pointer costs an allocation and brings nil along.
+        #
+        # The check is right about the bytes and wrong about the trade,
+        # and it is the trade this codebase already decided.
+        - hugeParam
         - whyNoLint
         # contradicts nonamedreturns, which we keep
         - unnamedResult
@@ -186,6 +196,7 @@ linters:
         - github.com/graphene-ci/graphene/internal/blob
         - github.com/graphene-ci/graphene/internal/store
         - github.com/graphene-ci/graphene/internal/kernel
+        - github.com/graphene-ci/graphene/internal/process
     lll:
       line-length: 120
     revive:
