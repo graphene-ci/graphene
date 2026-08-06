@@ -21,7 +21,7 @@ const (
 	scheme = "bearer "
 )
 
-// identify works out who is calling.
+// byCredential works out who is calling by reading what they presented.
 //
 // It reads through the UNGUARDED kernel, and that is not a shortcut. The
 // question "who is this" cannot be asked of the guard, because asking the
@@ -34,7 +34,7 @@ const (
 // else who holds no grant — which is the same answer, given in the same
 // words, and does not tell an anonymous caller whether the name they
 // guessed exists.
-func (s *Service) identify(ctx context.Context) (auth.Principal, error) {
+func (s *Service) byCredential(ctx context.Context) (auth.Principal, error) {
 	token, found := bearer(ctx)
 	if !found {
 		return "", nil

@@ -96,7 +96,7 @@ type gateway struct {
 	closed int
 }
 
-func (g *gateway) Open(name string) (process.Door, error) {
+func (g *gateway) Open(name, _ string) (process.Door, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 

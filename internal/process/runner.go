@@ -38,6 +38,18 @@ type Runner interface {
 	Start(ctx context.Context, spec Spec) (Started, error)
 }
 
+// EnvSocket and EnvProcess are the whole of what a process is told about
+// the system it is in: where to talk, and what it is called. No
+// credential, because there is none.
+//
+// They live here because they are a contract between the side that starts
+// a process and whatever the process runs, and a contract written down
+// twice is a contract that drifts.
+const (
+	EnvSocket  = "GRAPHENE_SOCKET"
+	EnvProcess = "GRAPHENE_PROCESS"
+)
+
 // Gateway gives a process its way back into the system: a door opened
 // before it starts and taken away when it ends.
 //
@@ -46,7 +58,15 @@ type Runner interface {
 // with it: a door outliving its process would be a way in for whatever
 // came next.
 type Gateway interface {
-	Open(name string) (Door, error)
+	// Open prepares a door for one process, answering as the identity
+	// that process was given.
+	//
+	// The identity is passed rather than looked up because the agent has
+	// already read the record: a second read could disagree with the
+	// first, and the door would then answer as somebody the process was
+	// not started as. An empty identity is a process that asked for no
+	// credentials, and its door answers as nobody.
+	Open(name, identity string) (Door, error)
 }
 
 // Door is one process's way back in.

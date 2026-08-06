@@ -245,7 +245,6 @@ func infoToPb(info blob.Info) *blobpb.Info {
 
 // permission answers the byte store's three questions out of the same
 // grants everything else is answered from.
-//
 type permission struct{ session auth.Session }
 
 //nolint:gocritic // a session is a value; there is one per call already

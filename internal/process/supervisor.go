@@ -88,7 +88,7 @@ func (s *supervisor) once(ctx context.Context, starts int64) (int, error) {
 	// The door is opened BEFORE the process starts: one that came up and
 	// found nothing to talk to would have to be written to retry, and
 	// every SDK in every language would carry that retry forever.
-	door, err := s.agent.Doors.Open(s.name)
+	door, err := s.agent.Doors.Open(s.name, s.spec.identity)
 	if err != nil {
 		return 0, fmt.Errorf("open door: %w", err)
 	}
