@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -70,7 +71,7 @@ func TestASubtreeIsListable(t *testing.T) {
 
 	for {
 		answer, err := listing.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -108,7 +109,7 @@ func TestAWatchDoesNotHoldTheKernelOpen(t *testing.T) {
 
 	// The CALLER'S context is not the run's, which is the whole point: a
 	// client that has not hung up is what a graceful stop would otherwise
-	// wait for. Cancelling both at once would prove nothing.
+	// wait for. Canceling both at once would prove nothing.
 	watching, err := grpcClient(t, at).Watch(as(context.Background()),
 		&graphenepbv1.WatchRequest{Prefix: under("local")})
 	if err != nil {
@@ -155,7 +156,7 @@ func TestHealthAnswersOnTheServingPort(t *testing.T) {
 	at, _, _ := serving(t, ctx)
 
 	// No credential: a supervisor holds none, and refusing it one would
-	// make "is it alive" a question only an authorised caller could ask.
+	// make "is it alive" a question only an authorized caller could ask.
 	asked, err := hv1.NewHealthClient(dial(t, at)).Check(ctx, &hv1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatalf("check: %v", err)
@@ -172,6 +173,7 @@ func serving(t *testing.T, ctx context.Context) (string, kernel.Kernel, func()) 
 	t.Helper()
 
 	bytes := memory.New()
+
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)

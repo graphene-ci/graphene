@@ -256,7 +256,7 @@ func (c *Contexts) Forget(name string) error {
 
 // write puts the file back.
 //
-// By hand and not by marshalling, the same as the kernel's own file: what
+// By hand and not by marshaling, the same as the kernel's own file: what
 // is written is read by a person, and a marshaller strips the comments
 // out of the file it rewrites.
 func (c *Contexts) write() error {

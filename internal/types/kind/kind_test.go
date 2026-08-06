@@ -10,7 +10,7 @@ import (
 )
 
 // A kind keeps the spelling its author chose. Folding would leave
-// "kernellease", which nobody would recognise.
+// "kernellease", which nobody would recognize.
 func TestKindKeepsItsSpelling(t *testing.T) {
 	t.Parallel()
 

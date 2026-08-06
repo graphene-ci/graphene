@@ -25,6 +25,7 @@ func open(t *testing.T) (kernel.Kernel, auth.Guard) {
 	t.Helper()
 
 	bytes := memory.New()
+
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)

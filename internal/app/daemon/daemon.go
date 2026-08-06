@@ -66,7 +66,7 @@ func New(boot app.Bootstrap, log *xlog.Logger) (*Daemon, error) {
 			//
 			// The signal is still handled, one layer in: the kernel
 			// installs its own handler and drains on the way out, which
-			// is the behaviour a service manager is asking for when it
+			// is the behavior a service manager is asking for when it
 			// sends one.
 			"RunWait": func() { <-running.stopped },
 		},
@@ -145,7 +145,7 @@ func (p *program) Start(service.Service) error {
 //
 // Once, because a manager stopping a service that has already stopped
 // itself is ordinary — a kernel that failed to bind and gave up, a
-// signal that reached the process directly — and cancelling a cancelled
+// signal that reached the process directly — and canceling a cancelled
 // context twice is fine while closing a closed channel is not.
 func (p *program) Stop(service.Service) error {
 	p.once.Do(func() {

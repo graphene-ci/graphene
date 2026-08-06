@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -65,7 +66,7 @@ func getCommand() *cobra.Command {
 					record := answer.GetRecord()
 					write(
 						"/"+pathOf(record.GetResource().GetId()),
-						fmt.Sprint(record.GetRevision()),
+						strconv.FormatUint(record.GetRevision(), 10),
 						condition(record),
 					)
 

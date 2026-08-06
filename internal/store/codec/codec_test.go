@@ -118,7 +118,7 @@ func TestADefinitionEncodesAndDecodes(t *testing.T) {
 	}
 }
 
-// The tag is what makes a migration possible instead of archaeological,
+// The tag is what makes a migration possible instead of archeological,
 // and it earns its two bytes by telling three different failures apart —
 // each of which is a different search.
 func TestTheTagTellsThreeFailuresApart(t *testing.T) {

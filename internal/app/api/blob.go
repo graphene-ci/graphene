@@ -55,7 +55,7 @@ func NewBlobs(as Caller, log *xlog.Logger) *Blobs {
 // It lives here rather than in blob because working out WHO is calling is
 // a transport's business, and this package is where the transport ends.
 //
-//nolint:gocritic // a guard is a value; one exists per kernel, not per call
+
 func Guarded(store blob.Store, guard auth.Guard, who func(context.Context) (auth.Principal, error)) Caller {
 	return func(ctx context.Context) (blob.Store, error) {
 		named, err := who(ctx)
@@ -247,17 +247,14 @@ func infoToPb(info blob.Info) *blobpb.Info {
 // grants everything else is answered from.
 type permission struct{ session auth.Session }
 
-//nolint:gocritic // a session is a value; there is one per call already
 func (p permission) MayRead(ctx context.Context) error {
 	return p.session.May(ctx, auth.Get, blob.Kind)
 }
 
-//nolint:gocritic // see MayRead
 func (p permission) MayWrite(ctx context.Context) error {
 	return p.session.May(ctx, auth.Put, blob.Kind)
 }
 
-//nolint:gocritic // see MayRead
 func (p permission) MayDelete(ctx context.Context) error {
 	return p.session.May(ctx, auth.Delete, blob.Kind)
 }

@@ -52,6 +52,7 @@ func dial(t *testing.T) (graphenepbv1.KernelServiceClient, kernel.Kernel) {
 	ctx := context.Background()
 
 	bytes := memory.New()
+
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)

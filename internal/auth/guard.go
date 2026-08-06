@@ -43,10 +43,10 @@ func (p Principal) IsZero() bool { return p == "" }
 // same kernel bound to one caller. Anything holding the Guard's kernel
 // directly is trusted by construction: the collector recursing through a
 // cascade, the bootstrap publishing builtin kinds, this package reading
-// the identities it authorises against.
+// the identities it authorizes against.
 //
 // That last one is why the wrapper shape matters rather than being a
-// preference. Authorising a request means reading an Identity, and
+// preference. Authorizing a request means reading an Identity, and
 // reading is a request; a guard that asked ITSELF would never answer.
 // Reading through the kernel below closes the regress by construction.
 type Guard struct {

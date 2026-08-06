@@ -44,7 +44,7 @@ func (t Token) String() string { return string(t) }
 // Begin makes the first caller, if there is not one already.
 //
 // THE LOCK HAS ITS KEY INSIDE IT. Identities and roles are ordinary
-// resources in the kernel they authorise, so creating one through the API
+// resources in the kernel they authorize, so creating one through the API
 // needs a grant, and holding a grant needs an identity. Nothing can enter
 // a fresh store from outside; the first way in has to be made from
 // within, before the guard is in front of anything.
@@ -143,7 +143,7 @@ func everything(ctx context.Context, k kernel.Kernel) error {
 // this moment, plus the one that is never defined.
 //
 // KIND ITSELF IS NOT A DEFINITION. Define, Undefine, GetDefinition and
-// the two kind listings are authorised against the kind named "Kind" —
+// the two kind listings are authorized against the kind named "Kind" —
 // the one a definition is stored under — and nothing ever declares it,
 // so walking the definitions alone leaves the first caller unable to
 // declare anything or even list what is there.

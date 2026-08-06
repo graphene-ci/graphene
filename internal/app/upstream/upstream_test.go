@@ -2,6 +2,7 @@ package upstream_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -125,7 +126,7 @@ func TestAStreamIsRelayed(t *testing.T) {
 
 	for {
 		answer, err := listing.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -200,6 +201,7 @@ func standing(t *testing.T) (kernel.Kernel, string) {
 	ctx := context.Background()
 
 	bytes := memory.New()
+
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)

@@ -107,7 +107,7 @@ func Identity() def.Definition {
 // So this runs at every start and does nothing on all but the first.
 //
 // It takes the UNGUARDED kernel, and there is no other way it could work:
-// there is nothing to authorise against until the kinds that hold the
+// there is nothing to authorize against until the kinds that hold the
 // authorisation exist. This is the one call that has to happen before a
 // guard is built, which is why it is a function and not a method on one.
 func Bootstrap(ctx context.Context, k kernel.Kernel) error {

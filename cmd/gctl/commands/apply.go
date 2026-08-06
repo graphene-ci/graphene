@@ -33,7 +33,7 @@ const (
 // It reads ONE resource, not a stream of documents. A file per resource
 // is what a repository of these looks like, and a multi-document file
 // would need an answer for what happens when the third one fails that
-// nothing here can honour — there are no transactions across resources.
+// nothing here can honor — there are no transactions across resources.
 func applyCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply <file>",

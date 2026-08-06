@@ -172,7 +172,7 @@ func grantsOf(
 			// allowed to create it.
 			//
 			// Without a shape a prefix cannot become a path, so a grant
-			// that confines itself to one is dropped — it authorises
+			// that confines itself to one is dropped — it authorizes
 			// nothing either way, since a kind with no definition has no
 			// instances. One that confines nothing needs no shape and is
 			// kept, which is what makes the bootstrap possible.

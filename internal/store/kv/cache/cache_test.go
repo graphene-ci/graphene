@@ -13,7 +13,7 @@ import (
 
 // The point of the whole package, asserted rather than argued: a cache
 // that passes the suite its subject passes is a correct cache. Every
-// behaviour the port promises is checked THROUGH the cache — stale reads,
+// behavior the port promises is checked THROUGH the cache — stale reads,
 // missed invalidations and remembered absences all show up as conformance
 // failures rather than as something noticed months later.
 func TestConformance(t *testing.T) {

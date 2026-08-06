@@ -2,7 +2,7 @@
 //
 // It answers the same service as any other kernel and decides none of it:
 // every call is passed to the kernel it was configured with, carrying the
-// credential of whoever made it. The kernel above authorises the person
+// credential of whoever made it. The kernel above authorizes the person
 // who actually asked, sees their name in its own audit, and applies their
 // grants — which is what "subordinate" has to mean if it is to mean
 // anything. A proxy that re-signed each call with its own credential

@@ -30,7 +30,7 @@ const patience = 50 * time.Millisecond
 // stores is every byte layer the kernel is expected to work on.
 //
 // The kernel is written against the port and never against a store, so
-// running its whole behaviour on both is how that claim stays honest. It
+// running its whole behavior on both is how that claim stays honest. It
 // is also the only place the two are compared doing real work rather than
 // passing the same conformance suite separately — and a store can pass
 // that suite and still be wrong about something only a caller stringing
@@ -51,7 +51,7 @@ var stores = map[string]func(t *testing.T) kv.Store{
 	},
 }
 
-// each runs one behaviour on every byte layer.
+// each runs one behavior on every byte layer.
 func each(t *testing.T, body func(t *testing.T, k kernel.Kernel)) {
 	t.Helper()
 
@@ -490,6 +490,7 @@ func TestAnInterruptedRemovalCanBeFinished(t *testing.T) {
 	ctx := context.Background()
 
 	bytes := memory.New()
+
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)

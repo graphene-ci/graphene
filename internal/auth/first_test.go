@@ -63,7 +63,7 @@ func TestTheFirstCallerIsMadeOnceAndCanDoEverything(t *testing.T) {
 	}
 
 	// It can also work with KINDS, which is not one of the definitions:
-	// Define, Undefine and the kind listings authorise against "Kind",
+	// Define, Undefine and the kind listings authorize against "Kind",
 	// and nothing ever declares it — so walking the definitions alone
 	// left the first caller unable to list what a kernel holds. Found by
 	// running gctl against a kernel, not by reading this.

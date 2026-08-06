@@ -3,7 +3,7 @@
 // It is the framing and nothing else: the field-for-field work of turning
 // a domain value into a message lives in internal/convert, which the API
 // needs too. What is here is what only storage needs — a tag saying what
-// the bytes are, and the marshalling underneath it.
+// the bytes are, and the marshaling underneath it.
 package codec
 
 import (
@@ -17,7 +17,7 @@ import (
 // A storage format is forever: bytes written today are read by whatever
 // runs next year, and changing the format is a migration rather than a
 // refactor. The tag is what makes that migration possible instead of
-// archaeological — without it, the first question of the first migration
+// archeological — without it, the first question of the first migration
 // is "what was this even written with", and there is no way to answer it
 // from the bytes.
 //

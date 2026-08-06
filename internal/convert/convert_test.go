@@ -181,7 +181,7 @@ func TestAMessageThatWouldMakeAnImpossibleValueIsRefused(t *testing.T) {
 	}
 
 	broken = convert.ResourceToPb(mustAdmit(t, definition))
-	broken.Id.Path[0].Name = broken.Id.Path[1].Name
+	broken.Id.Path[0].Name = broken.GetId().GetPath()[1].GetName()
 
 	if _, err := convert.ResourceFromPb(broken); !errors.Is(err, path.ErrDuplicateName) {
 		t.Fatalf("a shape naming one position twice: %v", err)

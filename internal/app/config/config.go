@@ -46,7 +46,7 @@ var (
 	// ErrNoAddress — an upstream with nowhere to go.
 	ErrNoAddress = errors.New("upstream needs an address")
 	// ErrNoToken — an upstream a kernel cannot introduce itself to. Every
-	// call the far side takes is authorised, so a subordinate with no
+	// call the far side takes is authorized, so a subordinate with no
 	// credential is a subordinate that is refused everything, including
 	// the record that says it exists.
 	ErrNoToken = errors.New("upstream needs a token")
@@ -57,7 +57,7 @@ var (
 // Config is how a kernel is configured, and it comes from a FILE.
 //
 // It used to live in the kernel's own store, and that was wrong for one
-// reason that outweighs everything in its favour: a configuration that
+// reason that outweighs everything in its favor: a configuration that
 // breaks the kernel could then only be fixed THROUGH the kernel. A
 // mistyped address, a store that will not open, anything at all that
 // stops it accepting calls — each of them locks the door from the inside.
@@ -115,7 +115,7 @@ func (l Local) Token() string { return l.token }
 //
 // It is subordinate in the only sense that matters: it has no answers of
 // its own. Every call it takes it passes on with the CALLER'S credential,
-// so the kernel above authorises the person who actually asked, and the
+// so the kernel above authorizes the person who actually asked, and the
 // one in the middle decides nothing.
 type Upstream struct {
 	address string
@@ -324,7 +324,7 @@ func Read(path string) (Config, error) {
 
 // Write writes one down, which is what configure does around an editor.
 //
-// By hand rather than by marshalling, because what is being written is
+// By hand rather than by marshaling, because what is being written is
 // read by a PERSON: the comments are half of it, and a marshaller strips
 // them from the file it rewrites — including any the administrator left
 // there themselves.

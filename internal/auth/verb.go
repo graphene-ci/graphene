@@ -6,7 +6,7 @@
 // the unguarded one is handed out.
 //
 // That shape also settles the question that would otherwise be circular.
-// Authorising a request means reading an Identity, and reading is a
+// Authorizing a request means reading an Identity, and reading is a
 // request. A guard reads identities through the kernel BELOW it, so the
 // regress is closed by construction rather than by remembering not to
 // take it.

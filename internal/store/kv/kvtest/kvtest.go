@@ -3,8 +3,8 @@
 // The port is an interface, and an interface only says which methods
 // exist. Everything that actually matters about a store — that a shorter
 // key is a prefix of what is beneath it, that a guarded write refuses a
-// stale one, that a watch never invents a snapshot — is behaviour, and
-// behaviour is only pinned by running it.
+// stale one, that a watch never invents a snapshot — is behavior, and
+// behavior is only pinned by running it.
 //
 // So this suite is written against the PORT and never against any
 // implementation. Whatever passes it is a store: the one in memory, the

@@ -28,6 +28,7 @@ func (g *gated) Put(
 	expect revision.Revision,
 ) (revision.Revision, error) {
 	g.putEntered <- struct{}{}
+
 	<-g.putRelease
 
 	return g.Store.Put(ctx, key, value, expect)
@@ -37,6 +38,7 @@ func (g *gated) Get(ctx context.Context, key kv.Key) (kv.Entry, error) {
 	entry, err := g.Store.Get(ctx, key)
 
 	g.getRead <- struct{}{}
+
 	<-g.getRelease
 
 	return entry, err

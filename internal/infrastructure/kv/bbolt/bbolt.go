@@ -62,7 +62,7 @@ var _ kv.Store = (*Store)(nil)
 type Store struct {
 	db *bolt.DB
 
-	// write serialises a write with the delivery that follows it. bbolt
+	// write serializes a write with the delivery that follows it. bbolt
 	// already allows one writer at a time; this extends that to cover
 	// handing the event out, so two commits cannot reach a watcher in the
 	// other order.

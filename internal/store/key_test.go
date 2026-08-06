@@ -37,7 +37,7 @@ func id(t *testing.T, kindT string, values ...string) resource.Id {
 //
 // This is what a scan, a watch and a grant confined to a subtree are each
 // built out of, so it is asserted directly rather than inferred from
-// their behaviour.
+// their behavior.
 func TestAShorterKeyIsAPrefixOfWhatIsBeneathIt(t *testing.T) {
 	t.Parallel()
 

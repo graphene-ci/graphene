@@ -7,7 +7,7 @@ import "github.com/graphene-ci/graphene/internal/common/str"
 //
 // Unlike a path segment it is NOT folded. "KernelLease" is how its author
 // spelled it and how it reads everywhere afterwards; folding would leave
-// "kernellease", which nobody would recognise. The price is that Kind is
+// "kernellease", which nobody would recognize. The price is that Kind is
 // case-sensitive — "kernel" and "Kernel" are two kinds — and a client
 // that wants to be forgiving about case has to say so itself.
 const maxKindBytes = 128

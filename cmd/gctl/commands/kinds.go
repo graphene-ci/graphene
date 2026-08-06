@@ -2,8 +2,8 @@ package commands
 
 import (
 	"errors"
-	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -51,7 +51,7 @@ func kindsCommand() *cobra.Command {
 					definition := answer.GetDefinition()
 					write(
 						definition.GetKind(),
-						fmt.Sprint(definition.GetVersion()),
+						strconv.FormatUint(uint64(definition.GetVersion()), 10),
 						placeholders(definition.GetShape()),
 					)
 				}
