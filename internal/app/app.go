@@ -16,7 +16,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
+
+	"github.com/gopherex/schemapb/go/schemapb"
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/infrastructure/kv/bbolt"
@@ -28,16 +32,16 @@ import (
 	"github.com/graphene-ci/graphene/internal/types/revision"
 )
 
-// Bootstrap is what has to be known before the store can be opened.
+// Bootstrap is the one thing that cannot come from the configuration:
+// where the configuration is.
 //
-// Two fields, and both are here for the same reason: they are needed to
-// find the configuration, so they cannot come from it. The path says
-// which file, the name says which record inside it describes this kernel.
+// Everything else moved into the file. The store path and the kernel's
+// name used to be here beside it, on the argument that they are needed to
+// FIND the configuration — and they are not, once the configuration is
+// the file rather than a record inside the store.
 type Bootstrap struct {
-	// Store is the file the kernel keeps everything in.
-	Store string
-	// Name is which kernel this is, and the path of its own record.
-	Name string
+	// Config is the file the kernel is configured by.
+	Config string
 	// Version is what the build calls itself, reported in the status.
 	Version string
 }
@@ -59,6 +63,11 @@ type App struct {
 	// a listen address from one beside a cache size from the other.
 	mu     sync.RWMutex
 	config Config
+	// changed is closed and replaced whenever the configuration does,
+	// which is how one loop tells another without either of them holding
+	// a queue. A closed channel wakes every waiter at once and none of
+	// them has to be registered anywhere for it to.
+	changed chan struct{}
 }
 
 // Open assembles a kernel on a store, publishing what it needs to work.
@@ -68,20 +77,30 @@ type App struct {
 // but the first. There is no separate "have I been here before" flag to
 // get wrong.
 func Open(ctx context.Context, boot Bootstrap) (*App, error) {
-	bytes, err := bbolt.Open(boot.Store)
+	config, err := ReadConfig(boot.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(config.Store()), 0o700); err != nil {
+		return nil, fmt.Errorf("prepare %s: %w", filepath.Dir(config.Store()), err)
+	}
+
+	bytes, err := bbolt.Open(config.Store())
 	if err != nil {
 		return nil, err
 	}
 
 	// The cache is a Store wrapping a Store and closing it closes what it
 	// wraps, so from here on there is one thing to shut.
-	cached := cache.New(bytes)
+	cached := cache.New(bytes, cache.WithSize(config.Cache()))
 
 	app := &App{
 		bootstrap: boot,
 		bytes:     cached,
 		kernel:    kernel.New(cached),
-		config:    NewConfig("", 0),
+		config:    config,
+		changed:   make(chan struct{}),
 	}
 
 	app.guard = auth.New(app.kernel)
@@ -124,19 +143,22 @@ func (a *App) prepare(ctx context.Context) error {
 		return fmt.Errorf("define %s: %w", KernelKind, err)
 	}
 
-	return a.describeSelf(ctx)
+	return a.report(ctx)
 }
 
-// describeSelf writes the kernel's own record if it is not there, and
-// reports what this build is either way.
+// report writes what this kernel is running with into its own record.
 //
-// The spec is written ONCE, with defaults, and never again: it is an
-// administrator's to edit afterwards, and a kernel that rewrote it at
-// every start would undo their edits on every restart. The status is
-// written every time, because it says what is running and that is what
-// just changed.
-func (a *App) describeSelf(ctx context.Context) error {
-	id, err := KernelId(a.bootstrap.Name)
+// The record exists to be READ — by a person asking how a kernel is
+// configured, and by another kernel asking what platform to build a
+// controller for. Nothing writes to it but this, which is why its spec is
+// empty: there is nothing here anybody could tell it.
+//
+// It runs at every start and again whenever the configuration changes,
+// because what it says is what is running now.
+func (a *App) report(ctx context.Context) error {
+	config := a.Config()
+
+	id, err := KernelId(config.Name())
 	if err != nil {
 		return err
 	}
@@ -145,8 +167,13 @@ func (a *App) describeSelf(ctx context.Context) error {
 
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		if err := a.create(ctx, id); err != nil {
+		intent, err := resource.NewIntent(id, schemapb.MustStructFromGo(map[string]any{}))
+		if err != nil {
 			return err
+		}
+
+		if _, err := a.kernel.Put(ctx, intent, revision.Absent); err != nil {
+			return fmt.Errorf("create %s: %w", id, err)
 		}
 
 		stored, err = a.kernel.Get(ctx, id)
@@ -158,33 +185,48 @@ func (a *App) describeSelf(ctx context.Context) error {
 		return err
 	}
 
-	a.hold(ConfigFrom(stored.Value.Spec()))
+	status := schemapb.MustStructFromGo(runningOn(config, a.bootstrap.Version))
 
-	if _, err := a.kernel.Report(ctx, id, status(a.bootstrap.Version), stored.Revision); err != nil {
+	if _, err := a.kernel.Report(ctx, id, status, stored.Revision); err != nil {
 		return fmt.Errorf("report %s: %w", id, err)
 	}
 
 	return nil
 }
 
-// create writes this kernel's record for the first time.
-func (a *App) create(ctx context.Context, id resource.Id) error {
-	intent, err := resource.NewIntent(id, NewConfig("", 0).Spec())
-	if err != nil {
-		return err
-	}
+// Changed is closed the next time the configuration changes.
+//
+// Taken BEFORE reading the configuration and waited on after, which is
+// the only order that cannot miss one: a change between the read and the
+// wait closes the channel already in hand.
+//
+//	changed := app.Changed()
+//	at := app.Config().Listen()
+//	select { case <-changed: ...; case <-ctx.Done(): }
+func (a *App) Changed() <-chan struct{} {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 
-	if _, err := a.kernel.Put(ctx, intent, revision.Absent); err != nil {
-		return fmt.Errorf("create %s: %w", id, err)
-	}
-
-	return nil
+	return a.changed
 }
 
-// hold replaces the configuration the kernel is working from.
+// Apply takes a configuration directly, without waiting for the watch to
+// deliver it.
+//
+// It exists for whoever has just written one and needs the kernel to be
+// working from it now — a test, or a local edit that would rather not
+// race its own notification. The watch would arrive at the same answer a
+// moment later, and applying the same configuration twice is nothing.
+func (a *App) Apply(config Config) { a.hold(config) }
+
+// hold replaces the configuration the kernel is working from, and tells
+// whoever is waiting.
 func (a *App) hold(config Config) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.config = config
+
+	close(a.changed)
+	a.changed = make(chan struct{})
 }

@@ -12,20 +12,18 @@ package commands
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
+
+	"github.com/graphene-ci/graphene/internal/app"
 )
 
 // version is what this build calls itself, stamped at link time.
 var version = "dev"
 
-// The two things that cannot come from the kernel's own store, because
-// they are what finding the store depends on.
-var (
-	storePath string
-	name      string
-)
+// The one thing that cannot come from the configuration: where the
+// configuration is.
+var configPath string
 
 // Root is graphened.
 func Root() *cobra.Command {
@@ -37,10 +35,8 @@ func Root() *cobra.Command {
 		Version:       version,
 	}
 
-	root.PersistentFlags().StringVar(&storePath, "store", defaultStore(),
-		"where the kernel keeps everything")
-	root.PersistentFlags().StringVar(&name, "name", defaultName(),
-		"which kernel this is")
+	root.PersistentFlags().StringVar(&configPath, "config", app.DefaultConfigPath(),
+		"the file the kernel is configured by")
 
 	root.AddCommand(runCommand())
 
@@ -56,27 +52,4 @@ func Execute() int {
 	}
 
 	return 0
-}
-
-// defaultStore is where a kernel keeps its file when nobody says
-// otherwise: under the user's state directory, because a kernel installed
-// as a user service has no business writing anywhere else.
-func defaultStore() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "state", "graphene", "kernel.db")
-	}
-
-	return "kernel.db"
-}
-
-// defaultName is what a kernel calls itself when nobody says otherwise.
-//
-// The hostname, because a kernel's name is how OTHER kernels address it,
-// and the machine's own name is the one answer that is already agreed on.
-func defaultName() string {
-	if host, err := os.Hostname(); err == nil && host != "" {
-		return host
-	}
-
-	return "local"
 }

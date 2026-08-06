@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gopherex/xshutdown"
@@ -53,10 +51,6 @@ func runCommand() *cobra.Command {
 // waited for; one started any other way is none of those things, and the
 // difference shows up as a shutdown that does not finish.
 func run(ctx context.Context, out io.Writer) error {
-	if err := os.MkdirAll(filepath.Dir(storePath), 0o700); err != nil {
-		return fmt.Errorf("prepare %s: %w", filepath.Dir(storePath), err)
-	}
-
 	stop := xshutdown.New(ctx,
 		xshutdown.WithTimeout(drain),
 		xshutdown.WithForceExit(forced),
@@ -66,8 +60,7 @@ func run(ctx context.Context, out io.Writer) error {
 	)
 
 	kernel, err := app.Open(stop.Context(), app.Bootstrap{
-		Store:   storePath,
-		Name:    name,
+		Config:  configPath,
 		Version: version,
 	})
 	if err != nil {
@@ -81,37 +74,37 @@ func run(ctx context.Context, out io.Writer) error {
 
 	log := slog.New(slog.NewTextHandler(out, nil))
 
-	server, listener, err := kernel.Server(log)
-	if err != nil {
-		return err
-	}
+	endpoint := kernel.Endpoint(log)
 
-	// Three workers, and this is the whole list.
+	// Three workers, and this is the whole list — a kernel that has
+	// rebound a hundred times still has these three.
 	//
-	//  1. the server, which ends when GracefulStop is called
-	//  2. the stop itself, which is what calls it
-	//  3. the config watch, which ends when the context does
+	//  1. Serve, which stands a server up and stands it up again
+	//  2. Rebind, which stops the one that is up when it should not be
+	//  3. Watch, which keeps the configuration up to date with the file
 	//
-	// The second cannot be cleanup instead: cleanup runs after the drain,
-	// and the drain is waiting for the call the second one ends.
-	stop.Go(func(context.Context) {
-		if err := server.Serve(listener); err != nil {
+	// The second is what makes the first return, so it cannot be cleanup
+	// instead: cleanup runs after the drain, and the drain is waiting for
+	// the call the second one ends.
+	stop.Go(func(ctx context.Context) {
+		if err := endpoint.Serve(ctx); err != nil {
 			log.Error("serve", "err", err)
 		}
 	})
 
 	stop.Go(func(ctx context.Context) {
-		<-ctx.Done()
-		server.GracefulStop()
+		if err := endpoint.Rebind(ctx); err != nil {
+			log.Error("rebind", "err", err)
+		}
 	})
 
 	stop.Go(func(ctx context.Context) {
-		if err := kernel.Follow(ctx); err != nil && ctx.Err() == nil {
+		if err := kernel.Watch(ctx, log); err != nil {
 			log.Error("config watch", "err", err)
 		}
 	})
 
-	log.Info("serving", "kernel", name, "address", listener.Addr().String())
+	log.Info("kernel", "config", configPath, "running", kernel.Config())
 
 	// Run installs the signals, blocks, and then drains.
 	if err := stop.Run(); err != nil {

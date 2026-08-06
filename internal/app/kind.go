@@ -32,12 +32,12 @@ import (
 // silent zero. The reader no longer has to guess how the writer spelled a
 // number, only what it meant.
 const (
-	listenField = "listen"
-	cacheField  = "cache"
-
 	osField      = "os"
 	archField    = "arch"
 	versionField = "version"
+	listenField  = "listen"
+	storeField   = "store"
+	cacheField   = "cache"
 )
 
 // KernelKind names the record a kernel keeps about itself.
@@ -53,24 +53,30 @@ var (
 
 // Kernel is the definition of a kernel's own record.
 //
-// The two halves split by who writes them, the way they always do. An
-// administrator sets the SPEC — what this kernel should do. The kernel
-// reports the STATUS — what it is, which is not anybody's to choose.
+// The SPEC IS EMPTY, and that is the whole design rather than an omission.
+// A kernel is configured by a file, so nothing about it is anybody's to
+// set from here — and the reason is recoverability: a configuration that
+// could only be reached through the kernel could not be fixed when it was
+// the thing that broke the kernel.
+//
+// What is left is a report. The kernel writes what it is running with,
+// and a fleet can be asked how it is configured over the same API as
+// everything else. Being told and reporting are different directions, and
+// only one of them can be locked out.
 func Kernel() def.Definition {
 	return def.MustNew(
 		KernelKind,
 		KernelShape,
 		def.Spec(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "kernel-spec"}).
-			Fields(
-				schemapb.Str(listenField),
-				schemapb.UInt64(cacheField),
-			).
 			MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "kernel-status"}).
 			Fields(
 				schemapb.Str(osField),
 				schemapb.Str(archField),
 				schemapb.Str(versionField),
+				schemapb.Str(listenField),
+				schemapb.Str(storeField),
+				schemapb.UInt64(cacheField),
 			).
 			MustBuild()),
 	)
