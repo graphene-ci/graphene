@@ -470,3 +470,72 @@ func TestAWatchDeliversAdmittedResources(t *testing.T) {
 		}
 	})
 }
+
+// A removal interrupted after the head went and before the versions did
+// can be finished by running it again.
+//
+// It could not before, and the failure was silent and permanent: the
+// sweep counted down from what the head said, and the head is the first
+// thing removed — so a second run found no head, refused, and left
+// versions nobody could ever list, reach or remove. Walking the prefix
+// instead needs no head, which is what makes the operation resumable.
+//
+// The kernel is built by hand here rather than through the usual helper,
+// because reaching the state a crash leaves means reaching PAST the
+// kernel: the head is a record only its own codec can read, so removing
+// it the way an interrupted run did means removing the key.
+func TestAnInterruptedRemovalCanBeFinished(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	bytes := memory.New()
+	t.Cleanup(func() { _ = bytes.Close() })
+
+	k := kernel.New(bytes)
+
+	head := define(t, k, process(t))
+	define(t, k, process(t, "identity"))
+
+	at, err := def.HeadPath(head.Kind())
+	if err != nil {
+		t.Fatalf("path: %v", err)
+	}
+
+	key := store.KeyOf(resource.NewId(def.HeadKind, at))
+
+	entry, err := bytes.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("the head should be there: %v", err)
+	}
+
+	if _, err := bytes.Delete(ctx, key, entry.Revision); err != nil {
+		t.Fatalf("delete head: %v", err)
+	}
+
+	// Exactly what an interrupted removal leaves.
+	if _, err := k.Definition(ctx, head.Kind()); !errors.Is(err, kernel.ErrNoSuchKind) {
+		t.Fatalf("the head should be gone: %v", err)
+	}
+
+	if _, err := k.DefinitionAt(ctx, head.Kind(), 1); err != nil {
+		t.Fatalf("the versions should still be there: %v", err)
+	}
+
+	// Running it again finishes what was left.
+	if err := k.Undefine(ctx, head.Kind()); err != nil {
+		t.Fatalf("finishing an interrupted removal: %v", err)
+	}
+
+	for _, version := range []def.Version{1, 2} {
+		if _, err := k.DefinitionAt(ctx, head.Kind(), version); !errors.Is(err, kernel.ErrNoSuchVersion) {
+			t.Fatalf("version %s survived: %v", version, err)
+		}
+	}
+
+	// And a kind that never existed is still told apart from one that was
+	// removed: nothing there, and nothing left to sweep.
+	if err := k.Undefine(ctx, head.Kind()); !errors.Is(err, kernel.ErrNoSuchKind) {
+		t.Fatalf("want ErrNoSuchKind, got %v", err)
+	}
+}

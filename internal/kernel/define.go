@@ -186,61 +186,109 @@ func (k Kernel) Kinds(ctx context.Context) iter.Seq2[def.Head, error] {
 // whose current shape has disappeared from under it.
 func (k Kernel) Undefine(ctx context.Context, named kind.Kind) error {
 	stored, err := k.head(ctx, named)
+	defined := err == nil
+
+	switch {
+	case defined:
+		used, useErr := k.inUse(ctx, stored.Value)
+		if useErr != nil {
+			return useErr
+		}
+
+		if used {
+			return fmt.Errorf("%w: %s", ErrKindInUse, named)
+		}
+
+		at, pathErr := def.HeadPath(named)
+		if pathErr != nil {
+			return pathErr
+		}
+
+		if _, delErr := k.heads.Delete(ctx, resource.NewId(def.HeadKind, at), stored.Revision); delErr != nil {
+			return fmt.Errorf("undefine %s: %w", named, delErr)
+		}
+
+	case errors.Is(err, ErrNoSuchKind):
+		// No head, which is either a kind that never existed or one whose
+		// removal was interrupted after the head went and before the
+		// versions did. The two are told apart by whether anything is left
+		// to sweep, and only the sweep can say.
+
+	default:
+		return err
+	}
+
+	swept, err := k.sweep(ctx, named)
 	if err != nil {
 		return err
 	}
 
-	used, err := k.inUse(ctx, stored.Value)
-	if err != nil {
-		return err
-	}
-
-	if used {
-		return fmt.Errorf("%w: %s", ErrKindInUse, named)
-	}
-
-	at, err := def.HeadPath(named)
-	if err != nil {
-		return err
-	}
-
-	if _, err := k.heads.Delete(ctx, resource.NewId(def.HeadKind, at), stored.Revision); err != nil {
-		return fmt.Errorf("undefine %s: %w", named, err)
-	}
-
-	return k.sweep(ctx, named, stored.Value.Version())
-}
-
-// sweep removes every published version of a kind, newest first.
-//
-// Newest first so that an interrupted sweep leaves the OLDEST versions
-// behind: those are the ones an old resource might still pin, and a
-// resource whose pinned version is gone can no longer be read as what it
-// was.
-func (k Kernel) sweep(ctx context.Context, named kind.Kind, from def.Version) error {
-	for version := from; !version.IsZero(); version-- {
-		at, err := def.PublishedPath(named, version)
-		if err != nil {
-			return err
-		}
-
-		id := resource.NewId(def.PublishedKind, at)
-
-		stored, err := k.published.Get(ctx, id)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue
-			}
-
-			return err
-		}
-
-		if _, err := k.published.Delete(ctx, id, stored.Revision); err != nil {
-			return fmt.Errorf("remove %s %s: %w", named, version, err)
-		}
+	// Nothing there and nothing left: the kind never existed. Anything
+	// else — a head just removed, or versions an interrupted removal left
+	// behind — is a removal that finished, whichever run finished it.
+	if !defined && swept == 0 {
+		return fmt.Errorf("%w: %s", ErrNoSuchKind, named)
 	}
 
 	return nil
+}
+
+// sweep removes every published version of a kind, and says how many it
+// found.
+//
+// It walks the prefix rather than counting down from what the head said,
+// and that is what makes Undefine resumable. Counting down needs the
+// head, and the head is the first thing Undefine removes — so an
+// interrupted removal could never be finished, and the versions it left
+// would be unreachable forever: not listed, because there is no head, and
+// only readable by guessing a number.
+//
+// The walk is a snapshot taken before anything is deleted, because
+// deleting from underneath a running scan is asking a store to describe
+// what it is in the middle of changing.
+func (k Kernel) sweep(ctx context.Context, named kind.Kind) (int, error) {
+	under, err := def.PublishedShape.New(named.String())
+	if err != nil {
+		return 0, err
+	}
+
+	type doomed struct {
+		id resource.Id
+		at revision.Revision
+	}
+
+	var found []doomed
+
+	for stored, err := range k.published.Scan(ctx, resource.NewId(def.PublishedKind, under)) {
+		if err != nil {
+			return 0, err
+		}
+
+		id, err := k.publishedId(stored.Value)
+		if err != nil {
+			return 0, err
+		}
+
+		found = append(found, doomed{id: id, at: stored.Revision})
+	}
+
+	for _, one := range found {
+		if _, err := k.published.Delete(ctx, one.id, one.at); err != nil {
+			return 0, fmt.Errorf("remove %s: %w", one.id, err)
+		}
+	}
+
+	return len(found), nil
+}
+
+// publishedId is where one published shape lives.
+func (k Kernel) publishedId(published def.Published) (resource.Id, error) {
+	at, err := def.PublishedPath(published.Kind(), published.Version())
+	if err != nil {
+		return resource.Id{}, err
+	}
+
+	return resource.NewId(def.PublishedKind, at), nil
 }
 
 // inUse reports whether a kind has any instance left, stopping at the
