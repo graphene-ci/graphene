@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gopherex/xlog"
@@ -108,7 +109,7 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 
 	// Run installs the signals, blocks, and then drains.
 	if err := stop.Run(); err != nil {
-		return err
+		return fmt.Errorf("run: %w", err)
 	}
 
 	log.Info("stopped")

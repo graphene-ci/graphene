@@ -110,7 +110,6 @@ func (e *Events) Next(_ context.Context) (store.Event[resource.Resource], error)
 
 // Close stops the watch.
 func (e *Events) Close() error {
-	//nolint:wrapcheck // the transport's own error; nothing here to add
 	return e.stream.CloseSend()
 }
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/knadh/koanf/providers/file"
@@ -111,7 +112,7 @@ func (l *Live) Watch(ctx context.Context, log *xlog.Logger, onChange func(Config
 
 		l.reread(log, onChange)
 	}); err != nil {
-		return err
+		return fmt.Errorf("watch %s: %w", l.path, err)
 	}
 
 	defer func() { _ = provider.Unwatch() }()

@@ -118,6 +118,10 @@ linters:
         # status.Error IS the wrapping for a grpc service: it attaches the
         # code and message the client is meant to see.
         - status.Error(
+        # A cancelled context is the caller's own doing, said in the
+        # standard library's words. "store: context canceled" tells them
+        # something they already know about something they did.
+        - ctx.Err(
       ignore-package-globs:
         # This module's own errors already carry this module's vocabulary.
         # wrapcheck exists to stop a foreign error arriving naked; an error
@@ -129,6 +133,14 @@ linters:
         # the alternative is a list that has to be edited every time a
         # package is added and is silently wrong until somebody notices.
         - github.com/graphene-ci/graphene/internal/*
+        # A grpc stream's Send and Recv, and a service manager's Start and
+        # Stop: both are things this program passes THROUGH rather than
+        # does. What a caller needs is the transport's own words — "the
+        # client went away", "the unit is masked" — and a prefix naming
+        # the function that forwarded them buries the sentence that says
+        # what happened.
+        - google.golang.org/grpc*
+        - github.com/kardianos/service*
       ignore-interface-regexps:
         # grpc stream Send errors are transport conditions passed through.
         - ^google\.golang\.org/grpc
@@ -344,6 +356,12 @@ linters:
           - maintidx
           # test helpers legitimately return grpc client interfaces
           - ireturn
+          # Every hit is a subtest BODY passed to a runner — each(t, func(t
+          # *testing.T, k kernel.Kernel){...}) — not a helper. t.Helper()
+          # in one would report every failure at the line inside the
+          # runner rather than at the assertion that failed, which is the
+          # opposite of what it is for. Real helpers here do call it.
+          - thelper
         path: _test\.go
       - linters:
           - govet
@@ -355,6 +373,21 @@ linters:
       - linters:
           - testpackage
         path: internal/link/resume_test\.go
+      # A store implementation IS the kv port. What leaves it is either
+      # the port's vocabulary — ErrNotFound, ErrConflict, ErrClosed, which
+      # callers compare and must not have to read past a prefix — or the
+      # engine's own failure, which names itself. Most of these are inside
+      # a transaction closure and do not reach a caller at all.
+      - linters:
+          - wrapcheck
+        path: (internal/store/kv|internal/infrastructure/kv)/
+      # A command's error is printed to the person who ran it, already
+      # prefixed with the name of the binary. A second prefix naming the
+      # function that returned it is noise in the one place where the
+      # words matter most.
+      - linters:
+          - wrapcheck
+        path: ^cmd/
       # A subordinate kernel hands back the far side's answer unaltered —
       # error included. Wrapping there would put this kernel's name on a
       # refusal the kernel above made, and a caller comparing errors would

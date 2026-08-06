@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"google.golang.org/grpc/codes"
@@ -146,7 +147,7 @@ func (b *Blobs) receive(in blobpb.BlobService_UploadServer, writer blob.Writer) 
 		}
 
 		if _, err := writer.Write(frame.GetData()); err != nil {
-			return blob.Info{}, err
+			return blob.Info{}, fmt.Errorf("write the blob: %w", err)
 		}
 	}
 }
