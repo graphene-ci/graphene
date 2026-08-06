@@ -7,6 +7,7 @@ import (
 
 	"github.com/gopherex/schemapb/go/schemapb"
 
+	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/store"
 	"github.com/graphene-ci/graphene/internal/types/def"
 	"github.com/graphene-ci/graphene/internal/types/kind"
@@ -27,14 +28,14 @@ func (s Session) Get(ctx context.Context, id resource.Id) (store.Value[resource.
 	return s.guard.kernel.Get(ctx, id)
 }
 
-// Scan walks everything under an id that the caller may list.
+// List walks everything under an id that the caller may list.
 //
 // The permission is checked ONCE, against the prefix being scanned, and
 // not per record. Filtering silently would hand back a list that is
 // shorter than the truth with nothing saying so — and a caller cannot
 // tell that from "there is nothing there", which is the difference
 // between an empty answer and a wrong one.
-func (s Session) Scan(
+func (s Session) List(
 	ctx context.Context,
 	prefix resource.Id,
 ) iter.Seq2[store.Value[resource.Resource], error] {
@@ -45,7 +46,7 @@ func (s Session) Scan(
 			return
 		}
 
-		for value, err := range s.guard.kernel.Scan(ctx, prefix) {
+		for value, err := range s.guard.kernel.List(ctx, prefix) {
 			if !yield(value, err) {
 				return
 			}
@@ -216,4 +217,90 @@ func (s Session) checkEscalation(ctx context.Context, intent resource.Intent) er
 	}
 
 	return nil
+}
+
+// DefinitionAt is one particular version of a kind's shape.
+//
+// A resource pins the version it was admitted under, so reading an older
+// instance means reading the shape it was written against. Permitted by
+// `get` on the kind, the same as the current shape: a caller who may see
+// what a kind is may see what it was.
+func (s Session) DefinitionAt(
+	ctx context.Context,
+	named kind.Kind,
+	version def.Version,
+) (def.Published, error) {
+	if err := s.allowKind(ctx, Get, named); err != nil {
+		return def.Published{}, err
+	}
+
+	return s.guard.kernel.DefinitionAt(ctx, named, version)
+}
+
+// Kinds walks every kind that has been defined.
+//
+// Permitted by `list` on Kind — the kind the head records live under —
+// rather than by holding `get` on each. Filtering the walk down to what
+// the caller may see would hand back a list shorter than the truth with
+// nothing saying so, and a caller cannot tell that from "there is nothing
+// there".
+func (s Session) Kinds(ctx context.Context) iter.Seq2[def.Head, error] {
+	return func(yield func(def.Head, error) bool) {
+		if err := s.allowKind(ctx, List, def.HeadKind); err != nil {
+			yield(def.Head{}, err)
+
+			return
+		}
+
+		for head, err := range s.guard.kernel.Kinds(ctx) {
+			if !yield(head, err) {
+				return
+			}
+		}
+	}
+}
+
+// WatchKind follows the current definition of one kind.
+func (s Session) WatchKind(
+	ctx context.Context,
+	named kind.Kind,
+	after revision.Revision,
+) (store.Stream[def.Head], error) {
+	if err := s.allowKind(ctx, Watch, named); err != nil {
+		return store.Stream[def.Head]{}, err
+	}
+
+	return s.guard.kernel.WatchKind(ctx, named, after)
+}
+
+// WatchKinds follows every kind's current definition, under the same
+// permission that lists them.
+func (s Session) WatchKinds(
+	ctx context.Context,
+	after revision.Revision,
+) (store.Stream[def.Head], error) {
+	if err := s.allowKind(ctx, Watch, def.HeadKind); err != nil {
+		return store.Stream[def.Head]{}, err
+	}
+
+	return s.guard.kernel.WatchKinds(ctx, after)
+}
+
+// Holders is what points at a resource, and what those pointers mean.
+//
+// It answers the question a refused delete raises — what is holding this
+// — and it is the model's question rather than any client's: a reference
+// carries a strength, and a strength is a statement about two lifetimes.
+//
+// Permitted by `get` on the resource being asked about. Naming what holds
+// something does disclose ids the caller might not otherwise read, and
+// that is the honest cost of answering at all; the alternative is a
+// refusal that says a holder exists without saying which, which is worse
+// to work with and discloses the same fact.
+func (s Session) Holders(ctx context.Context, id resource.Id) ([]kernel.Holder, error) {
+	if err := s.allow(ctx, Get, id); err != nil {
+		return nil, err
+	}
+
+	return s.guard.kernel.Holders(ctx, id)
 }

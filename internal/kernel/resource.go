@@ -21,9 +21,9 @@ func (k Kernel) Get(ctx context.Context, id resource.Id) (store.Value[resource.R
 	return k.resources.Get(ctx, id)
 }
 
-// Scan walks everything under an id, in key order. An id with fewer path
+// List walks everything under an id, in key order. An id with fewer path
 // values than its shape has positions is a subtree.
-func (k Kernel) Scan(ctx context.Context, prefix resource.Id) iter.Seq2[store.Value[resource.Resource], error] {
+func (k Kernel) List(ctx context.Context, prefix resource.Id) iter.Seq2[store.Value[resource.Resource], error] {
 	return k.resources.Scan(ctx, prefix)
 }
 
@@ -228,24 +228,24 @@ func (k Kernel) Delete(ctx context.Context, id resource.Id, expect revision.Revi
 // there — which a retry finishes. The other order would leave orphans
 // pointing at something that is no longer there to find them by.
 func (k Kernel) collect(ctx context.Context, id resource.Id) error {
-	holders, err := k.referrers(ctx, id)
+	holders, err := k.Holders(ctx, id)
 	if err != nil {
 		return err
 	}
 
 	for _, holder := range holders {
-		if holder.strength.Holds() {
-			return fmt.Errorf("%w: %s holds %s", ErrReferenced, holder.id, id)
+		if holder.Strength.Holds() {
+			return fmt.Errorf("%w: %s holds %s", ErrReferenced, holder.Id, id)
 		}
 	}
 
 	for _, holder := range holders {
-		if !holder.strength.Owns() {
+		if !holder.Strength.Owns() {
 			continue
 		}
 
-		if _, err := k.Delete(ctx, holder.id, holder.revision); err != nil {
-			return fmt.Errorf("collect %s: %w", holder.id, err)
+		if _, err := k.Delete(ctx, holder.Id, holder.Revision); err != nil {
+			return fmt.Errorf("collect %s: %w", holder.Id, err)
 		}
 	}
 

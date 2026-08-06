@@ -96,7 +96,21 @@ func (k Kernel) checkReferences(
 	return nil
 }
 
-// referrers finds every resource pointing at one, and what its pointer
+// Holder is one resource pointing at another, and what its pointer means
+// for the two lifetimes.
+//
+// Exported because the question it answers — what is holding this, and
+// why can it not be deleted — is a question the MODEL poses. References
+// carry strengths; asking who holds one is not a convenience for any
+// particular client, it is the other half of a relationship the kind
+// declared.
+type Holder struct {
+	Id       resource.Id
+	Revision revision.Revision
+	Strength def.Strength
+}
+
+// Holders finds every resource pointing at one, and what its pointer
 // means.
 //
 // There is no reverse index, so this is a scan — but not of the store.
@@ -108,8 +122,8 @@ func (k Kernel) checkReferences(
 // This is where a reverse index will earn itself, and when it does the
 // check above it stays the same code: what changes is where the candidate
 // list comes from, not what is done with it.
-func (k Kernel) referrers(ctx context.Context, id resource.Id) ([]referrer, error) {
-	var found []referrer
+func (k Kernel) Holders(ctx context.Context, id resource.Id) ([]Holder, error) {
+	var found []Holder
 
 	for head, err := range k.Kinds(ctx) {
 		if err != nil {
@@ -147,10 +161,10 @@ func (k Kernel) referrers(ctx context.Context, id resource.Id) ([]referrer, erro
 
 			for _, reference := range references {
 				if reference.id.Eq(id) {
-					found = append(found, referrer{
-						id:       stored.Value.Id(),
-						revision: stored.Revision,
-						strength: reference.Strength,
+					found = append(found, Holder{
+						Id:       stored.Value.Id(),
+						Revision: stored.Revision,
+						Strength: reference.Strength,
 					})
 				}
 			}
@@ -158,11 +172,4 @@ func (k Kernel) referrers(ctx context.Context, id resource.Id) ([]referrer, erro
 	}
 
 	return found, nil
-}
-
-// referrer is one resource pointing at the one being deleted.
-type referrer struct {
-	id       resource.Id
-	revision revision.Revision
-	strength def.Strength
 }

@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/gopherex/schemapb/go v0.0.0-20260805100557-b08e53066d63
 	github.com/gopherex/xshutdown v1.0.0
-	github.com/graphene-ci/graphenepb v0.0.0-20260805155445-32fee84f2f13
+	github.com/graphene-ci/graphenepb v0.0.0-20260806104542-c1a0399126f3
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/text v0.40.0

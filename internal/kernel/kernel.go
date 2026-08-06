@@ -64,7 +64,7 @@ func New(bytes kv.Store) Kernel {
 // is seen twice rather than not at all.
 //
 //	at, _ := kernel.Revision(ctx)          // the cursor FIRST
-//	for v := range kernel.Scan(ctx, p) {}  // then the snapshot
+//	for v := range kernel.List(ctx, p) {}  // then the snapshot
 //	s, _ := kernel.Watch(ctx, p, at)       // then the changes
 //
 // One counter serves resources and definitions alike, because there is
