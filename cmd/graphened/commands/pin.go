@@ -42,7 +42,11 @@ func pinCommand() *cobra.Command {
 					"%w; a kernel makes its key at the first start, so start it once", err)
 			}
 
-			command.Println(pinned)
+			// Stdout and not command.Println, which cobra sends to
+			// STDERR. This is a value meant to be piped into a
+			// configuration file, and one that went to stderr would
+			// arrive on somebody's terminal and nowhere else.
+			fmt.Fprintln(command.OutOrStdout(), pinned)
 
 			return nil
 		},

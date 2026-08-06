@@ -67,7 +67,8 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 	//  1. Serve, which stands a server up and stands it up again
 	//  2. Rebind, which stops the one that is up when it should not be
 	//  3. Watch, which keeps the configuration up to date with the file
-	//  4. Poll, which keeps the health it answers with true
+	//  4. Beat, which keeps saying this kernel is still here
+	//  5. Poll, which keeps the health it answers with true
 	//
 	// The second is what makes the first return, so it cannot be cleanup
 	// instead: cleanup runs after the drain, and the drain is waiting for
@@ -89,6 +90,8 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 			log.Error("config watch", xlog.Err(err))
 		}
 	})
+
+	stop.Go(func(ctx context.Context) { Beat(ctx, kernel, log) })
 
 	// The agent. Both kinds of kernel have one — a subordinate watches
 	// the kernel above for what to run — so the nil check is for a kernel
@@ -117,6 +120,35 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 //
 // The report is written again on every change, because what it says is
 // what is running NOW — and after a change, what is running is different.
+// Beat keeps saying this kernel is here, until it is not.
+//
+// A failed beat is logged and the next one is tried. It is a write to a
+// kernel that may be a link away, so a failure is ordinary — and a kernel
+// that stopped beating because one write failed would report itself dead
+// while running perfectly.
+//
+// There is nothing to stop: the loop ends with the context, and whoever
+// reads the record afterwards works out from the last beat that this
+// kernel is gone. That is the shutdown a kernel that was switched off and
+// one whose machine caught fire have in common, and having one path for
+// both is the point.
+func Beat(ctx context.Context, a *App, log *xlog.Logger) {
+	ticker := time.NewTicker(report.Beat)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		if err := report.Write(ctx, a.record, a.Config(), a.version); err != nil {
+			log.Warn("beat", xlog.Err(err))
+		}
+	}
+}
+
 func Watch(ctx context.Context, a *App, log *xlog.Logger) error {
 	return a.live.Watch(ctx, log, func(running config.Config) {
 		if err := report.Write(ctx, a.record, running, a.version); err != nil {

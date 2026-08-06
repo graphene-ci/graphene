@@ -39,6 +39,14 @@ const (
 	storeField    = "store"
 	cacheField    = "cache"
 	upstreamField = "upstream"
+
+	// heartbeat and beat are the two halves of liveness: WHEN it last
+	// said it was there, and how often it means to say it. Both are
+	// written by the kernel the record describes and by nobody else —
+	// which is what a path-prefixed grant already guarantees, and is why
+	// liveness needed no new kind and no field-level permission.
+	heartbeatField = "heartbeat"
+	beatField      = "beat_seconds"
 )
 
 // KernelKind names the record a kernel keeps about itself.
@@ -81,6 +89,11 @@ func Definition() def.Definition {
 				schemapb.Str(storeField),
 				schemapb.UInt64(cacheField),
 				schemapb.Str(upstreamField),
+				// RFC 3339, because this is read by people as often as by
+				// programs and a number of seconds is neither readable
+				// nor unambiguous about which epoch it counts from.
+				schemapb.Str(heartbeatField),
+				schemapb.UInt64(beatField),
 			).
 			MustBuild()),
 	)

@@ -244,6 +244,9 @@ linters:
       # locals mirror the proto vocabulary and stay within max-distance.
       ignore-names:
         - err
+        # "Up" is the whole word. A longer name for it would be a worse
+        # name, and this is a constant read in one place.
+        - Up
         - tc
         - ok
         - f

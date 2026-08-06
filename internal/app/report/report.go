@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/gopherex/schemapb/go/schemapb"
 
@@ -58,11 +59,16 @@ func Publish(ctx context.Context, k kernel.Kernel) error {
 	return nil
 }
 
-// Write records what this kernel is running with.
+// Write records what this kernel is running with, and that it is there.
 //
-// It runs at every start and again whenever the configuration changes,
-// because what it says is what is running NOW. The record is created if
-// it is not there; its spec stays empty either way.
+// It runs at every start, again whenever the configuration changes, and
+// again every Beat — because what it says is what is running NOW, and
+// "now" is half of what the record says. One writer and one code path:
+// the beat is not a second kind of write that could disagree with this
+// one about anything else in the record.
+//
+// The record is created if it is not there; its spec stays empty either
+// way.
 func Write(ctx context.Context, k Recorder, running config.Config, version string) error {
 	id, err := Id(running.Name())
 	if err != nil {
@@ -91,7 +97,7 @@ func Write(ctx context.Context, k Recorder, running config.Config, version strin
 		return err
 	}
 
-	if _, err := k.Report(ctx, id, status(running, version), stored.Revision); err != nil {
+	if _, err := k.Report(ctx, id, status(running, version, time.Now()), stored.Revision); err != nil {
 		return fmt.Errorf("report %s: %w", id, err)
 	}
 
@@ -104,12 +110,18 @@ func Write(ctx context.Context, k Recorder, running config.Config, version strin
 // it has none — and NOT its token, which is a secret and is why the top
 // of this file says what it says. The address is not: knowing which
 // kernel a kernel answers to is the point of the record.
-func status(running config.Config, version string) *schemapb.StructValue {
+func status(running config.Config, version string, now time.Time) *schemapb.StructValue {
 	reported := map[string]any{
 		osField:      runtime.GOOS,
 		archField:    runtime.GOARCH,
 		versionField: version,
 		listenField:  running.Listen(),
+		// When it last said it was here, and how often it means to say
+		// it. The second one is written down rather than assumed by
+		// readers, so a reader from a different build does not call a
+		// kernel with a different beat dead.
+		heartbeatField: now.UTC().Format(time.RFC3339),
+		beatField:      uint64(Beat / time.Second),
 	}
 
 	if up, forwards := running.Upstream(); forwards {
