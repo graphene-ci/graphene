@@ -147,13 +147,14 @@ func grantsOf(
 	spec *schemapb.StructValue,
 	shapeOf func(kind.Kind) (path.TPath, error),
 ) ([]Grant, error) {
-	stated := spec.GetFields()[grantsField].GetListValue().GetItems()
+	stated, _ := spec.Field(grantsField).AsList()
 	granted := make([]Grant, 0, len(stated))
 
 	for _, one := range stated {
-		fields := one.GetStructValue().GetFields()
+		verb := text(one, grantVerbField)
+		namedText := text(one, grantKindField)
 
-		named, err := kind.New(fields[grantKindField].GetStringValue())
+		named, err := kind.New(namedText)
 		if err != nil {
 			return nil, fmt.Errorf("grant kind: %w", err)
 		}
@@ -163,12 +164,7 @@ func grantsOf(
 			return nil, err
 		}
 
-		grant, err := ParseGrant(
-			fields[grantVerbField].GetStringValue(),
-			fields[grantKindField].GetStringValue(),
-			fields[grantPrefixField].GetStringValue(),
-			shape,
-		)
+		grant, err := ParseGrant(verb, namedText, text(one, grantPrefixField), shape)
 		if err != nil {
 			return nil, err
 		}
@@ -177,6 +173,18 @@ func grantsOf(
 	}
 
 	return granted, nil
+}
+
+// text reads one field of a stored grant.
+//
+// A field that is absent and a field holding the empty string come back
+// the same, and that is right here: a grant with no verb and a grant with
+// an empty verb are both refused a line later, by the one place that
+// decides what a verb may be.
+func text(at *schemapb.Value, field string) string {
+	found, _ := schemapb.As[string](at.Field(field))
+
+	return found
 }
 
 // covered reports whether every grant in want is covered by one in held.

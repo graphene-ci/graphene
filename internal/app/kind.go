@@ -21,14 +21,16 @@ import (
 // When secrets are needed they will need a mechanism of their own, and
 // that is a design nobody has done yet.
 //
-// The KIND of a value is part of the contract too, not only the name of
-// the field. schemapb maps a Go integer to its widest form, so a schema
-// that said uint32 while the writer produced a uint64 would store a
-// number the reader could not find — and finding nothing is
-// indistinguishable from the field being unset, which is how it would be
-// read as a default rather than as a mistake.
+// The kind of a value used to be part of the contract by hand, and got it
+// wrong: schemapb writes a Go integer in its widest form, so a reader
+// asking for the narrow one found nothing — and nothing is
+// indistinguishable from unset, which reads as a default rather than as a
+// mistake.
 //
-// So the integers here are uint64 everywhere: schema, writer and reader.
+// schemapb.As closes that: it converts across kinds when the value is
+// represented exactly, and reports PRESENCE rather than handing back a
+// silent zero. The reader no longer has to guess how the writer spelled a
+// number, only what it meant.
 const (
 	listenField = "listen"
 	cacheField  = "cache"

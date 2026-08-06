@@ -81,12 +81,10 @@ func (c Config) Spec() *schemapb.StructValue {
 // refusing the whole configuration over one of them would take a kernel
 // down for a field it did not need.
 func ConfigFrom(spec *schemapb.StructValue) Config {
-	fields := spec.GetFields()
+	listen, _ := schemapb.As[string](spec.Field(listenField))
+	cache, _ := schemapb.As[uint64](spec.Field(cacheField))
 
-	return NewConfig(
-		fields[listenField].GetStringValue(),
-		int(fields[cacheField].GetUint64Value()),
-	)
+	return NewConfig(listen, int(cache))
 }
 
 // status is what a kernel reports about itself: not anybody's to choose,

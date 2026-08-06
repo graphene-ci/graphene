@@ -71,13 +71,17 @@ func References(definition def.Definition, value Resource) ([]Reference, error) 
 	return found, nil
 }
 
-// lookup walks one declared field path into a resource's values.
+// lookup reads what a declared field path points at.
 //
-// The head of the path says which half to walk — the definition refuses a
-// reference that names neither — and the rest names fields inside it. The
-// value found is either one string or a list of them, which is what the
-// definition already checked the SCHEMA allows; here the same shapes are
-// read out of the value.
+// The head of the path says which half to read — the definition refuses a
+// reference that names neither — and schemapb resolves the rest. Walking
+// it by hand was thirty lines that did the same thing worse: this dialect
+// also addresses inside lists, which a hand-rolled walk would have to
+// learn separately and would learn differently.
+//
+// A path that does not resolve is not an error. The definition already
+// checked the field exists in the SCHEMA; failing to find it in a VALUE
+// means nobody filled it in, and an optional reference is a real thing.
 func lookup(value Resource, field path.FieldPath) ([]string, error) {
 	var half *schemapb.StructValue
 
@@ -90,22 +94,14 @@ func lookup(value Resource, field path.FieldPath) ([]string, error) {
 		return nil, fmt.Errorf("%w: %s", def.ErrRefRoot, field)
 	}
 
-	return walk(half, field.Rest())
-}
-
-// walk descends the remaining field names and reads what it lands on.
-func walk(values *schemapb.StructValue, field path.FieldPath) ([]string, error) {
-	if values == nil || field.IsZero() {
+	rest := field.Rest()
+	if half == nil || rest.IsZero() {
 		return nil, nil
 	}
 
-	at, found := values.GetFields()[field.Head().String()]
-	if !found {
+	at, err := half.Lookup(rest.String())
+	if err != nil {
 		return nil, nil
-	}
-
-	if rest := field.Rest(); !rest.IsZero() {
-		return walk(at.GetStructValue(), rest)
 	}
 
 	return pathsIn(at), nil
@@ -114,24 +110,32 @@ func walk(values *schemapb.StructValue, field path.FieldPath) ([]string, error) 
 // pathsIn reads the one or more paths a reference field holds.
 //
 // One string or a list of them, and nothing else: the definition refused
-// any other shape when the kind was declared, so anything else here is a
-// value that was written under a different schema than the one being
-// read — which is a question for whoever pinned the version, not a shape
-// to guess at.
+// any other shape when the kind was declared. As reports PRESENCE rather
+// than handing back a silent zero, which is the difference between "this
+// field holds the empty string" and "this field is not a string at all" —
+// and the two used to look the same.
+//
+// An empty string is skipped rather than refused. It is a field somebody
+// cleared, not a path to nowhere, and turning it into an error would make
+// clearing a reference impossible.
 func pathsIn(at *schemapb.Value) []string {
-	if at == nil {
+	if one, ok := schemapb.As[string](at); ok {
+		if one == "" {
+			return nil
+		}
+
+		return []string{one}
+	}
+
+	items, ok := at.AsList()
+	if !ok {
 		return nil
 	}
 
-	if single := at.GetStringValue(); single != "" {
-		return []string{single}
-	}
+	found := make([]string, 0, len(items))
 
-	list := at.GetListValue().GetItems()
-	found := make([]string, 0, len(list))
-
-	for _, item := range list {
-		if one := item.GetStringValue(); one != "" {
+	for _, item := range items {
+		if one, ok := schemapb.As[string](item); ok && one != "" {
 			found = append(found, one)
 		}
 	}

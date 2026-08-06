@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gopherex/schemapb/go/schemapb"
+
 	"github.com/graphene-ci/graphene/internal/common/str"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/store"
@@ -191,11 +193,15 @@ func (s Session) shapeOf(ctx context.Context) func(kind.Kind) (path.TPath, error
 
 // roleNames reads the roles an identity names.
 func roleNames(identity resource.Resource) []string {
-	items := identity.Spec().GetFields()[rolesField].GetListValue().GetItems()
+	items, ok := identity.Spec().Field(rolesField).AsList()
+	if !ok {
+		return nil
+	}
+
 	names := make([]string, 0, len(items))
 
 	for _, item := range items {
-		if name := item.GetStringValue(); name != "" {
+		if name, ok := schemapb.As[string](item); ok && name != "" {
 			names = append(names, name)
 		}
 	}

@@ -2,16 +2,28 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
+	"time"
 
+	"github.com/gopherex/xshutdown"
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/app"
+)
+
+// How long a kernel is given to wind down before it is taken down.
+//
+// A shutdown that could hang forever is a service that has to be killed,
+// and a service that is killed loses whatever it was in the middle of.
+const (
+	drain = 15 * time.Second
+	// forced is the exit code when the drain did not finish. It is
+	// distinct from a plain failure so that whoever reads it knows the
+	// difference between "it stopped badly" and "it would not stop".
+	forced = 2
 )
 
 // runCommand starts a kernel and keeps it running.
@@ -30,24 +42,29 @@ func runCommand() *cobra.Command {
 
 // run is the whole of a kernel's life, and every goroutine in it.
 //
-// There are two, and both start HERE. That is the point of the rule:
-// nothing below this function spawns one — a watch is pulled rather than
-// pushed for exactly that reason — so the concurrency of a running kernel
-// is this list, and this list is short enough to read.
+// The rule is that nothing below the composition root starts a goroutine
+// — a watch is pulled rather than pushed for exactly that reason — so the
+// concurrency of a running kernel is the list of stop.Go calls here, and
+// the list is short enough to read.
 //
-//  1. Follow, which keeps the configuration up to date with the record
-//  2. the signal wait, which is what ends the other one
-//
-// A third will arrive with the wire, and it will arrive here.
-func run(ctx context.Context, out interface{ Write([]byte) (int, error) }) error {
+// The manager is what makes that more than a convention. A goroutine it
+// starts is tracked, told to stop through a context that cascades, and
+// waited for; one started any other way is none of those things, and the
+// difference shows up as a shutdown that does not finish.
+func run(ctx context.Context, out io.Writer) error {
 	if err := os.MkdirAll(filepath.Dir(storePath), 0o700); err != nil {
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(storePath), err)
 	}
 
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	stop := xshutdown.New(ctx,
+		xshutdown.WithTimeout(drain),
+		xshutdown.WithForceExit(forced),
+		xshutdown.WithErrorHandler(func(err error) {
+			_, _ = fmt.Fprintf(out, "shutdown: %v\n", err)
+		}),
+	)
 
-	kernel, err := app.Open(ctx, app.Bootstrap{
+	kernel, err := app.Open(stop.Context(), app.Bootstrap{
 		Store:   storePath,
 		Name:    name,
 		Version: version,
@@ -56,27 +73,25 @@ func run(ctx context.Context, out interface{ Write([]byte) (int, error) }) error
 		return err
 	}
 
-	defer func() { _ = kernel.Close() }()
+	// Closing the store is cleanup and not work: it runs after the last
+	// worker has wound down, which is the only order in which closing a
+	// file out from under one of them cannot happen.
+	stop.RegisterFnErr(func(context.Context) error { return kernel.Close() })
 
 	_, _ = fmt.Fprintf(out, "kernel %s on %s\n", name, storePath)
 	_, _ = fmt.Fprintf(out, "configured: %s\n", kernel.Config())
 
-	// The one loop this command runs. It ends when the context does,
-	// which is when a signal arrives.
-	followed := make(chan error, 1)
-
-	go func() { followed <- kernel.Follow(ctx) }()
-
-	select {
-	case err := <-followed:
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return err
+	// The one worker. A second arrives with the wire, and it arrives
+	// here, on this line, where it can be seen beside this one.
+	stop.Go(func(ctx context.Context) {
+		if err := kernel.Follow(ctx); err != nil && ctx.Err() == nil {
+			_, _ = fmt.Fprintf(out, "config watch: %v\n", err)
 		}
+	})
 
-	case <-ctx.Done():
-		// Wait for Follow to notice, so that shutting down is a thing
-		// that finished rather than a thing that was abandoned.
-		<-followed
+	// Run installs the signals, blocks, and then drains.
+	if err := stop.Run(); err != nil {
+		return err
 	}
 
 	_, _ = fmt.Fprintln(out, "stopped")
