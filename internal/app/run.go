@@ -58,7 +58,7 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 	stop.RegisterFnErr(func(context.Context) error { return kernel.Close() })
 
 	checks := health.New(kernel.Source(), log)
-	endpoint := server.New(kernel, kernel.Service(), checks.Server(), log)
+	endpoint := server.New(kernel, kernel.Service(), kernel.Bytes(), checks.Server(), log)
 
 	log.Info("kernel",
 		xlog.String("config", boot.Config),
@@ -89,6 +89,16 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 			log.Error("config watch", xlog.Err(err))
 		}
 	})
+
+	// The agent, when there is one. A kernel that keeps no store cannot
+	// answer for a process, so it does not run any; see App.execute.
+	if agent := kernel.Agent(); agent != nil {
+		stop.Go(func(ctx context.Context) {
+			if err := agent.Run(ctx); err != nil {
+				log.Error("agent", xlog.Err(err))
+			}
+		})
+	}
 
 	stop.Go(checks.Poll)
 

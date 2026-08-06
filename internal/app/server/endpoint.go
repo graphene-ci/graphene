@@ -23,6 +23,7 @@ import (
 	"github.com/gopherex/xlog"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
 )
 
 // Configured is what an endpoint needs to know about configuration:
@@ -55,8 +56,10 @@ type Configured interface {
 type Endpoint struct {
 	config  Configured
 	service graphenepbv1.KernelServiceServer
-	health  hv1.HealthServer
-	log     *xlog.Logger
+	// bytes may be nil: a subordinate keeps none and answers for none.
+	bytes  blobpb.BlobServiceServer
+	health hv1.HealthServer
+	log    *xlog.Logger
 
 	mu      sync.Mutex
 	current *listening
@@ -78,10 +81,11 @@ type Endpoint struct {
 func New(
 	configured Configured,
 	service graphenepbv1.KernelServiceServer,
+	bytes blobpb.BlobServiceServer,
 	health hv1.HealthServer,
 	log *xlog.Logger,
 ) *Endpoint {
-	return &Endpoint{config: configured, service: service, health: health, log: log}
+	return &Endpoint{config: configured, service: service, bytes: bytes, health: health, log: log}
 }
 
 // Serve keeps a server standing until ctx is done.
@@ -145,6 +149,13 @@ func (e *Endpoint) run(ctx context.Context, listener net.Listener) error {
 	server := grpc.NewServer(grpc.StreamInterceptor(bound(ctx)))
 	graphenepbv1.RegisterKernelServiceServer(server, e.service)
 	hv1.RegisterHealthServer(server, e.health)
+
+	// A subordinate keeps no bytes and answers for none: a caller asking
+	// it for a blob is told the service is not implemented, which is
+	// exactly what is true.
+	if e.bytes != nil {
+		blobpb.RegisterBlobServiceServer(server, e.bytes)
+	}
 
 	e.hold(&listening{server: server, cancel: cancel}, listener.Addr().String())
 

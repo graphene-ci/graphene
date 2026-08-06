@@ -15,6 +15,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/gopherex/xlog"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
 	"github.com/graphene-ci/graphene/internal/app/config"
@@ -29,8 +31,13 @@ import (
 	"github.com/graphene-ci/graphene/internal/app/report"
 	"github.com/graphene-ci/graphene/internal/app/upstream"
 	"github.com/graphene-ci/graphene/internal/auth"
+	blobcache "github.com/graphene-ci/graphene/internal/infrastructure/blob/cache"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob/fs"
+	"github.com/graphene-ci/graphene/internal/infrastructure/gateway"
 	"github.com/graphene-ci/graphene/internal/infrastructure/kv/bbolt"
+	"github.com/graphene-ci/graphene/internal/infrastructure/runner/rawexec"
 	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/process"
 	"github.com/graphene-ci/graphene/internal/store/kv/cache"
 )
 
@@ -55,6 +62,8 @@ type App struct {
 	live    *config.Live
 
 	service graphenepbv1.KernelServiceServer
+	bytes   blobpb.BlobServiceServer
+	agent   *process.Agent
 	record  report.Recorder
 	source  health.Source
 	release func() error
@@ -124,7 +133,9 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 	cached := cache.New(bytes, cache.WithSize(local.Cache()))
 	own := kernel.New(cached)
 
-	a.service = api.New(auth.New(own), own, log)
+	guard := auth.New(own)
+
+	a.service = api.New(guard, own, log)
 	a.record = own
 	a.source = own
 	a.release = cached.Close
@@ -138,9 +149,63 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 		return err
 	}
 
+	if err := a.execute(ctx, local, guard, own, log); err != nil {
+		return err
+	}
+
 	// After the kinds and not before: the first caller's role names every
 	// kind there is, and at this moment that is exactly the builtin ones.
 	return begin(ctx, own, a.live, local, log)
+}
+
+// execute gives this kernel what it needs to RUN things: somewhere to
+// keep bytes, somewhere to answer for them, and the agent that turns a
+// record into a process.
+//
+// Only a kernel that keeps its own store gets one, and the reason is the
+// door. A process holds no credential, so the kernel it talks to has to
+// be able to say who it is — which a kernel with a store does from the
+// record, and a subordinate cannot do at all until it can tell the kernel
+// above whom it is acting for. That is a sentence the contract does not
+// have yet, and inventing one here would put a hole where the whole point
+// was not to have one.
+func (a *App) execute(
+	ctx context.Context,
+	local config.Local,
+	guard auth.Guard,
+	own kernel.Kernel,
+	log *xlog.Logger,
+) error {
+	if _, err := own.Define(ctx, process.Definition()); err != nil {
+		return fmt.Errorf("define %s: %w", process.Kind, err)
+	}
+
+	// Beside the store, for the reason the token already lives there: a
+	// kernel's things are about one place, and the configuration already
+	// names that place. Three more settings would be three more ways to
+	// point half of a kernel somewhere else.
+	beside := filepath.Dir(local.Store())
+
+	bytes, err := fs.Open(filepath.Join(beside, "blobs"))
+	if err != nil {
+		return err
+	}
+
+	closing := a.release
+	a.release = func() error { return errors.Join(bytes.Close(), closing()) }
+
+	a.bytes = api.NewBlobs(api.Guarded(bytes, guard, api.ByCredential(guard, own, log)), log)
+
+	a.agent = &process.Agent{
+		Name:   a.live.Config().Name(),
+		Kernel: process.Here(own),
+		Fetch:  blobcache.New(filepath.Join(beside, "cache"), bytes),
+		Runner: rawexec.New(filepath.Join(beside, "run")),
+		Doors:  gateway.Here(filepath.Join(beside, "doors"), guard, own, log),
+		Log:    log,
+	}
+
+	return nil
 }
 
 // subordinate builds a kernel that keeps nothing.
@@ -152,7 +217,7 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 //
 // There is no store here, no guard and no kernel — and that is not a
 // simplification, it is the whole meaning of the mode. A subordinate that
-// authorised anything would be a second opinion about permissions, and
+// authorized anything would be a second opinion about permissions, and
 // two opinions is one more than a system can have.
 func (a *App) subordinate(to config.Upstream) error {
 	above, err := upstream.Open(to)
@@ -177,6 +242,13 @@ func (a *App) Own() (kernel.Kernel, bool) { return a.kept, a.keeps }
 
 // Service is what this kernel answers with, whatever is behind it.
 func (a *App) Service() graphenepbv1.KernelServiceServer { return a.service }
+
+// Bytes is what answers for blobs, or nil on a kernel that keeps none.
+func (a *App) Bytes() blobpb.BlobServiceServer { return a.bytes }
+
+// Agent is what runs the processes placed on this kernel, or nil when
+// there is nothing here able to run them.
+func (a *App) Agent() *process.Agent { return a.agent }
 
 // Source is what its health is asked of.
 func (a *App) Source() health.Source { return a.source }

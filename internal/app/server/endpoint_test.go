@@ -189,7 +189,7 @@ func serving(t *testing.T, ctx context.Context) (string, kernel.Kernel, func()) 
 	at := free(t)
 	checks := health.New(k, discard())
 	endpoint := server.New(fixed(at),
-		api.New(auth.New(k), k, discard()), checks.Server(), discard())
+		api.New(auth.New(k), k, discard()), nil, checks.Server(), discard())
 
 	var workers sync.WaitGroup
 

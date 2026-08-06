@@ -37,6 +37,14 @@ type Service struct {
 // opened it is the one saying so.
 type Identify func(ctx context.Context) (auth.Principal, error)
 
+// ByCredential is how a network endpoint answers "who is calling": by
+// reading what the caller presented. It is exported because the byte
+// service asks the same question and must get the same answer — two ways
+// of establishing a caller would be two things to keep in step.
+func ByCredential(guard auth.Guard, unguarded kernel.Kernel, log *xlog.Logger) Identify {
+	return New(guard, unguarded, log).byCredential
+}
+
 // New builds the service over a kernel, reading credentials the usual way.
 func New(guard auth.Guard, unguarded kernel.Kernel, log *xlog.Logger) *Service {
 	service := &Service{guard: guard, kernel: unguarded, log: log}

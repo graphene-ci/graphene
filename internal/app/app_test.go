@@ -233,7 +233,7 @@ func TestChangingTheAddressMovesTheSocket(t *testing.T) {
 	on := write(t, first)
 	running := open(t, on)
 
-	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{},
+	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{}, nil,
 		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
@@ -261,7 +261,7 @@ func TestAnAddressThatWillNotBindIsWaitedOn(t *testing.T) {
 	on := write(t, "256.0.0.1:1")
 	running := open(t, on)
 
-	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{},
+	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{}, nil,
 		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
