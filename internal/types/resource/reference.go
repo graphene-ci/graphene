@@ -71,6 +71,59 @@ func References(definition def.Definition, value Resource) ([]Reference, error) 
 	return found, nil
 }
 
+// ReferencesIn is the same reading, done on a spec that is not a resource
+// yet.
+//
+// It exists for the checks that must run BEFORE admission: what a write
+// hands out has to be known while it can still be refused, and by then
+// there is no resource to read. Only spec-rooted references are found,
+// because an intent has no status half — a status-rooted reference is not
+// missing here, it is not yet a thing.
+func ReferencesIn(definition def.Definition, spec *schemapb.StructValue) ([]Reference, error) {
+	if definition.IsZero() || spec == nil {
+		return nil, nil
+	}
+
+	var found []Reference
+
+	for _, ref := range definition.Refs() {
+		if ref.Field().Head().String() != def.SpecRoot {
+			continue
+		}
+
+		raw, err := inSpec(spec, ref.Field())
+		if err != nil {
+			return nil, err
+		}
+
+		for _, one := range raw {
+			found = append(found, Reference{
+				Field:    ref.Field(),
+				Kind:     ref.Kind(),
+				Strength: ref.Strength(),
+				Raw:      one,
+			})
+		}
+	}
+
+	return found, nil
+}
+
+// inSpec is lookup with the half already decided.
+func inSpec(spec *schemapb.StructValue, field path.FieldPath) ([]string, error) {
+	rest := field.Rest()
+	if rest.IsZero() {
+		return nil, nil
+	}
+
+	at, err := spec.Lookup(rest.String())
+	if err != nil {
+		return nil, nil //nolint:nilerr // a field nobody filled in is not a reference
+	}
+
+	return pathsIn(at, field)
+}
+
 // lookup reads what a declared field path points at.
 //
 // The head of the path says which half to read — the definition refuses a

@@ -42,15 +42,34 @@ type Identify func(ctx context.Context) (auth.Principal, error)
 // service asks the same question and must get the same answer — two ways
 // of establishing a caller would be two things to keep in step.
 func ByCredential(guard auth.Guard, unguarded kernel.Kernel, log *xlog.Logger) Identify {
-	return New(guard, unguarded, log).byCredential
+	return New(guard, unguarded, log).presented
 }
 
 // New builds the service over a kernel, reading credentials the usual way.
 func New(guard auth.Guard, unguarded kernel.Kernel, log *xlog.Logger) *Service {
 	service := &Service{guard: guard, kernel: unguarded, log: log}
-	service.who = service.byCredential
+	service.who = service.presented
 
 	return service
+}
+
+// presented is who a caller on a network endpoint turns out to be: what
+// they signed as, or — when they are a kernel speaking for one of the
+// processes it started — that process's identity.
+//
+// The vouch belongs HERE and not in session, because it is a way of
+// reading a request, and a door reads nothing from a request. Putting it
+// in the common path would mean a process could ask a door to answer as
+// somebody else, which is the one thing a door exists to prevent.
+func (s *Service) presented(ctx context.Context) (auth.Principal, error) {
+	by, err := s.byCredential(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	acting, _, err := s.vouched(ctx, by)
+
+	return acting, err
 }
 
 // As builds the same service for a caller already known.

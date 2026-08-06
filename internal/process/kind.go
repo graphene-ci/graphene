@@ -15,6 +15,7 @@ package process
 import (
 	"github.com/gopherex/schemapb/go/schemapb"
 
+	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/types/def"
 	"github.com/graphene-ci/graphene/internal/types/kind"
 	"github.com/graphene-ci/graphene/internal/types/path"
@@ -84,7 +85,19 @@ var (
 )
 
 // Definition is what a process record is shaped like.
+//
+// The identity is a DECLARED reference and not a string that happens to
+// name one, and that is what makes writing it a guarded act: naming an
+// identity is handing out everything that identity holds, so the kernel
+// refuses a caller who does not hold it themselves. Declaring it also
+// means the identity cannot be deleted while something runs as it.
 func Definition() def.Definition {
+	identity, err := def.NewRef(
+		mustFieldPath(def.SpecRoot, identityField), auth.IdentityKind, def.Strong)
+	if err != nil {
+		panic("process definition: " + err.Error())
+	}
+
 	return def.MustNew(
 		Kind,
 		Shape,
@@ -124,7 +137,18 @@ func Definition() def.Definition {
 				schemapb.Int64(startsField),
 			).
 			MustBuild()),
+		identity,
 	)
+}
+
+// mustFieldPath builds a field path written into the binary.
+func mustFieldPath(names ...string) path.FieldPath {
+	built, err := path.NewFieldPath(names...)
+	if err != nil {
+		panic("process field path: " + err.Error())
+	}
+
+	return built
 }
 
 // Id addresses one process on one kernel.

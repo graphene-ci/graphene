@@ -341,6 +341,13 @@ linters:
       - linters:
           - govet
         text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
+      # A subordinate kernel hands back the far side's answer unaltered —
+      # error included. Wrapping there would put this kernel's name on a
+      # refusal the kernel above made, and a caller comparing errors would
+      # have to know how many proxies it went through.
+      - linters:
+          - wrapcheck
+        path: internal/app/upstream/service\.go
     paths:
       - third_party$
       - builtin$

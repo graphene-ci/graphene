@@ -88,6 +88,26 @@ func forwarded(ctx context.Context) context.Context {
 	return metadata.NewOutgoingContext(ctx, pairs.Copy())
 }
 
+// actingFor is how this kernel says it is speaking for a process it
+// started. The same word the kernel above reads.
+const actingFor = "graphene-acting-for"
+
+// forProcess sends a call as THIS kernel, acting for one of its
+// processes.
+//
+// What the caller sent is DROPPED rather than merged, and that is the
+// whole security of a door. A process has no credential, so it cannot
+// authenticate as anybody — but if its metadata were forwarded it could
+// name a different process on the same kernel and be answered as that
+// one. The claim is the kernel's to make; letting the caller contribute
+// to it would make it worthless.
+func (u *Upstream) forProcess(ctx context.Context, named string) context.Context {
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		header, scheme+u.token,
+		actingFor, named,
+	))
+}
+
 // own puts THIS kernel's credential on a call.
 //
 // Used for the one thing a subordinate does on its own behalf — saying

@@ -31,8 +31,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/app/report"
 	"github.com/graphene-ci/graphene/internal/app/upstream"
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/blob"
 	blobcache "github.com/graphene-ci/graphene/internal/infrastructure/blob/cache"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob/fs"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob/remote"
 	"github.com/graphene-ci/graphene/internal/infrastructure/gateway"
 	"github.com/graphene-ci/graphene/internal/infrastructure/kv/bbolt"
 	"github.com/graphene-ci/graphene/internal/infrastructure/runner/rawexec"
@@ -89,7 +91,7 @@ func Open(ctx context.Context, boot Bootstrap, log *xlog.Logger) (*App, error) {
 	app := &App{version: boot.Version, live: live}
 
 	if to, forwards := running.Upstream(); forwards {
-		err = app.subordinate(to)
+		err = app.subordinate(to, log)
 	} else {
 		local, _ := running.Local()
 		err = app.own(ctx, local, log)
@@ -162,13 +164,11 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 // keep bytes, somewhere to answer for them, and the agent that turns a
 // record into a process.
 //
-// Only a kernel that keeps its own store gets one, and the reason is the
+// Both kinds of kernel run things, and they differ in one place: the
 // door. A process holds no credential, so the kernel it talks to has to
-// be able to say who it is — which a kernel with a store does from the
-// record, and a subordinate cannot do at all until it can tell the kernel
-// above whom it is acting for. That is a sentence the contract does not
-// have yet, and inventing one here would put a hole where the whole point
-// was not to have one.
+// be able to say who it is — which a kernel with a store reads out of the
+// record, and a subordinate says up the link instead, signing as itself
+// and naming the process it is speaking for.
 func (a *App) execute(
 	ctx context.Context,
 	local config.Local,
@@ -196,16 +196,38 @@ func (a *App) execute(
 
 	a.bytes = api.NewBlobs(api.Guarded(bytes, guard, api.ByCredential(guard, own, log)), log)
 
-	a.agent = &process.Agent{
-		Name:   a.live.Config().Name(),
-		Kernel: process.Here(own),
-		Fetch:  blobcache.New(filepath.Join(beside, "cache"), bytes),
-		Runner: rawexec.New(filepath.Join(beside, "run")),
-		Doors:  gateway.Here(filepath.Join(beside, "doors"), guard, own, log),
-		Log:    log,
-	}
+	a.agent = a.running(beside, process.Here(own), bytes,
+		gateway.Here(filepath.Join(beside, "doors"), guard, own, log), log)
 
 	return nil
+}
+
+// forward gives a subordinate the same execution layer, pointed up.
+//
+// The bytes come from above and the records come from above, both asked
+// for with THIS kernel's credential — a kernel fetching what it was told
+// to run is acting on its own account. The door is the one piece that
+// cannot be: a process gets its own, and what it does there is done as
+// the identity its record names, which only the kernel above can say.
+func (a *App) forward(link config.Upstream, above *upstream.Upstream, log *xlog.Logger) {
+	work := link.Work()
+
+	a.agent = a.running(work, above.Watching(), remote.Over(above.Fetching()),
+		gateway.Above(filepath.Join(work, "doors"), above, log), log)
+}
+
+// running is the half that is the same on either kind of kernel.
+func (a *App) running(
+	work string, k process.Kernel, bytes blob.Reader, doors process.Gateway, log *xlog.Logger,
+) *process.Agent {
+	return &process.Agent{
+		Name:   a.live.Config().Name(),
+		Kernel: k,
+		Fetch:  blobcache.New(filepath.Join(work, "cache"), bytes),
+		Runner: rawexec.New(filepath.Join(work, "run")),
+		Doors:  doors,
+		Log:    log,
+	}
 }
 
 // subordinate builds a kernel that keeps nothing.
@@ -219,8 +241,8 @@ func (a *App) execute(
 // simplification, it is the whole meaning of the mode. A subordinate that
 // authorized anything would be a second opinion about permissions, and
 // two opinions is one more than a system can have.
-func (a *App) subordinate(to config.Upstream) error {
-	above, err := upstream.Open(to)
+func (a *App) subordinate(link config.Upstream, log *xlog.Logger) error {
+	above, err := upstream.Open(link)
 	if err != nil {
 		return err
 	}
@@ -229,6 +251,8 @@ func (a *App) subordinate(to config.Upstream) error {
 	a.record = above.Recording()
 	a.source = above.Recording()
 	a.release = above.Close
+
+	a.forward(link, above, log)
 
 	return nil
 }

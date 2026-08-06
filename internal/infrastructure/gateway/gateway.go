@@ -39,6 +39,7 @@ import (
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
+	"github.com/graphene-ci/graphene/internal/app/upstream"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/process"
@@ -67,18 +68,42 @@ var errSocketPathTooLong = errors.New("socket path is longer than the operating 
 // A whole server per process rather than one shared, because a process's
 // identity is which socket it is on: sharing one would mean asking the
 // caller who it is, which is the question this design exists to avoid.
-type Serve func(who auth.Principal) *grpc.Server
+// The identity is resolved differently on either side, which is why this
+// takes both the process's name and the identity its record gives it: a
+// kernel with a store answers as that identity itself, and a subordinate
+// names the process and lets the kernel above work it out.
+type Serve func(name, identity string) *grpc.Server
 
 // Gateway opens one door per process under a directory.
 type Gateway struct {
-	dir   string
-	serve Serve
-	log   *xlog.Logger
+	dir  string
+	open Serve
+	log  *xlog.Logger
 }
 
 // New builds a gateway that serves each process its own kernel.
-func New(dir string, serve Serve, log *xlog.Logger) *Gateway {
-	return &Gateway{dir: dir, serve: serve, log: log}
+func New(dir string, open Serve, log *xlog.Logger) *Gateway {
+	return &Gateway{dir: dir, open: open, log: log}
+}
+
+// Above serves processes by forwarding to the kernel this one answers to.
+//
+// The door signs with THIS kernel's credential and names the process it
+// was opened for; the kernel above checks that claim against its own
+// store. Which is the same trust that already exists — a kernel holds the
+// bytes and runs them, so anything on it is within its reach — made
+// checkable instead of assumed.
+func Above(dir string, above *upstream.Upstream, log *xlog.Logger) *Gateway {
+	return &Gateway{
+		dir: dir,
+		log: log,
+		open: func(name, _ string) *grpc.Server {
+			server := grpc.NewServer()
+			graphenepbv1.RegisterKernelServiceServer(server, above.ForProcess(name))
+
+			return server
+		},
+	}
 }
 
 // Here serves processes from the kernel this machine holds.
@@ -87,7 +112,18 @@ func New(dir string, serve Serve, log *xlog.Logger) *Gateway {
 // process it opened the door for and holds the store that says what that
 // process runs as, so there is nobody to ask.
 func Here(dir string, guard auth.Guard, own kernel.Kernel, log *xlog.Logger) *Gateway {
-	return New(dir, func(who auth.Principal) *grpc.Server {
+	return New(dir, func(_, identity string) *grpc.Server {
+		who, err := principalFor(identity)
+		if err != nil {
+			// An identity the record names and the rules refuse is a
+			// door for nobody, which refuses everything. Refusing to
+			// open it instead would stop a process that may not have
+			// wanted to talk at all.
+			log.Warn("unusable identity on a process", xlog.Err(err))
+
+			who = ""
+		}
+
 		server := grpc.NewServer()
 		graphenepbv1.RegisterKernelServiceServer(server, api.As(guard, own, who, log))
 
@@ -118,11 +154,6 @@ func (g *Gateway) Open(name, identity string) (process.Door, error) {
 		return nil, fmt.Errorf("gateway: clear %s: %w", path, err)
 	}
 
-	who, err := principalFor(identity)
-	if err != nil {
-		return nil, err
-	}
-
 	var listen net.ListenConfig
 
 	listener, err := listen.Listen(context.Background(), "unix", path)
@@ -130,7 +161,7 @@ func (g *Gateway) Open(name, identity string) (process.Door, error) {
 		return nil, fmt.Errorf("gateway: listen on %s: %w", path, err)
 	}
 
-	opened := &door{path: path, name: name, server: g.serve(who), done: make(chan struct{})}
+	opened := &door{path: path, name: name, server: g.open(name, identity), done: make(chan struct{})}
 
 	go func() {
 		defer close(opened.done)

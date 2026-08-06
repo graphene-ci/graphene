@@ -186,7 +186,7 @@ func TestASubordinateIsNotDiscovered(t *testing.T) {
 	dir := t.TempDir()
 	kernelFile := filepath.Join(dir, "kernel.yaml")
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:9999", "above:7373", "edge.s")
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:9999", "above:7373", "edge.s", t.TempDir())
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}

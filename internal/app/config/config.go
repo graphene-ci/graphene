@@ -33,6 +33,7 @@ const (
 	upstreamKey = "upstream"
 	addressKey  = "upstream.address"
 	tokenKey    = "upstream.token"
+	workKey     = "upstream.work"
 )
 
 // What a configuration can be wrong about.
@@ -116,15 +117,26 @@ func (l Local) Token() string { return l.token }
 type Upstream struct {
 	address string
 	token   string
+	work    string
 }
 
 // Address is the kernel this one forwards to.
 func (u Upstream) Address() string { return u.address }
 
 // Token is how this kernel introduces ITSELF — used for the one thing it
-// does on its own behalf, which is recording that it exists. A forwarded
-// call carries its caller's credential instead.
+// does on its own behalf, which is recording that it exists, and for
+// fetching what it was told to run. A forwarded call carries its caller's
+// credential instead.
 func (u Upstream) Token() string { return u.token }
+
+// Work is the directory a subordinate runs things out of: fetched bytes,
+// working directories, and the sockets processes talk back through.
+//
+// A kernel with a store puts these beside it, because the store already
+// names a place. A subordinate has no store, so it says where instead —
+// and it does need somewhere, because running things is not something
+// only a kernel with a store does.
+func (u Upstream) Work() string { return u.work }
 
 // NewLocal states a kernel that keeps its own store, filling in what was
 // left out.
@@ -154,7 +166,7 @@ func NewLocal(name, listen, store string, cache int, token string) Config {
 // Both halves are required, and neither has a default worth guessing: an
 // address nobody gave is a kernel talking to itself, and a credential
 // nobody gave is a kernel refused everything it asks for.
-func NewUpstream(name, listen, address, token string) (Config, error) {
+func NewUpstream(name, listen, address, token, work string) (Config, error) {
 	switch {
 	case address == "":
 		return Config{}, ErrNoAddress
@@ -162,10 +174,14 @@ func NewUpstream(name, listen, address, token string) (Config, error) {
 		return Config{}, ErrNoToken
 	}
 
+	if work == "" {
+		work = defaultWork()
+	}
+
 	return Config{
 		name:   named(name),
 		listen: listening(listen),
-		up:     Upstream{address: address, token: token},
+		up:     Upstream{address: address, token: token, work: work},
 	}, nil
 }
 
@@ -277,7 +293,8 @@ func Read(path string) (Config, error) {
 
 	case loaded.Exists(upstreamKey):
 		read, err := NewUpstream(name, listen,
-			loaded.String(addressKey), loaded.String(tokenKey))
+			loaded.String(addressKey), loaded.String(tokenKey),
+			loaded.String(workKey))
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
 		}
@@ -330,10 +347,15 @@ func written(config Config) string {
 			"#\n"+
 			"# The token is this kernel's OWN, used for the one thing it\n"+
 			"# does on its own behalf: recording up there that it exists.\n"+
+			"#\n"+
+			"# Work is where it runs things out of: fetched bytes, working\n"+
+			"# directories, and the sockets processes talk back through. A\n"+
+			"# kernel with a store puts these beside it; this one has none.\n"+
 			"%s:\n"+
 			"  address: %s\n"+
-			"  token: %s\n",
-			upstreamKey, up.address, up.token)
+			"  token: %s\n"+
+			"  work: %s\n",
+			upstreamKey, up.address, up.token, up.work)
 	}
 
 	written := head + fmt.Sprintf(""+
@@ -371,6 +393,10 @@ func defaultStore() string {
 
 	return "kernel.db"
 }
+
+// defaultWork is where a subordinate runs things out of when nobody says
+// otherwise: beside where a kernel with a store would have kept one.
+func defaultWork() string { return filepath.Dir(defaultStore()) }
 
 // DefaultPath is where the file lives when nobody says otherwise.
 func DefaultPath() string {

@@ -18,7 +18,7 @@ func TestAnUpstreamSurvivesBeingWrittenDown(t *testing.T) {
 
 	at := filepath.Join(t.TempDir(), "kernel.yaml")
 
-	original, err := config.NewUpstream("edge", "0.0.0.0:9999", "above:7373", "edge.s3cret")
+	original, err := config.NewUpstream("edge", "0.0.0.0:9999", "above:7373", "edge.s3cret", "/var/lib/edge")
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestAnUpstreamNeedsBothHalves(t *testing.T) {
 func TestPrintingAConfigDoesNotPrintTheToken(t *testing.T) {
 	t.Parallel()
 
-	forwarding, err := config.NewUpstream("edge", "", "above:7373", "edge.s3cret")
+	forwarding, err := config.NewUpstream("edge", "", "above:7373", "edge.s3cret", "/var/lib/edge")
 	if err != nil {
 		t.Fatalf("upstream: %v", err)
 	}

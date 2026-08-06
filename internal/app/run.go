@@ -90,8 +90,9 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 		}
 	})
 
-	// The agent, when there is one. A kernel that keeps no store cannot
-	// answer for a process, so it does not run any; see App.execute.
+	// The agent. Both kinds of kernel have one — a subordinate watches
+	// the kernel above for what to run — so the nil check is for a kernel
+	// that failed to build one, not for a kind that has none.
 	if agent := kernel.Agent(); agent != nil {
 		stop.Go(func(ctx context.Context) {
 			if err := agent.Run(ctx); err != nil {

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 
@@ -203,24 +204,34 @@ func (s Session) Revision(ctx context.Context) (revision.Revision, error) {
 	return s.guard.kernel.Revision(ctx)
 }
 
-// checkEscalation refuses a role that hands out more than the caller has.
+// checkEscalation refuses a write that hands out more than the caller
+// has.
 //
 // This is what makes "may manage users" a lesser privilege than "may do
 // anything", and without it there is no difference between the two: a
 // caller who can write any Role can write themselves one that permits
 // everything, and be root a moment later.
 //
-// Only writes to Role are checked, because a Role is the only place a
-// grant lives. That was worth arranging for on its own, and this is the
-// second reason it was.
+// A grant lives in one place, but it is HANDED OUT in three, and all
+// three are the same act: stating grants in a Role, naming a Role from an
+// Identity, and naming an Identity from anything that then acts as it — a
+// Process, say, whose bytes belong to whoever wrote the record. The last
+// one is why this is not a check about Role: a caller who could write
+// `identity: admin` on a process they supply the bytes for would be admin
+// as soon as it started.
+//
+// None of that is spelled kind by kind. A reference to a Role or an
+// Identity IS the hand-out, the definition already says which fields are
+// references, so what confers authority is read off the same declaration
+// that says what points at what.
 func (s Session) checkEscalation(ctx context.Context, intent resource.Intent) error {
-	if !intent.Id().Kind().Eq(RoleKind) {
-		return nil
+	stated, err := s.conferred(ctx, intent)
+	if err != nil {
+		return err
 	}
 
-	stated, err := grantsOf(intent.Spec(), s.shapeOf(ctx))
-	if err != nil {
-		return fmt.Errorf("%s: %w", intent.Id(), err)
+	if len(stated) == 0 {
+		return nil
 	}
 
 	held, err := s.grants(ctx)
@@ -233,6 +244,105 @@ func (s Session) checkEscalation(ctx context.Context, intent resource.Intent) er
 	}
 
 	return nil
+}
+
+// conferred is everything the write would let somebody do.
+//
+// The references are read out of the DEFINITION and the grants out of the
+// store, both unguarded: the question is what this write hands out, and a
+// caller who may not read a role can still be refused for naming it.
+func (s Session) conferred(ctx context.Context, intent resource.Intent) ([]Grant, error) {
+	var stated []Grant
+
+	if intent.Id().Kind().Eq(RoleKind) {
+		granted, err := grantsOf(intent.Spec(), s.shapeOf(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+		}
+
+		stated = append(stated, granted...)
+	}
+
+	head, err := s.guard.kernel.Definition(ctx, intent.Id().Kind())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+	}
+
+	refs, err := resource.ReferencesIn(head.Definition(), intent.Spec())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+	}
+
+	for _, ref := range refs {
+		granted, err := s.holds(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+
+		stated = append(stated, granted...)
+	}
+
+	return stated, nil
+}
+
+// holds is what naming one thing hands out: a role's own grants, or
+// everything the identity named holds.
+//
+// Anything else is nothing. Most references are ordinary — one resource
+// pointing at another — and only these two kinds carry authority.
+func (s Session) holds(ctx context.Context, ref resource.Reference) ([]Grant, error) {
+	switch {
+	case ref.Kind.Eq(RoleKind):
+		return s.role(ctx, ref.Raw)
+
+	case ref.Kind.Eq(IdentityKind):
+		return s.identity(ctx, ref.Raw)
+
+	default:
+		return nil, nil
+	}
+}
+
+// identity is everything one identity may do, read for somebody else's
+// sake.
+//
+// An identity that is not there hands out nothing, and that is not a hole
+// worth closing here: a Process naming one is a strong reference, so the
+// write is refused a moment later by integrity. Refusing it here as well
+// would say "no such identity" to a caller who is entitled to be told the
+// reference is broken.
+func (s Session) identity(ctx context.Context, named string) ([]Grant, error) {
+	who, err := NewPrincipal(named)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrEscalation, err)
+	}
+
+	id, err := IdentityId(who)
+	if err != nil {
+		return nil, err
+	}
+
+	stored, err := s.guard.kernel.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	var held []Grant
+
+	for _, role := range roleNames(stored.Value) {
+		granted, err := s.role(ctx, role)
+		if err != nil {
+			return nil, err
+		}
+
+		held = append(held, granted...)
+	}
+
+	return held, nil
 }
 
 // DefinitionAt is one particular version of a kind's shape.

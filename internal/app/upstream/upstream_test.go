@@ -153,7 +153,7 @@ func TestASubordinateRecordsItselfAbove(t *testing.T) {
 	ctx := context.Background()
 	above, at := standing(t)
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret)
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir())
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -229,7 +229,7 @@ func standing(t *testing.T) (kernel.Kernel, string) {
 func subordinate(t *testing.T, at string) graphenepbv1.KernelServiceClient {
 	t.Helper()
 
-	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret)
+	forwarding, err := config.NewUpstream("edge", "127.0.0.1:0", at, "edge."+secret, t.TempDir())
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
