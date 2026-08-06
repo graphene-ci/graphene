@@ -104,41 +104,60 @@ func lookup(value Resource, field path.FieldPath) ([]string, error) {
 		return nil, nil
 	}
 
-	return pathsIn(at), nil
+	return pathsIn(at, field)
 }
 
 // pathsIn reads the one or more paths a reference field holds.
 //
-// One string or a list of them, and nothing else: the definition refused
-// any other shape when the kind was declared. As reports PRESENCE rather
-// than handing back a silent zero, which is the difference between "this
-// field holds the empty string" and "this field is not a string at all" —
-// and the two used to look the same.
+// It mirrors what def.referenceable checked when the KIND was declared,
+// and now says it in the same words: schemapb describes a value's kind
+// with the same vocabulary it describes a field's, so "this is a number
+// and a reference is a path" reads identically whether it was caught at
+// declaration or at read.
 //
-// An empty string is skipped rather than refused. It is a field somebody
-// cleared, not a path to nowhere, and turning it into an error would make
-// clearing a reference impossible.
-func pathsIn(at *schemapb.Value) []string {
-	if one, ok := schemapb.As[string](at); ok {
+// A shape that is neither is REFUSED rather than skipped. It cannot
+// normally happen — the definition refused the field at declaration, and
+// the resource pins the version that refused it — so a value like this is
+// a record written under a schema this one is not reading it with. A
+// dropped reference is exactly what strong integrity exists to prevent,
+// so it is not the thing to be quiet about.
+//
+// An empty string and a null are skipped, not refused: both are a field
+// somebody cleared, and refusing them would make clearing a reference
+// impossible.
+func pathsIn(at *schemapb.Value, field path.FieldPath) ([]string, error) {
+	switch valueKind := schemapb.ValueKindName(at); valueKind {
+	case schemapb.KindNull:
+		return nil, nil
+
+	case schemapb.KindString:
+		one, _ := schemapb.As[string](at)
 		if one == "" {
-			return nil
+			return nil, nil
 		}
 
-		return []string{one}
-	}
+		return []string{one}, nil
 
-	items, ok := at.AsList()
-	if !ok {
-		return nil
-	}
+	case schemapb.KindList:
+		items, _ := at.AsList()
+		found := make([]string, 0, len(items))
 
-	found := make([]string, 0, len(items))
+		for _, item := range items {
+			one, ok := schemapb.As[string](item)
+			if !ok {
+				return nil, fmt.Errorf("%w: %s is a list of %s, and a reference is a path",
+					def.ErrRefKindMismatch, field, schemapb.ValueKindName(item))
+			}
 
-	for _, item := range items {
-		if one, ok := schemapb.As[string](item); ok && one != "" {
-			found = append(found, one)
+			if one != "" {
+				found = append(found, one)
+			}
 		}
-	}
 
-	return found
+		return found, nil
+
+	default:
+		return nil, fmt.Errorf("%w: %s is %s, and a reference is a path",
+			def.ErrRefKindMismatch, field, valueKind)
+	}
 }

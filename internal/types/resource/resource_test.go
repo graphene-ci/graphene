@@ -389,3 +389,85 @@ func TestRestoreIsTheInverseOfFlatten(t *testing.T) {
 		t.Fatalf("want ErrNoFinalizers, got %v", err)
 	}
 }
+
+// A reference field holding something that is not a path is refused, not
+// skipped — and reaching that check takes some doing, which is the point.
+//
+// The schema gets there first: admission refuses a number where a string
+// belongs, so no write can produce this. What can is a record that
+// entered the store some other way — decoded from bytes, restored by a
+// build reading it under a schema it was not written with. Restore is
+// deliberately the door that does not re-validate, so it is the door this
+// arrives through.
+//
+// Skipping it silently would drop a reference, and a dropped reference is
+// exactly what strong integrity exists to prevent.
+func TestAReferenceFieldThatIsNotAPathIsRefused(t *testing.T) {
+	t.Parallel()
+
+	built, err := def.New(
+		kindOf(t), shapeOf(t),
+		def.Spec(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "process-spec"}).
+			Fields(schemapb.Str("bundle").Required()).MustBuild()),
+		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "process-status"}).
+			MustBuild()),
+		mustRef(t, "spec.bundle", "Bundle"),
+	)
+	if err != nil {
+		t.Fatalf("definition: %v", err)
+	}
+
+	restored, err := resource.Restore(resource.Snapshot{
+		Id:         id(t, built, "local", "web"),
+		Spec:       schemapb.MustStructFromGo(map[string]any{"bundle": uint64(7)}),
+		Generation: 1,
+		Version:    1,
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if _, err := resource.References(built, restored); !errors.Is(err, def.ErrRefKindMismatch) {
+		t.Fatalf("want ErrRefKindMismatch, got %v", err)
+	}
+
+	// A field somebody cleared is not the same mistake: it is no
+	// reference, and clearing one has to stay possible.
+	cleared, err := resource.Restore(resource.Snapshot{
+		Id:         id(t, built, "local", "web"),
+		Spec:       schemapb.MustStructFromGo(map[string]any{"bundle": ""}),
+		Generation: 1,
+		Version:    1,
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	found, err := resource.References(built, cleared)
+	if err != nil || len(found) != 0 {
+		t.Fatalf("a cleared reference came back as %v (%v)", found, err)
+	}
+}
+
+func kindOf(t *testing.T) kind.Kind {
+	t.Helper()
+
+	return kind.MustNew("Process")
+}
+
+func shapeOf(t *testing.T) path.TPath {
+	t.Helper()
+
+	return path.MustNewTPath("kernel", "name")
+}
+
+func mustRef(t *testing.T, field, named string) def.Ref {
+	t.Helper()
+
+	built, err := def.ParseRef(field, named, def.Strong)
+	if err != nil {
+		t.Fatalf("ref: %v", err)
+	}
+
+	return built
+}
