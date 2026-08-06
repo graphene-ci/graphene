@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // Where a credential rides, and how it is introduced. The same two words

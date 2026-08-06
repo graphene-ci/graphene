@@ -6,8 +6,9 @@ import (
 	"io"
 	"strings"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"github.com/spf13/cobra"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // kindsCommand lists what a kernel knows how to hold.

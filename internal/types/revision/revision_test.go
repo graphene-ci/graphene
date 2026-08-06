@@ -89,8 +89,10 @@ func TestParseIsTheInverseOfString(t *testing.T) {
 		}
 	}
 
-	refused := []string{"", "r42", "42 ", " 42", "-1", "4.2", "0x2a", "42abc",
-		strconv.FormatUint(1<<63, 10) + "0"}
+	refused := []string{
+		"", "r42", "42 ", " 42", "-1", "4.2", "0x2a", "42abc",
+		strconv.FormatUint(1<<63, 10) + "0",
+	}
 
 	for _, raw := range refused {
 		if _, err := revision.Parse(raw); !errors.Is(err, revision.ErrMalformed) {

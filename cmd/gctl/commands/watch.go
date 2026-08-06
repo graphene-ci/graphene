@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"github.com/spf13/cobra"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // watchCommand follows what changes.

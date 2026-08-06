@@ -3,8 +3,9 @@ package commands
 import (
 	"io"
 
-	"github.com/gopherex/xlog"
 	"github.com/spf13/cobra"
+
+	"github.com/gopherex/xlog"
 
 	"github.com/graphene-ci/graphene/internal/app"
 	"github.com/graphene-ci/graphene/internal/app/daemon"

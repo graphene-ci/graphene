@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,11 @@ import (
 // Process local` the subtree and `gctl get Process` the whole kind. More
 // is refused here rather than by the kernel, because here is where the
 // shape that was violated can be shown.
+// errPathTooLong — more values than the kind's shape has positions. A
+// path can be SHORTER than its shape, which names a subtree; longer is
+// not a subtree of anything.
+var errPathTooLong = errors.New("path has more values than the kind's shape")
+
 func addressed(
 	ctx context.Context, on *client.Kernel, named, written string,
 ) (*graphenepbv1.Id, error) {
@@ -32,8 +38,8 @@ func addressed(
 
 	values := split(written)
 	if len(values) > len(shape) {
-		return nil, fmt.Errorf("%s is /%s, and %q has %d values",
-			named, strings.Join(shape, "/"), written, len(values))
+		return nil, fmt.Errorf("%w: %s is /%s, and %q has %d values",
+			errPathTooLong, named, strings.Join(shape, "/"), written, len(values))
 	}
 
 	at := &graphenepbv1.Id{Kind: named}

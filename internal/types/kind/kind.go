@@ -27,6 +27,8 @@ const (
 
 // kindStrRules is the whole of what a kind may be named, in the order it
 // is decided.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var kindStrRules = []str.Rule{
 	str.UTF8(),
 	// Fullwidth and compatibility spellings fold away, so "Ｋernel"

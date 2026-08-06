@@ -12,13 +12,14 @@ import (
 	"context"
 	"time"
 
+	hv1 "google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/gopherex/xlog"
 	"github.com/gopherex/xprobe/pkg/probe"
 	"github.com/gopherex/xprobe/pkg/reporter"
 	"github.com/gopherex/xprobe/pkg/runner"
 	"github.com/gopherex/xprobe/pkg/state"
 	grpcprobe "github.com/gopherex/xprobe/pkg/transport/grpc"
-	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/graphene-ci/graphene/internal/types/revision"
 )

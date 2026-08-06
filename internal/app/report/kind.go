@@ -47,6 +47,8 @@ const (
 // useful to more than the kernel it describes: delivering a controller to
 // another kernel means knowing which platform to build it for, and that
 // is what the status half is for.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	KernelKind  = kind.MustNew("Kernel")
 	KernelShape = path.MustNewTPath("kernel")

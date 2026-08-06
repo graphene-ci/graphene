@@ -5,8 +5,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gopherex/schemapb/go/schemapb"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/gopherex/schemapb/go/schemapb"
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/store"

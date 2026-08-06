@@ -43,6 +43,10 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 		xshutdown.WithErrorHandler(func(err error) { log.Error("shutdown", xlog.Err(err)) }),
 	)
 
+	// stop.Context() is the run's own: the parent ends it, and so does a
+	// signal. Everything below is started from it, so a shutdown reaches
+	// all of it without anyone passing a second cancel around.
+	//nolint:contextcheck // the shutdown's context IS the run's context
 	kernel, err := Open(stop.Context(), boot, log)
 	if err != nil {
 		return err

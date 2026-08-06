@@ -37,6 +37,8 @@ import (
 //
 // Order matters below — the first match wins — so anything that wraps
 // another must come first.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var known = []struct {
 	is   error
 	code codes.Code

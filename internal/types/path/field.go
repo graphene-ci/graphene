@@ -26,6 +26,8 @@ const maxFieldNameBytes = 128
 // NOT folded, unlike everything else here: the name has to match a schema
 // byte for byte, and folding would turn "bundleVersion" into
 // "bundleversion", which is in no schema anywhere.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var fieldNameStrRules = []str.Rule{
 	str.UTF8(),
 	str.NFKC(),

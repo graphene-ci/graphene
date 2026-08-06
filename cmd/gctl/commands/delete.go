@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"github.com/spf13/cobra"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // deleteCommand asks a resource to go away.
@@ -13,6 +15,11 @@ import (
 // caller's: with claims on it the record stays, marked, until whatever
 // placed them lets go. So what is printed is what happened, which is not
 // always what was asked for.
+// errWholeKind — a delete was given a path shorter than its kind's
+// shape, which names a subtree. Removing a subtree is a different act
+// with a different blast radius, and it is not this one.
+var errWholeKind = errors.New("delete names one resource, not a whole kind")
+
 func deleteCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <kind> <path>",
@@ -35,7 +42,7 @@ func deleteCommand() *cobra.Command {
 			}
 
 			if len(at.GetPath()) == 0 {
-				return fmt.Errorf("delete names one resource, not a whole kind")
+				return errWholeKind
 			}
 
 			// Read first: a delete is a write and carries the same

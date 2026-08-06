@@ -68,6 +68,8 @@ const (
 // verbNames is the one place a verb's spelling lives. A grant is stored
 // as text, so these strings are a wire format: changing one silently
 // revokes every grant that used it.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var verbNames = map[Verb]string{
 	Get:      "get",
 	List:     "list",

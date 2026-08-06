@@ -6,8 +6,9 @@ import (
 	"io"
 	"text/tabwriter"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"github.com/spf13/cobra"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // getCommand reads resources.

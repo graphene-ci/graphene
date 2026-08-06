@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gopherex/xlog"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/gopherex/xlog"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app"
 	"github.com/graphene-ci/graphene/internal/app/config"

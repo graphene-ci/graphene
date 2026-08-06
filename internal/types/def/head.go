@@ -29,6 +29,8 @@ import (
 // harmless; the other order would leave the current definition of a kind
 // half-written. One line of ordering instead of a transaction in the
 // port.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	// HeadKind names the record holding a kind's current definition.
 	HeadKind = kind.MustNew("Kind")

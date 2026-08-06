@@ -1,14 +1,17 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/gopherex/schemapb/go/schemapb"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/gopherex/schemapb/go/schemapb"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // The three things a written resource says. They are a format: this is
@@ -103,6 +106,9 @@ type asked struct {
 	Spec map[string]any `yaml:"spec"`
 }
 
+// errMissingField — the document does not say something a write needs.
+var errMissingField = errors.New("missing field")
+
 // parsed reads one, refusing what cannot be acted on.
 func parsed(written []byte) (asked, error) {
 	var read asked
@@ -113,15 +119,15 @@ func parsed(written []byte) (asked, error) {
 
 	switch {
 	case read.Kind == "":
-		return asked{}, fmt.Errorf("no %s", kindField)
+		return asked{}, fmt.Errorf("%w: %s", errMissingField, kindField)
 	case read.Path == "":
-		return asked{}, fmt.Errorf("no %s", pathField)
+		return asked{}, fmt.Errorf("%w: %s", errMissingField, pathField)
 	case read.Spec == nil:
 		// An empty spec is a real thing to write — some kinds have no
 		// fields — but an ABSENT one is somebody who forgot the key, and
 		// the two are worth telling apart before a resource is emptied.
-		return asked{}, fmt.Errorf("no %s (write `%s: {}` for a kind with no fields)",
-			specField, specField)
+		return asked{}, fmt.Errorf("%w: %s (write `%s: {}` for a kind with no fields)",
+			errMissingField, specField, specField)
 	}
 
 	return read, nil

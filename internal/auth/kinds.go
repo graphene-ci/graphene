@@ -39,6 +39,8 @@ const (
 // Both are addressed by a single name, flat: these are objects of the
 // installation itself and belong to nobody, the way a cluster role
 // belongs to no namespace.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	IdentityKind = kind.MustNew("Identity")
 	RoleKind     = kind.MustNew("Role")

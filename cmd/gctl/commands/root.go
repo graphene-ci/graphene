@@ -31,6 +31,8 @@ var version = "dev"
 
 // The two things that cannot come from anything else: where the contexts
 // are, and which of them a command means.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	contextsPath string
 	kernelName   string

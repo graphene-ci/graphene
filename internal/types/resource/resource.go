@@ -4,9 +4,9 @@ import (
 	"slices"
 
 	"github.com/gopherex/schemapb/go/schemapb"
-	"github.com/graphene-ci/graphene/internal/types/kind"
 
 	"github.com/graphene-ci/graphene/internal/types/def"
+	"github.com/graphene-ci/graphene/internal/types/kind"
 )
 
 // Resource is one admitted instance of a kind: an author's intent,

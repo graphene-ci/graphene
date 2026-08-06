@@ -18,10 +18,11 @@ import (
 	"context"
 	"fmt"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app/config"
 )

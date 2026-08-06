@@ -7,14 +7,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gopherex/schemapb/go/schemapb"
-	"github.com/gopherex/xlog"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/gopherex/schemapb/go/schemapb"
+	"github.com/gopherex/xlog"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
 	"github.com/graphene-ci/graphene/internal/app/config"

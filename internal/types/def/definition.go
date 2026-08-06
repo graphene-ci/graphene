@@ -12,11 +12,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/graphene-ci/graphene/internal/types/kind"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/gopherex/schemapb/go/schemapb"
 
+	"github.com/graphene-ci/graphene/internal/types/kind"
 	"github.com/graphene-ci/graphene/internal/types/path"
 )
 

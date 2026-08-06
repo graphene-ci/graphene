@@ -13,8 +13,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gopherex/xlog"
 	"github.com/kardianos/service"
+
+	"github.com/gopherex/xlog"
 
 	"github.com/graphene-ci/graphene/internal/app"
 )

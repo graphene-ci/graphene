@@ -23,6 +23,8 @@ const (
 
 // finalizerStrRules is the whole of what a finalizer may be named, in the
 // order it is decided.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var finalizerStrRules = []str.Rule{
 	str.UTF8(),
 	str.NFKC(),

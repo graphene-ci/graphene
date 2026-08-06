@@ -9,13 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gopherex/schemapb/go/schemapb"
-	"github.com/gopherex/xlog"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/gopherex/schemapb/go/schemapb"
+	"github.com/gopherex/xlog"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
 	"github.com/graphene-ci/graphene/internal/app/health"

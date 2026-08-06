@@ -35,6 +35,8 @@ import (
 //	entries  key       → the record under it
 //	history  revision  → what happened at it, for watchers catching up
 //	meta     name      → the counter, and how far back the log reaches
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	entriesBucket = []byte("entries")
 	historyBucket = []byte("history")
@@ -42,6 +44,8 @@ var (
 )
 
 // What the meta bucket holds.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	revisionKeyName = []byte("revision")
 	fromKeyName     = []byte("from")

@@ -32,6 +32,8 @@ const (
 // tPathSegmentStrRules is the whole of what a segment name may be, in the
 // order it is decided. These limits are stated nowhere else: a segment is
 // what this list says, and the list is the documentation.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var tPathSegmentStrRules = []str.Rule{
 	str.UTF8(),
 	// NFKC rather than NFC: a fullwidth or ligature spelling is how

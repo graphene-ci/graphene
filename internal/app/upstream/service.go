@@ -5,8 +5,9 @@ import (
 	"errors"
 	"io"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // Service is the whole of what a subordinate kernel answers.

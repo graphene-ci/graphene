@@ -9,6 +9,8 @@ import (
 
 // How a published shape is recorded. See head.go for why it is a second
 // record and not a field of the first.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var (
 	// PublishedKind names the record holding one published shape.
 	PublishedKind = kind.MustNew("Definition")

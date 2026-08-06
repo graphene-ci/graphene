@@ -3,9 +3,10 @@ package commands
 import (
 	"context"
 
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/client"
 )

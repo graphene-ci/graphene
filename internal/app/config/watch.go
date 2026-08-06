@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/gopherex/xlog"
 	"github.com/knadh/koanf/providers/file"
+
+	"github.com/gopherex/xlog"
 )
 
 // Live is a configuration that follows its file.

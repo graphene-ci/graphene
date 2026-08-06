@@ -17,10 +17,12 @@ import (
 	"net"
 	"sync"
 
-	"github.com/gopherex/xlog"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/gopherex/xlog"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
 
 // Configured is what an endpoint needs to know about configuration:
@@ -265,10 +267,15 @@ func bound(ctx context.Context) grpc.StreamServerInterceptor {
 }
 
 // bounded is a stream that also ends when the run does.
+//
+// It holds a context, which a struct is not usually allowed to: the
+// grpc.ServerStream contract carries a call's context as a method, so
+// overriding it means storing one. The lifetime is the call's and no
+// longer.
 type bounded struct {
 	grpc.ServerStream
 
-	ctx context.Context
+	ctx context.Context //nolint:containedctx // the ServerStream contract
 }
 
 // Context is the call's, ended by whichever comes first.

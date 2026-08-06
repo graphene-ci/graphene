@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gopherex/schemapb/go/schemapb"
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/gopherex/schemapb/go/schemapb"
+
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
 	"github.com/graphene-ci/graphene/internal/convert"
 	"github.com/graphene-ci/graphene/internal/store"

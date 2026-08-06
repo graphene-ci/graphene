@@ -23,6 +23,8 @@ var version = "dev"
 
 // The one thing that cannot come from the configuration: where the
 // configuration is.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
 var configPath string
 
 // Root is graphened.
