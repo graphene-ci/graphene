@@ -1,4 +1,4 @@
-package wire
+package api
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 // The definition arrives without a version — which version it becomes is
 // the store's word — so it is read at version one and the number the
 // store actually gave comes back in the reply.
-func (s *Server) Define(
+func (s *Service) Define(
 	ctx context.Context,
 	request *graphenepbv1.DefineRequest,
 ) (*graphenepbv1.DefineResponse, error) {
@@ -51,7 +51,7 @@ func (s *Server) Define(
 }
 
 // Undefine removes a kind and every version of it.
-func (s *Server) Undefine(
+func (s *Service) Undefine(
 	ctx context.Context,
 	request *graphenepbv1.UndefineRequest,
 ) (*graphenepbv1.UndefineResponse, error) {
@@ -74,7 +74,7 @@ func (s *Server) Undefine(
 
 // GetDefinition is a kind's shape: whichever is current, or the one a
 // resource pinned.
-func (s *Server) GetDefinition(
+func (s *Service) GetDefinition(
 	ctx context.Context,
 	request *graphenepbv1.GetDefinitionRequest,
 ) (*graphenepbv1.GetDefinitionResponse, error) {
@@ -110,7 +110,7 @@ func (s *Server) GetDefinition(
 }
 
 // ListKinds walks every kind that has been defined.
-func (s *Server) ListKinds(
+func (s *Service) ListKinds(
 	_ *graphenepbv1.ListKindsRequest,
 	out graphenepbv1.KernelService_ListKindsServer,
 ) error {
@@ -140,7 +140,7 @@ func (s *Server) ListKinds(
 
 // WatchKinds follows what is current: one kind if named, all of them if
 // not.
-func (s *Server) WatchKinds(
+func (s *Service) WatchKinds(
 	request *graphenepbv1.WatchKindsRequest,
 	out graphenepbv1.KernelService_WatchKindsServer,
 ) error {
@@ -180,7 +180,7 @@ func (s *Server) WatchKinds(
 // Two calls rather than one with an empty name, because they need two
 // different permissions — watching one kind is not watching all of them —
 // and the guard is what decides that, not this.
-func (s *Server) kinds(
+func (s *Service) kinds(
 	ctx context.Context,
 	session auth.Session,
 	named string,

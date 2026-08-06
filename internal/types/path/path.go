@@ -73,8 +73,14 @@ func (p Path) Eq(other Path) bool {
 // prefix, a scan walks one, a watch follows one — so it lives here rather
 // than being open-coded at each of them. Whole values are compared, so
 // "acme" does not cover "acme2".
+//
+// The shapes must AGREE rather than be equal, because a prefix has two
+// legal spellings and both have to work: built here it keeps the whole
+// shape and fills fewer positions, decoded from a message it names only
+// the positions it filled. Requiring equality refused the second one,
+// which is every subtree any caller has ever asked for over the wire.
 func (p Path) HasPrefix(prefix Path) bool {
-	if !p.shape.Eq(prefix.shape) || len(prefix.values) > len(p.values) {
+	if !p.shape.Agrees(prefix.shape) || len(prefix.values) > len(p.values) {
 		return false
 	}
 

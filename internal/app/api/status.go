@@ -1,11 +1,17 @@
-// Package wire serves the kernel over gRPC.
+// Package api is what a kernel answers, and nothing about how it is
+// reached.
+//
+// It implements the generated service and stops there: no listener, no
+// socket, no protocol. That split is what lets one implementation answer
+// on more than one transport — gRPC and HTTP reach the same methods
+// rather than each growing a copy of the rules.
 //
 // It is a translation and nothing more: a request becomes the arguments
 // of a session's method, and what comes back becomes a reply. There is no
 // decision here that the kernel has not already made — no filtering, no
 // defaulting, no retrying — because every one of those would be a rule
 // living where nobody would think to look for it.
-package wire
+package api
 
 import (
 	"context"
@@ -42,8 +48,8 @@ var known = []struct {
 	// are the same answer, for the same reason the lookup behind them is:
 	// telling them apart turns a login into a way to find out who is
 	// registered.
-	{ErrMalformedToken, codes.Unauthenticated},
-	{ErrBadToken, codes.Unauthenticated},
+	{auth.ErrMalformedToken, codes.Unauthenticated},
+	{auth.ErrBadToken, codes.Unauthenticated},
 	{auth.ErrForbidden, codes.PermissionDenied},
 	{auth.ErrEscalation, codes.PermissionDenied},
 

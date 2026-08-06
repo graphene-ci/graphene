@@ -2,8 +2,6 @@ package app_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,8 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gopherex/xlog"
+	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+	hv1 "google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/graphene-ci/graphene/internal/app"
+	"github.com/graphene-ci/graphene/internal/app/config"
+	"github.com/graphene-ci/graphene/internal/app/report"
+	"github.com/graphene-ci/graphene/internal/app/server"
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/kernel"
 )
 
 // patience bounds a wait that is expected to end at once. Nothing here
@@ -21,13 +27,13 @@ import (
 const patience = 5 * time.Second
 
 // open starts a kernel configured by a file in a fresh directory.
-func open(t *testing.T, config Config) *app.App {
+func open(t *testing.T, on written) *app.App {
 	t.Helper()
 
 	opened, err := app.Open(context.Background(), app.Bootstrap{
-		Config:  config.path,
+		Config:  on.path,
 		Version: "test",
-	})
+	}, discard())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -37,33 +43,46 @@ func open(t *testing.T, config Config) *app.App {
 	return opened
 }
 
-// Config is a written configuration file and where it is.
-type Config struct {
+// own is the store a kernel keeps, or a failed test: these all configure
+// a local kernel, so one with no store of its own is a bug in the setup
+// rather than a case to handle.
+func own(t *testing.T, of *app.App) kernel.Kernel {
+	t.Helper()
+
+	kept, keeps := of.Own()
+	if !keeps {
+		t.Fatal("the kernel kept no store of its own")
+	}
+
+	return kept
+}
+
+// written is a configuration file on disk and where it is.
+type written struct {
 	path  string
 	store string
 }
 
 // write puts a configuration on disk and hands back where it is.
-func write(t *testing.T, at string, listen string) Config {
+func write(t *testing.T, listen string) written {
 	t.Helper()
 
 	dir := t.TempDir()
-	config := Config{
+	on := written{
 		path:  filepath.Join(dir, "kernel.yaml"),
 		store: filepath.Join(dir, "kernel.db"),
 	}
 
-	rewrite(t, config, listen)
+	rewrite(t, on, listen)
 
-	return config
+	return on
 }
 
 // rewrite edits the file the way an administrator would.
-func rewrite(t *testing.T, config Config, listen string) {
+func rewrite(t *testing.T, on written, listen string) {
 	t.Helper()
 
-	if err := app.WriteConfig(config.path,
-		app.NewConfig(config.store, "local", listen, 0)); err != nil {
+	if err := config.Write(on.path, config.NewLocal("local", listen, on.store, 0, "")); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }
@@ -74,12 +93,17 @@ func rewrite(t *testing.T, config Config, listen string) {
 func TestAMissingFileIsEveryDefault(t *testing.T) {
 	t.Parallel()
 
-	config, err := app.ReadConfig(filepath.Join(t.TempDir(), "absent.yaml"))
+	config, err := config.Read(filepath.Join(t.TempDir(), "absent.yaml"))
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
 
-	if config.Listen() != "127.0.0.1:7373" || config.Cache() == 0 || config.Name() == "" {
+	local, keeps := config.Local()
+	if !keeps {
+		t.Fatalf("a file that is not there came back as %s", config)
+	}
+
+	if config.Listen() != "127.0.0.1:7373" || local.Cache() == 0 || config.Name() == "" {
 		t.Fatalf("defaults came back as %s", config)
 	}
 }
@@ -93,13 +117,13 @@ func TestAConfigSurvivesBeingWrittenDown(t *testing.T) {
 	t.Parallel()
 
 	at := filepath.Join(t.TempDir(), "kernel.yaml")
-	original := app.NewConfig("/tmp/store.db", "somewhere", "0.0.0.0:9999", 16)
+	original := config.NewLocal("somewhere", "0.0.0.0:9999", "/tmp/store.db", 16, "root.s3cret")
 
-	if err := app.WriteConfig(at, original); err != nil {
+	if err := config.Write(at, original); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	back, err := app.ReadConfig(at)
+	back, err := config.Read(at)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -114,12 +138,12 @@ func TestAConfigSurvivesBeingWrittenDown(t *testing.T) {
 func TestStartingIsSafeToRepeat(t *testing.T) {
 	t.Parallel()
 
-	config := write(t, "", free(t))
+	on := write(t, free(t))
 	ctx := context.Background()
 
-	first := open(t, config)
+	first := open(t, on)
 
-	head, err := first.Kernel().Definition(ctx, auth.RoleKind)
+	head, err := own(t, first).Definition(ctx, auth.RoleKind)
 	if err != nil {
 		t.Fatalf("definition: %v", err)
 	}
@@ -132,9 +156,9 @@ func TestStartingIsSafeToRepeat(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	second := open(t, config)
+	second := open(t, on)
 
-	head, err = second.Kernel().Definition(ctx, auth.RoleKind)
+	head, err = own(t, second).Definition(ctx, auth.RoleKind)
 	if err != nil {
 		t.Fatalf("definition: %v", err)
 	}
@@ -151,14 +175,14 @@ func TestAKernelReportsWhatItIsRunningWith(t *testing.T) {
 	t.Parallel()
 
 	at := free(t)
-	running := open(t, write(t, "", at))
+	running := open(t, write(t, at))
 
-	id, err := app.KernelId("local")
+	id, err := report.Id("local")
 	if err != nil {
 		t.Fatalf("id: %v", err)
 	}
 
-	stored, err := running.Kernel().Get(context.Background(), id)
+	stored, err := own(t, running).Get(context.Background(), id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -204,16 +228,17 @@ func TestChangingTheAddressMovesTheSocket(t *testing.T) {
 	defer cancel()
 
 	first := free(t)
-	config := write(t, "", first)
-	running := open(t, config)
+	on := write(t, first)
+	running := open(t, on)
 
-	endpoint := running.Endpoint(discard())
+	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{},
+		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
 	waitUntil(t, func() bool { return listening(first) }, "nothing answered on the first address")
 
 	second := free(t)
-	rewrite(t, config, second)
+	rewrite(t, on, second)
 
 	waitUntil(t, func() bool { return listening(second) }, "nothing answered on the second address")
 	waitUntil(t, func() bool { return !listening(first) }, "the first address was still answering")
@@ -231,15 +256,16 @@ func TestAnAddressThatWillNotBindIsWaitedOn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := write(t, "", "256.0.0.1:1")
-	running := open(t, config)
+	on := write(t, "256.0.0.1:1")
+	running := open(t, on)
 
-	endpoint := running.Endpoint(discard())
+	endpoint := server.New(running, graphenepbv1.UnimplementedKernelServiceServer{},
+		hv1.UnimplementedHealthServer{}, discard())
 	workers := start(ctx, endpoint, running)
 
 	// It did not come up, and it did not die either.
 	working := free(t)
-	rewrite(t, config, working)
+	rewrite(t, on, working)
 
 	waitUntil(t, func() bool { return listening(working) },
 		"a corrected address never took effect")
@@ -248,12 +274,12 @@ func TestAnAddressThatWillNotBindIsWaitedOn(t *testing.T) {
 	workers()
 }
 
-func discard() *slog.Logger {
+func discard() *xlog.Logger {
 	if os.Getenv("LOUD") != "" {
-		return slog.New(slog.NewTextHandler(os.Stderr, nil))
+		return xlog.NewConsole(xlog.WithWriter(os.Stderr))
 	}
 
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return xlog.New(xlog.NopCore{})
 }
 
 // free finds an address nothing is using.
@@ -280,7 +306,7 @@ func free(t *testing.T) string {
 // A WaitGroup and not a channel of three: ranging over a channel reads
 // until it CLOSES, so counting on it to yield exactly three is a hang
 // waiting for a fourth that nobody sends. This test hung on that once.
-func start(ctx context.Context, endpoint *app.Endpoint, running *app.App) func() {
+func start(ctx context.Context, endpoint *server.Endpoint, running *app.App) func() {
 	var workers sync.WaitGroup
 
 	run := func(worker func()) {
@@ -295,7 +321,7 @@ func start(ctx context.Context, endpoint *app.Endpoint, running *app.App) func()
 
 	run(func() { _ = endpoint.Serve(ctx) })
 	run(func() { _ = endpoint.Rebind(ctx) })
-	run(func() { _ = running.Watch(ctx, discard()) })
+	run(func() { _ = app.Watch(ctx, running, discard()) })
 
 	return workers.Wait
 }
@@ -311,5 +337,104 @@ func waitUntil(t *testing.T, ready func() bool, complaint string) {
 			t.Fatal(complaint)
 		default:
 		}
+	}
+}
+
+// A kernel makes its first caller once, and writes the credential into
+// its own file.
+//
+// ONE FILE PER KERNEL: the credential goes where the store it belongs to
+// is named. And once — a kernel restarting is not a reason to mint a new
+// one and quietly invalidate what an operator saved.
+func TestTheFirstCallerIsWrittenIntoTheFile(t *testing.T) {
+	t.Parallel()
+
+	on := write(t, free(t))
+
+	first := open(t, on)
+
+	local, keeps := first.Config().Local()
+	if !keeps {
+		t.Fatal("a local kernel came back keeping no store")
+	}
+
+	token := local.Token()
+	if token == "" {
+		t.Fatal("a fresh store came up with no first caller")
+	}
+
+	// The file says it too, which is the half that survives a restart.
+	back, err := config.Read(on.path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	written, _ := back.Local()
+	if written.Token() != token {
+		t.Fatalf("the file says %q, the kernel says %q", written.Token(), token)
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	second := open(t, on)
+
+	again, _ := second.Config().Local()
+	if again.Token() != token {
+		t.Fatalf("starting again minted %q over %q", again.Token(), token)
+	}
+}
+
+// A credential written into the file BEFORE the first start is the one
+// the store gets, which is how a kernel is installed with something
+// somebody already knows.
+func TestAGivenCredentialIsTheOneMade(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	on := written{
+		path:  filepath.Join(dir, "kernel.yaml"),
+		store: filepath.Join(dir, "kernel.db"),
+	}
+
+	given := "root.chosen-in-advance"
+
+	if err := config.Write(on.path,
+		config.NewLocal("local", free(t), on.store, 0, given)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	running := open(t, on)
+
+	local, _ := running.Config().Local()
+	if local.Token() != given {
+		t.Fatalf("the kernel replaced the credential with %q", local.Token())
+	}
+
+	// And it works: the identity in the store answers to it.
+	name, secret, err := auth.Split(given)
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	who, err := auth.NewPrincipal(name)
+	if err != nil {
+		t.Fatalf("principal: %v", err)
+	}
+
+	id, err := auth.IdentityId(who)
+	if err != nil {
+		t.Fatalf("identity id: %v", err)
+	}
+
+	stored, err := own(t, running).Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("the given identity was never made: %v", err)
+	}
+
+	digests, _ := stored.Value.Spec().Field(auth.DigestsField).AsList()
+	if len(digests) != 1 || digests[0].GetStringValue() != auth.Digest(secret) {
+		t.Fatalf("the identity does not know the given secret")
 	}
 }

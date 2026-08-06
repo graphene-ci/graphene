@@ -1,4 +1,4 @@
-package wire
+package api
 
 import (
 	"context"
@@ -33,25 +33,25 @@ const (
 // else who holds no grant — which is the same answer, given in the same
 // words, and does not tell an anonymous caller whether the name they
 // guessed exists.
-func (s *Server) identify(ctx context.Context) (auth.Principal, error) {
+func (s *Service) identify(ctx context.Context) (auth.Principal, error) {
 	token, found := bearer(ctx)
 	if !found {
 		return "", nil
 	}
 
-	name, secret, err := split(token)
+	name, secret, err := auth.Split(token)
 	if err != nil {
 		return "", err
 	}
 
 	who, err := auth.NewPrincipal(name)
 	if err != nil {
-		return "", ErrMalformedToken
+		return "", auth.ErrMalformedToken
 	}
 
 	id, err := auth.IdentityId(who)
 	if err != nil {
-		return "", ErrMalformedToken
+		return "", auth.ErrMalformedToken
 	}
 
 	stored, err := s.kernel.Get(ctx, id)
@@ -60,14 +60,14 @@ func (s *Server) identify(ctx context.Context) (auth.Principal, error) {
 		// are the same answer. Telling them apart would turn the login
 		// into a way to find out who is registered.
 		if errors.Is(err, store.ErrNotFound) {
-			return "", ErrBadToken
+			return "", auth.ErrBadToken
 		}
 
 		return "", err
 	}
 
-	if !matches(secret, digestsOf(stored.Value.Spec())) {
-		return "", ErrBadToken
+	if !auth.Matches(secret, digestsOf(stored.Value.Spec())) {
+		return "", auth.ErrBadToken
 	}
 
 	return who, nil

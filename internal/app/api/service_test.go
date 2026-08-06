@@ -1,13 +1,12 @@
-package wire_test
+package api_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net"
 	"testing"
 
 	"github.com/gopherex/schemapb/go/schemapb"
+	"github.com/gopherex/xlog"
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/graphene-ci/graphene/internal/app/api"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/convert"
 	"github.com/graphene-ci/graphene/internal/kernel"
@@ -24,7 +24,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/types/path"
 	"github.com/graphene-ci/graphene/internal/types/resource"
 	"github.com/graphene-ci/graphene/internal/types/revision"
-	"github.com/graphene-ci/graphene/internal/wire"
 )
 
 // The secret half of the tokens these tests carry. The name half is
@@ -65,7 +64,7 @@ func dial(t *testing.T) (graphenepbv1.KernelServiceClient, kernel.Kernel) {
 	}
 
 	server := grpc.NewServer()
-	graphenepbv1.RegisterKernelServiceServer(server, wire.New(auth.New(k), k, discard(t)))
+	graphenepbv1.RegisterKernelServiceServer(server, api.New(auth.New(k), k, discard(t)))
 
 	go func() { _ = server.Serve(listener) }()
 
@@ -111,7 +110,7 @@ func grant(t *testing.T, k kernel.Kernel, name string, grants ...any) {
 
 	write(t, k, id, map[string]any{
 		"roles":   []any{name},
-		"digests": []any{wire.Digest(secret)},
+		"digests": []any{auth.Digest(secret)},
 	})
 }
 
@@ -350,8 +349,8 @@ func TestAStaleWriteIsAborted(t *testing.T) {
 // discard is where a server's log goes in a test: nowhere. What is being
 // checked is what a CALLER is told, and the log is deliberately the other
 // half of that — the half a caller never sees.
-func discard(t *testing.T) *slog.Logger {
+func discard(t *testing.T) *xlog.Logger {
 	t.Helper()
 
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return xlog.New(xlog.NopCore{})
 }

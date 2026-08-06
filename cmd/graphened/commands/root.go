@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/graphene-ci/graphene/internal/app"
+	"github.com/graphene-ci/graphene/internal/app/config"
 )
 
 // version is what this build calls itself, stamped at link time.
@@ -35,10 +35,12 @@ func Root() *cobra.Command {
 		Version:       version,
 	}
 
-	root.PersistentFlags().StringVar(&configPath, "config", app.DefaultConfigPath(),
+	root.PersistentFlags().StringVar(&configPath, "config", config.DefaultPath(),
 		"the file the kernel is configured by")
 
 	root.AddCommand(runCommand())
+	root.AddCommand(configureCommand())
+	root.AddCommand(serviceCommands()...)
 
 	return root
 }

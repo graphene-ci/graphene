@@ -1,4 +1,4 @@
-package wire
+package auth
 
 import (
 	"crypto/sha256"
@@ -36,8 +36,8 @@ var (
 	ErrBadToken = errors.New("token does not match")
 )
 
-// split takes a token apart.
-func split(token string) (name, secret string, err error) {
+// Split takes a token apart.
+func Split(token string) (name, secret string, err error) {
 	name, secret, found := strings.Cut(strings.TrimSpace(token), separator)
 	if !found || name == "" || secret == "" {
 		return "", "", ErrMalformedToken
@@ -58,13 +58,13 @@ func Digest(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// matches reports whether a secret is one of the ones an identity knows.
+// Matches reports whether a secret is one of the ones an identity knows.
 //
 // Constant time, and per candidate rather than short-circuiting on the
 // first mismatch. Comparing digests with == would leak how much of one
 // matched through how long the comparison took, and an attacker who can
 // measure that can find a digest one byte at a time.
-func matches(secret string, digests []string) bool {
+func Matches(secret string, digests []string) bool {
 	want := []byte(Digest(secret))
 	found := false
 

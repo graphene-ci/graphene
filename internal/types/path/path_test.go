@@ -234,6 +234,54 @@ func TestShapeIsPartOfThePath(t *testing.T) {
 	}
 }
 
+// A prefix has two legal spellings and both name the same subtree.
+//
+// Built here it keeps the whole shape and fills fewer positions; decoded
+// from a message it names only the positions that were filled, because
+// that is all a filled path carries. Comparing shapes for EQUALITY made
+// the second one match nothing — which, since that is the spelling every
+// request arrives in, refused every subtree anybody ever asked for.
+func TestAPrefixIsTheSameSubtreeSpeltEitherWay(t *testing.T) {
+	t.Parallel()
+
+	whole := path.MustNewTPath("tenant", "name")
+
+	under, err := whole.New("acme", "k1")
+	if err != nil {
+		t.Fatalf("under: %v", err)
+	}
+
+	// Fewer values, whole shape: how a prefix is built here.
+	kept, err := whole.New("acme")
+	if err != nil {
+		t.Fatalf("kept: %v", err)
+	}
+
+	// As many names as values: how one comes back off the wire.
+	truncated, err := path.MustNewTPath("tenant").New("acme")
+	if err != nil {
+		t.Fatalf("truncated: %v", err)
+	}
+
+	for name, prefix := range map[string]path.Path{"kept": kept, "truncated": truncated} {
+		if !under.HasPrefix(prefix) {
+			t.Fatalf("%s: %s was not under %s", name, under, prefix)
+		}
+	}
+
+	// Agreeing as far as they go is the whole of the relaxation: a shape
+	// that says something different where they overlap is still a
+	// different shape, and covers nothing.
+	elsewhere, err := path.MustNewTPath("env").New("acme")
+	if err != nil {
+		t.Fatalf("elsewhere: %v", err)
+	}
+
+	if under.HasPrefix(elsewhere) {
+		t.Fatalf("%s counted as being under a differently shaped %s", under, elsewhere)
+	}
+}
+
 // A written path is split back into the same one, which is only safe
 // because '/' is a character a value may never contain.
 func TestParseIsTheInverseOfString(t *testing.T) {

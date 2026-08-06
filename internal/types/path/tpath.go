@@ -142,6 +142,26 @@ func (t TPath) Eq(other TPath) bool {
 	return slices.Equal(t.names, other.names)
 }
 
+// Agrees reports two shapes naming their positions the same way as far as
+// both of them go.
+//
+// This is weaker than Eq on purpose, and it is what a PREFIX needs. A
+// prefix built here keeps the whole shape and fills fewer positions, but
+// one that arrived over the wire carries only the positions it filled —
+// the message has no room for the rest — so the two spellings of
+// "everything under /local" are (kernel, name) with one value and
+// (kernel) with one value. Demanding Eq refuses the second, which means
+// refusing every subtree a caller ever asks for.
+//
+// Where they overlap they must MATCH. Two kinds shaping their paths
+// differently are still two different things, and a shape that disagrees
+// at the first position is not a shorter version of anything.
+func (t TPath) Agrees(other TPath) bool {
+	shared := min(len(t.names), len(other.names))
+
+	return slices.Equal(t.names[:shared], other.names[:shared])
+}
+
 func (t TPath) String() string {
 	result := make([]string, len(t.names))
 	for i, v := range t.names {

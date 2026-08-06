@@ -81,6 +81,23 @@ var verbNames = map[Verb]string{
 	Undefine: "undefine",
 }
 
+// Verbs is every verb there is, in the order they are declared.
+//
+// One list, derived from the one place a verb's spelling lives, so a verb
+// added to the kernel and to the names below is covered here without
+// anybody remembering to come back.
+func Verbs() []Verb {
+	all := make([]Verb, 0, len(verbNames))
+
+	for verb := Get; verb <= Undefine; verb++ {
+		if _, named := verbNames[verb]; named {
+			all = append(all, verb)
+		}
+	}
+
+	return all
+}
+
 // ParseVerb reads a verb from a grant.
 //
 // An unknown verb is refused rather than ignored. A grant nobody can

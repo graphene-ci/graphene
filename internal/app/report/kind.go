@@ -1,4 +1,4 @@
-package app
+package report
 
 import (
 	"github.com/gopherex/schemapb/go/schemapb"
@@ -32,12 +32,13 @@ import (
 // silent zero. The reader no longer has to guess how the writer spelled a
 // number, only what it meant.
 const (
-	osField      = "os"
-	archField    = "arch"
-	versionField = "version"
-	listenField  = "listen"
-	storeField   = "store"
-	cacheField   = "cache"
+	osField       = "os"
+	archField     = "arch"
+	versionField  = "version"
+	listenField   = "listen"
+	storeField    = "store"
+	cacheField    = "cache"
+	upstreamField = "upstream"
 )
 
 // KernelKind names the record a kernel keeps about itself.
@@ -51,7 +52,7 @@ var (
 	KernelShape = path.MustNewTPath("kernel")
 )
 
-// Kernel is the definition of a kernel's own record.
+// Definition is what a kernel's own record is shaped like.
 //
 // The SPEC IS EMPTY, and that is the whole design rather than an omission.
 // A kernel is configured by a file, so nothing about it is anybody's to
@@ -63,7 +64,7 @@ var (
 // and a fleet can be asked how it is configured over the same API as
 // everything else. Being told and reporting are different directions, and
 // only one of them can be locked out.
-func Kernel() def.Definition {
+func Definition() def.Definition {
 	return def.MustNew(
 		KernelKind,
 		KernelShape,
@@ -77,13 +78,14 @@ func Kernel() def.Definition {
 				schemapb.Str(listenField),
 				schemapb.Str(storeField),
 				schemapb.UInt64(cacheField),
+				schemapb.Str(upstreamField),
 			).
 			MustBuild()),
 	)
 }
 
-// KernelId addresses one kernel's record.
-func KernelId(name string) (resource.Id, error) {
+// Id addresses one kernel's record.
+func Id(name string) (resource.Id, error) {
 	at, err := KernelShape.New(name)
 	if err != nil {
 		return resource.Id{}, err

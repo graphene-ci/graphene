@@ -1,4 +1,4 @@
-package wire
+package api
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 )
 
 // Get reads one resource.
-func (s *Server) Get(
+func (s *Service) Get(
 	ctx context.Context,
 	request *graphenepbv1.GetRequest,
 ) (*graphenepbv1.GetResponse, error) {
@@ -38,7 +38,7 @@ func (s *Server) Get(
 // The walk runs in the goroutine grpc-go already gave this call. That is
 // why the kernel's watch is pulled rather than pushed: nothing here has
 // to start anything, so a stream is a loop and not a fan-out.
-func (s *Server) List(
+func (s *Service) List(
 	request *graphenepbv1.ListRequest,
 	out graphenepbv1.KernelService_ListServer,
 ) error {
@@ -68,7 +68,7 @@ func (s *Server) List(
 }
 
 // Watch follows changes under an id, delivering no snapshot.
-func (s *Server) Watch(
+func (s *Service) Watch(
 	request *graphenepbv1.WatchRequest,
 	out graphenepbv1.KernelService_WatchServer,
 ) error {
@@ -104,7 +104,7 @@ func (s *Server) Watch(
 }
 
 // Revision is the cursor to take before a snapshot.
-func (s *Server) Revision(
+func (s *Service) Revision(
 	ctx context.Context,
 	_ *graphenepbv1.RevisionRequest,
 ) (*graphenepbv1.RevisionResponse, error) {
@@ -122,7 +122,7 @@ func (s *Server) Revision(
 }
 
 // Holders is what points at a resource, and what those pointers mean.
-func (s *Server) Holders(
+func (s *Service) Holders(
 	ctx context.Context,
 	request *graphenepbv1.HoldersRequest,
 ) (*graphenepbv1.HoldersResponse, error) {
@@ -154,7 +154,7 @@ func (s *Server) Holders(
 }
 
 // Put writes what an author asked for.
-func (s *Server) Put(
+func (s *Service) Put(
 	ctx context.Context,
 	request *graphenepbv1.PutRequest,
 ) (*graphenepbv1.PutResponse, error) {
@@ -182,7 +182,7 @@ func (s *Server) Put(
 }
 
 // Report records what a controller found.
-func (s *Server) Report(
+func (s *Service) Report(
 	ctx context.Context,
 	request *graphenepbv1.ReportRequest,
 ) (*graphenepbv1.ReportResponse, error) {
@@ -205,7 +205,7 @@ func (s *Server) Report(
 }
 
 // Claim places a claim on a resource's deletion.
-func (s *Server) Claim(
+func (s *Service) Claim(
 	ctx context.Context,
 	request *graphenepbv1.ClaimRequest,
 ) (*graphenepbv1.ClaimResponse, error) {
@@ -228,7 +228,7 @@ func (s *Server) Claim(
 }
 
 // Release lets go of one.
-func (s *Server) Release(
+func (s *Service) Release(
 	ctx context.Context,
 	request *graphenepbv1.ReleaseRequest,
 ) (*graphenepbv1.ReleaseResponse, error) {
@@ -251,7 +251,7 @@ func (s *Server) Release(
 }
 
 // Delete asks a resource to go away.
-func (s *Server) Delete(
+func (s *Service) Delete(
 	ctx context.Context,
 	request *graphenepbv1.DeleteRequest,
 ) (*graphenepbv1.DeleteResponse, error) {
@@ -274,7 +274,7 @@ func (s *Server) Delete(
 }
 
 // claim reads the two things a claim and a release both name.
-func (s *Server) claim(
+func (s *Service) claim(
 	id *graphenepbv1.Id,
 	finalizer string,
 ) (resource.Id, resource.Finalizer, error) {
