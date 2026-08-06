@@ -168,10 +168,22 @@ linters:
         - empty
         - stdlib
         - generic
-        # hexagonal factories: adapters legitimately return core ports
-        - github.com/graphene-ci/graphene/internal/core
+        # Adapters legitimately return the ports they implement, and the
+        # ports live beside the domain they belong to rather than under one
+        # directory named after the pattern.
+        - github.com/graphene-ci/graphene/internal/blob
+        - github.com/graphene-ci/graphene/internal/store
+        - github.com/graphene-ci/graphene/internal/kernel
     lll:
       line-length: 120
+    revive:
+      rules:
+        # This codebase writes Id, not ID — resource.Id, blob.Id, kind.Id
+        # — and a convention held everywhere is worth more than the one Go
+        # started with and never applied to its own url.URL. Everything
+        # else revive checks stays on.
+        - name: var-naming
+          disabled: true
     misspell:
       locale: US
       # CANCELLED — pb constant name (wire contract), not renameable.
