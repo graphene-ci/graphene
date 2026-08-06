@@ -159,6 +159,22 @@ func (s Session) Define(ctx context.Context, definition def.Definition) (def.Hea
 	return s.guard.kernel.Define(ctx, definition)
 }
 
+// May answers a kind-level question about something that is NOT a
+// resource.
+//
+// Everywhere else in this package permission is the method, because every
+// method is a thing the kernel does. The byte store is not the kernel: it
+// has ids rather than paths, no revisions, and nothing to confine a
+// prefix to. Wrapping it needs a way to ask, and this is that way — the
+// kind name is a capability there rather than a shape.
+//
+// It stays deliberately narrow. There is no path, so nothing that HAS a
+// path should come through here: a caller reaching for it to check a
+// resource is a caller working around the methods above.
+func (s Session) May(ctx context.Context, verb Verb, named kind.Kind) error {
+	return s.allowKind(ctx, verb, named)
+}
+
 // Undefine removes a kind and every version of it.
 func (s Session) Undefine(ctx context.Context, named kind.Kind) error {
 	if err := s.allowKind(ctx, Undefine, named); err != nil {

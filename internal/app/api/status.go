@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/store"
 	"github.com/graphene-ci/graphene/internal/store/kv"
@@ -65,6 +66,14 @@ var known = []struct {
 	{kv.ErrLagged, codes.OutOfRange},
 
 	{store.ErrNotFound, codes.NotFound},
+	{blob.ErrNotFound, codes.NotFound},
+
+	// The bytes are not what they were said to be. Two faults and two
+	// codes, because the answers differ: corrupted content is DataLoss
+	// and cannot be fixed by sending the same thing again, while a count
+	// that disagrees is the caller's arithmetic and is InvalidArgument.
+	{blob.ErrChecksumMismatch, codes.DataLoss},
+	{blob.ErrSizeMismatch, codes.InvalidArgument},
 
 	// The request was well formed and the world was not ready for it.
 	// Nothing about the request would be different next time; something

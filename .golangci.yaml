@@ -119,11 +119,23 @@ linters:
         # code and message the client is meant to see.
         - status.Error(
       ignore-package-globs:
-        # cmdflags errors already name the flag; wrapping again adds nothing
-        - github.com/graphene-ci/graphene/internal/utils/cmdflags
+        # This module's own errors already carry this module's vocabulary.
+        # wrapcheck exists to stop a foreign error arriving naked; an error
+        # from our own port has a name we chose and a package that says
+        # where it came from, and wrapping it again produces "blob: blob:
+        # not found" — noise that makes the real prefix harder to see.
+        #
+        # It is deliberately the whole module rather than a list, because
+        # the alternative is a list that has to be edited every time a
+        # package is added and is silently wrong until somebody notices.
+        - github.com/graphene-ci/graphene/internal/*
       ignore-interface-regexps:
         # grpc stream Send errors are transport conditions passed through.
         - ^google\.golang\.org/grpc
+        # A guard, a session, a cache: each is a wrapper whose whole job is
+        # to pass through what it wraps. An error decorated on the way out
+        # of one says only that it went through, which the caller knows.
+        - ^github\.com/graphene-ci/graphene/internal
     exhaustive:
       # maps here are partial by design (message templates, format
       # extensions); only switches must be exhaustive.

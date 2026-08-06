@@ -15,7 +15,20 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"github.com/graphene-ci/graphene/internal/types/kind"
 )
+
+// Kind is what a grant over the byte store names.
+//
+// Blobs are not resources and this kind has no definition: nothing is
+// stored under it and nothing can be. It exists because permission has to
+// be SAID somewhere, and the vocabulary for saying it is already kinds
+// and verbs — inventing a second one for the one thing that is not a
+// resource would mean two permission systems to reason about.
+//
+//nolint:gochecknoglobals // a validated value cannot be a const; treated as one
+var Kind = kind.MustNew("Blob")
 
 var (
 	// ErrNotFound — nothing is stored under that id.
