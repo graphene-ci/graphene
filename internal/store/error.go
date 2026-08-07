@@ -42,3 +42,11 @@ var (
 // One check here covers every codec, which is why it is here and not
 // repeated in each of them.
 var ErrNotStorable = errors.New("value does not name one record")
+
+// ErrNoWatchInTransaction — a watch was asked for from inside one.
+//
+// Not an oversight in the implementation. A transaction is a moment and a
+// watch is the stream of moments after one; asking for it from inside is
+// asking for changes that have not happened yet, from a view that could
+// not see them if they had.
+var ErrNoWatchInTransaction = errors.New("a watch cannot be opened inside a transaction")

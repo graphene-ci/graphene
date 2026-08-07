@@ -39,6 +39,10 @@ import (
 // state is all in the byte store underneath, which is where the mutex
 // lives. A Kernel copied is a Kernel that talks to the same store.
 type Kernel struct {
+	// bytes is the store itself, kept for the one thing the typed views
+	// cannot do: begin a transaction.
+	bytes kv.Store
+
 	heads     store.Store[def.Head]
 	published store.Store[def.Published]
 	resources store.Store[resource.Resource]
@@ -51,10 +55,39 @@ type Kernel struct {
 // codec.Definition write the same message and differ only in Id.
 func New(bytes kv.Store) Kernel {
 	return Kernel{
+		bytes:     bytes,
 		heads:     store.New(bytes, codec.Head{}),
 		published: store.New(bytes, codec.Definition{}),
 		resources: store.New(bytes, codec.Resource{}),
 	}
+}
+
+// change runs work as ONE change: everything it reads and everything it
+// writes is the same moment.
+//
+// This is what makes a check a guarantee rather than a hope. A rule about
+// more than one record — "refuse to point at what is not there", "refuse
+// to remove what is pointed at" — is correct only when nothing can land
+// between the reading and the writing, and outside a transaction
+// something always can.
+//
+// The kernel handed to the work is THIS kernel bound to the transaction:
+// every method it has means the same thing inside as outside, and none of
+// them had to be written twice. What it cannot do is watch, and the store
+// says so in those words.
+func (k Kernel) change(ctx context.Context, work func(inside Kernel) error) error {
+	return k.bytes.Do(ctx, func(tx kv.Tx) error {
+		return work(k.in(tx))
+	})
+}
+
+// in is this kernel, reading and writing through one transaction.
+func (k Kernel) in(tx kv.Tx) Kernel {
+	k.heads = store.New(tx, codec.Head{})
+	k.published = store.New(tx, codec.Definition{})
+	k.resources = store.New(tx, codec.Resource{})
+
+	return k
 }
 
 // Revision is the store-wide revision as of now.

@@ -52,30 +52,41 @@ func (k Kernel) Put(
 		return revision.None, resource.ErrNoIntent
 	}
 
-	head, err := k.Definition(ctx, intent.Id().Kind())
+	var at revision.Revision
+
+	err := k.change(ctx, func(inside Kernel) error {
+		head, err := inside.Definition(ctx, intent.Id().Kind())
+		if err != nil {
+			return err
+		}
+
+		previous, err := inside.previous(ctx, intent.Id(), expect)
+		if err != nil {
+			return err
+		}
+
+		admitted, err := resource.Admit(head.Definition(), head.Version(), intent, previous)
+		if err != nil {
+			return err
+		}
+
+		if err := inside.checkOwnerHeld(head.Definition(), admitted, previous); err != nil {
+			return err
+		}
+
+		if err := inside.checkReferences(ctx, head.Definition(), admitted); err != nil {
+			return err
+		}
+
+		at, err = inside.resources.Put(ctx, admitted, expect)
+
+		return err
+	})
 	if err != nil {
 		return revision.None, err
 	}
 
-	previous, err := k.previous(ctx, intent.Id(), expect)
-	if err != nil {
-		return revision.None, err
-	}
-
-	admitted, err := resource.Admit(head.Definition(), head.Version(), intent, previous)
-	if err != nil {
-		return revision.None, err
-	}
-
-	if err := k.checkOwnerHeld(head.Definition(), admitted, previous); err != nil {
-		return revision.None, err
-	}
-
-	if err := k.checkReferences(ctx, head.Definition(), admitted); err != nil {
-		return revision.None, err
-	}
-
-	return k.resources.Put(ctx, admitted, expect)
+	return at, nil
 }
 
 // Claim places a claim on a resource's deletion.
@@ -165,25 +176,46 @@ func (k Kernel) Report(
 	status *schemapb.StructValue,
 	expect revision.Revision,
 ) (revision.Revision, error) {
-	current, err := k.held(ctx, id, expect)
+	var at revision.Revision
+
+	err := k.change(ctx, func(inside Kernel) error {
+		current, err := inside.held(ctx, id, expect)
+		if err != nil {
+			return err
+		}
+
+		// The version the resource was ADMITTED under, not the current
+		// one: a v1 resource reports a v1 status, and checking it against
+		// a v3 schema would refuse what was correct when it was written.
+		published, err := inside.DefinitionAt(ctx, id.Kind(), current.DefinitionVersion())
+		if err != nil {
+			return err
+		}
+
+		reported, err := resource.Report(published.Definition(), current, status)
+		if err != nil {
+			return err
+		}
+
+		// THE SAME INTEGRITY AS A SPEC WRITE. A definition may declare a
+		// reference in the status half — a controller saying what it
+		// found — and a reference is a reference whichever half it is
+		// written in. Checking one half and not the other would make
+		// "declared" mean two different things depending on where the
+		// field happened to sit.
+		if err := inside.checkReferences(ctx, published.Definition(), reported); err != nil {
+			return err
+		}
+
+		at, err = inside.resources.Put(ctx, reported, expect)
+
+		return err
+	})
 	if err != nil {
 		return revision.None, err
 	}
 
-	// The version the resource was ADMITTED under, not the current one: a
-	// v1 resource reports a v1 status, and checking it against a v3 schema
-	// would refuse what was correct when it was written.
-	published, err := k.DefinitionAt(ctx, id.Kind(), current.DefinitionVersion())
-	if err != nil {
-		return revision.None, err
-	}
-
-	reported, err := resource.Report(published.Definition(), current, status)
-	if err != nil {
-		return revision.None, err
-	}
-
-	return k.resources.Put(ctx, reported, expect)
+	return at, nil
 }
 
 // Delete removes a resource, or marks it and waits.
@@ -194,6 +226,28 @@ func (k Kernel) Report(
 // caller cannot choose, because the claims are the whole point of the
 // protocol and an override would be a way around somebody else's cleanup.
 func (k Kernel) Delete(ctx context.Context, id resource.Id, expect revision.Revision) (revision.Revision, error) {
+	var at revision.Revision
+
+	err := k.change(ctx, func(inside Kernel) error {
+		var err error
+
+		at, err = inside.remove(ctx, id, expect)
+
+		return err
+	})
+	if err != nil {
+		return revision.None, err
+	}
+
+	return at, nil
+}
+
+// remove is Delete with the transaction already open, which is also how
+// the cascade reaches a child: everything one delete touches is one
+// change, however deep it goes.
+func (k Kernel) remove(
+	ctx context.Context, id resource.Id, expect revision.Revision,
+) (revision.Revision, error) {
 	current, err := k.held(ctx, id, expect)
 	if err != nil {
 		return revision.None, err
@@ -244,8 +298,19 @@ func (k Kernel) collect(ctx context.Context, id resource.Id) error {
 			continue
 		}
 
-		if _, err := k.Delete(ctx, holder.Id, holder.Revision); err != nil {
+		if _, err := k.remove(ctx, holder.Id, holder.Revision); err != nil {
 			return fmt.Errorf("collect %s: %w", holder.Id, err)
+		}
+
+		// A CHILD THAT WAS ONLY MARKED IS STILL THERE. remove reports
+		// success either way — it did what a delete does — and taking
+		// that for "gone" would remove the parent out from under a child
+		// waiting on its own finalizers. That is the orphan the whole
+		// children-before-parents order exists to prevent.
+		if _, err := k.resources.Get(ctx, holder.Id); err == nil {
+			return fmt.Errorf("%w: %s is finalizing", ErrReferenced, holder.Id)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
 		}
 	}
 

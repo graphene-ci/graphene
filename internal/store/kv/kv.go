@@ -76,9 +76,16 @@ type Store interface {
 	// each. A watcher sees every write of a transaction or none of them,
 	// which is the property that was wanted.
 	//
-	// NOT REENTRANT. The Tx handed in is the only way to reach the store
-	// from inside; calling the store's own methods there is a deadlock,
-	// and calling Do is refused.
+	// NOT REENTRANT, AND IT DEADLOCKS RATHER THAN REFUSING. The lock is
+	// held for the whole of the work, so the Tx handed in is the only way
+	// to reach the store from inside — any of the store's own methods,
+	// including another Do, waits for a lock its own caller is holding.
+	//
+	// Said plainly because the failure is silent: a check accidentally
+	// left outside a transaction and called from within one does not
+	// return an error, it stops. Detecting it would need the identity of
+	// the calling goroutine, which Go does not hand out, and inventing a
+	// way to get it would be a worse thing to own than this sentence.
 	Do(ctx context.Context, work func(tx Tx) error) error
 
 	// Watch follows changes under prefix, starting after the given

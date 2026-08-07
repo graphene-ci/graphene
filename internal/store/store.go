@@ -29,12 +29,16 @@ import (
 // whichever of them finished first shut the ground out from under the
 // others. The byte store is closed by whoever opened it.
 type Store[T any] struct {
-	bytes kv.Store
+	// bytes is a Tx and not a Store, which is what lets the same typed
+	// store be built over a transaction: inside one, a typed view is the
+	// same code reading and writing the same way, through the moment
+	// rather than through the store.
+	bytes kv.Tx
 	codec Codec[T]
 }
 
-// New puts a codec on top of a byte store.
-func New[T any](bytes kv.Store, codec Codec[T]) Store[T] {
+// New puts a codec on top of a byte store, or on one transaction of it.
+func New[T any](bytes kv.Tx, codec Codec[T]) Store[T] {
 	return Store[T]{bytes: bytes, codec: codec}
 }
 
@@ -107,12 +111,20 @@ func (s Store[T]) Scan(ctx context.Context, prefix resource.Id) iter.Seq2[Value[
 
 // Watch follows changes under an id. It delivers no snapshot; see
 // kv.Store.Watch for why, and for the three lines that take one.
+// A watch cannot be opened on a store bound to a transaction, and the
+// refusal says so: a transaction is a moment, and a watch is the stream
+// of moments after one.
 func (s Store[T]) Watch(
 	ctx context.Context,
 	prefix resource.Id,
 	after revision.Revision,
 ) (Stream[T], error) {
-	stream, err := s.bytes.Watch(ctx, KeyOf(prefix), after)
+	watchable, can := s.bytes.(kv.Store)
+	if !can {
+		return Stream[T]{}, ErrNoWatchInTransaction
+	}
+
+	stream, err := watchable.Watch(ctx, KeyOf(prefix), after)
 	if err != nil {
 		return Stream[T]{}, fmt.Errorf("%s: %w", prefix, err)
 	}
