@@ -59,6 +59,7 @@ func Root() *cobra.Command {
 		deleteCommand(),
 		applyCommand(),
 		kindsCommand(),
+		undefineCommand(),
 		kernelsCommand(),
 	)
 

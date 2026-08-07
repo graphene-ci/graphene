@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -10,6 +11,40 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 )
+
+// undefineCommand removes a kind.
+//
+// It is under `kinds` and not beside `delete` because the two are
+// different in the way that matters: deleting a resource takes away one
+// thing, and undefining a kind takes away the possibility of that thing.
+// The kernel refuses while any instance is left, so this cannot be the
+// accident it reads like — but the words are worth putting where somebody
+// looking for them will read them first.
+func undefineCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "undefine <kind>",
+		Short: "Remove a kind and every version of it",
+		Long: "Take a kind away. The kernel refuses while any instance of " +
+			"it is left, so this cannot quietly orphan anything: delete " +
+			"the instances first, and the kind after.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			on, err := reached()
+			if err != nil {
+				return err
+			}
+
+			if _, err := on.Calls().Undefine(calling(command, on),
+				&graphenepbv1.UndefineRequest{Kind: args[0]}); err != nil {
+				return err
+			}
+
+			_, _ = fmt.Fprintf(command.OutOrStdout(), "%s is gone\n", args[0])
+
+			return nil
+		},
+	}
+}
 
 // kindsCommand lists what a kernel knows how to hold.
 //
