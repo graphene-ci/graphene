@@ -27,7 +27,6 @@ type Definition struct {
 	spec   SpecSchema
 	status StatusSchema
 	refs   []Ref
-	blobs  []path.FieldPath
 }
 
 // New builds a definition.
@@ -82,10 +81,6 @@ func New(
 		if err := built.checkRefField(ref); err != nil {
 			return Definition{}, fmt.Errorf("%s: %w", named, err)
 		}
-	}
-
-	if err := built.checkBlobs(); err != nil {
-		return Definition{}, fmt.Errorf("%s: %w", named, err)
 	}
 
 	return built, nil

@@ -202,6 +202,10 @@ func standing(t *testing.T, ctx context.Context) (kernel.Kernel, auth.Guard) {
 		t.Fatalf("publish: %v", err)
 	}
 
+	if _, err := k.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
 	if _, err := k.Define(ctx, process.Definition()); err != nil {
 		t.Fatalf("define process: %v", err)
 	}
@@ -231,7 +235,7 @@ func writeProcess(t *testing.T, ctx context.Context, k kernel.Kernel, id resourc
 	t.Helper()
 
 	intent, err := resource.NewIntent(id, schemapb.MustStructFromGo(map[string]any{
-		"blob":   "0123456789abcdef0123456789abcdef",
+		"blob":   storedBlob(t, ctx, k, "0123456789abcdef0123456789abcdef"),
 		"format": process.RawExec,
 	}))
 	if err != nil {
@@ -241,4 +245,39 @@ func writeProcess(t *testing.T, ctx context.Context, k kernel.Kernel, id resourc
 	if _, err := k.Put(ctx, intent, revision.Absent); err != nil {
 		t.Fatalf("put %s: %v", id, err)
 	}
+}
+
+// storedBlob defines the blob kind and records one, which is what a
+// Process needs before it can point at bytes.
+func storedBlob(t *testing.T, ctx context.Context, k kernel.Kernel, id string) string {
+	t.Helper()
+
+	if _, err := k.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
+	made, err := blob.NewId(id)
+	if err != nil {
+		t.Fatalf("blob id: %v", err)
+	}
+
+	at, err := blob.ResourceId(made)
+	if err != nil {
+		t.Fatalf("blob resource id: %v", err)
+	}
+
+	if _, err := k.Get(ctx, at); err == nil {
+		return id
+	}
+
+	intent, err := resource.NewIntent(at, blob.Said(blob.Info{Id: made}))
+	if err != nil {
+		t.Fatalf("intent: %v", err)
+	}
+
+	if _, err := k.Put(ctx, intent, revision.Absent); err != nil {
+		t.Fatalf("record blob: %v", err)
+	}
+
+	return id
 }

@@ -176,6 +176,9 @@ func Grants(kernel string) ([]any, error) {
 		granted = append(granted, grant(verb, process.Kind.String(), at))
 	}
 
+	// Bytes, read only, everywhere: an id is not a path, so there is no
+	// prefix that means "the bytes this kernel runs" — a kernel learns an
+	// id by reading a process it was given, and can read no other.
 	granted = append(granted, grant(auth.Get, blob.Kind.String(), ""))
 
 	return granted, nil

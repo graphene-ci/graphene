@@ -39,8 +39,8 @@ github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0 h1:ZBzE1R386gj+4aV1Oazss0w1
 github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0/go.mod h1:3JqbOdN8j/evP+p1/e4WidVvRzOypItDdhZu+MIuGTY=
 github.com/gopherex/xshutdown v1.0.0 h1:oXj0J3iNW+bOzyDbtVBS/p17b3U26loDuIxx2S1EXZc=
 github.com/gopherex/xshutdown v1.0.0/go.mod h1:VP9PHNALDhbpRtqDS67qP+M1PQKjj2MgokukD01KQUA=
-github.com/graphene-ci/graphenepb v0.0.0-20260807002600-b063120ecfb7 h1:MTVdwdVz+55geyl5WoImWYzOU3xqrUge1/blqb0yYtI=
-github.com/graphene-ci/graphenepb v0.0.0-20260807002600-b063120ecfb7/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
+github.com/graphene-ci/graphenepb v0.0.0-20260807110733-0705df57c818 h1:ibEY1wYvM0wRMn2ryq46C44/Xg+1CswUWwCdpw/vHHQ=
+github.com/graphene-ci/graphenepb v0.0.0-20260807110733-0705df57c818/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/kardianos/service v1.3.0 h1:/LGy+xPP2TM+GLTiCZ2di7cy0Jd/qrawlTUfqKYFdTI=

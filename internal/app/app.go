@@ -206,6 +206,12 @@ func (a *App) execute(
 	own kernel.Kernel,
 	log *xlog.Logger,
 ) error {
+	// The blob kind first: a Process points at one, and a kind cannot be
+	// declared before what it refers to.
+	if _, err := own.Define(ctx, blob.Definition()); err != nil {
+		return fmt.Errorf("define %s: %w", blob.Kind, err)
+	}
+
 	if _, err := own.Define(ctx, process.Definition()); err != nil {
 		return fmt.Errorf("define %s: %w", process.Kind, err)
 	}
@@ -224,7 +230,7 @@ func (a *App) execute(
 	closing := a.release
 	a.release = func() error { return errors.Join(bytes.Close(), closing()) }
 
-	a.bytes = api.NewBlobs(api.Guarded(bytes, guard, api.ByCredential(guard, own, log)), log)
+	a.bytes = api.NewBlobs(bytes, guard, api.ByCredential(guard, own, log), log)
 
 	a.agent = a.running(beside, process.Here(own), bytes,
 		gateway.Here(filepath.Join(beside, "doors"), guard, own, bytes, log), log)

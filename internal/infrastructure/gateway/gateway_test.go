@@ -214,6 +214,10 @@ func newWorld(ctx context.Context, t *testing.T, dir string) *world {
 		t.Fatalf("bootstrap: %v", err)
 	}
 
+	if _, err := own.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
 	if _, err := own.Define(ctx, process.Definition()); err != nil {
 		t.Fatalf("define process: %v", err)
 	}
@@ -277,6 +281,14 @@ func (w *world) process(ctx context.Context, name, identity string) {
 		w.t.Fatalf("blob id: %v", err)
 	}
 
+	// The record about the bytes, which a process points at.
+	at, err := blob.ResourceId(bytes)
+	if err != nil {
+		w.t.Fatalf("blob resource id: %v", err)
+	}
+
+	w.write(ctx, at, blob.Said(blob.Info{Id: bytes}))
+
 	w.put(ctx, id, map[string]any{
 		"blob":     bytes.String(),
 		"format":   process.RawExec,
@@ -287,7 +299,16 @@ func (w *world) process(ctx context.Context, name, identity string) {
 func (w *world) put(ctx context.Context, id resource.Id, spec map[string]any) {
 	w.t.Helper()
 
-	intent, err := resource.NewIntent(id, schemapb.MustStructFromGo(spec))
+	w.write(ctx, id, schemapb.MustStructFromGo(spec))
+}
+
+// write puts a spec that is already a value, which is what the blob
+// record is: its fields come from what the store said, not from a map
+// somebody typed.
+func (w *world) write(ctx context.Context, id resource.Id, spec *schemapb.StructValue) {
+	w.t.Helper()
+
+	intent, err := resource.NewIntent(id, spec)
 	if err != nil {
 		w.t.Fatalf("intent: %v", err)
 	}

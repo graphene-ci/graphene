@@ -14,10 +14,13 @@ import (
 	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
+	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/blob/blobtest"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob/fs"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob/remote"
+	"github.com/graphene-ci/graphene/internal/kernel"
+	"github.com/graphene-ci/graphene/internal/store/kv/memory"
 )
 
 // A store one hop away is a store. The same suite the filesystem passes,
@@ -49,9 +52,37 @@ func serve(t *testing.T) blobpb.BlobServiceClient {
 
 	t.Cleanup(func() { _ = store.Close() })
 
+	// A REAL kernel behind it, because the record is what decides now:
+	// what may be read, what exists, and what may be removed are all
+	// questions about a resource. Serving the bytes with nothing behind
+	// them would test a service this no longer is.
+	ctx := context.Background()
+
+	bytes := memory.New()
+
+	t.Cleanup(func() { _ = bytes.Close() })
+
+	k := kernel.New(bytes)
+	if err := auth.Bootstrap(ctx, k); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+
+	if _, err := k.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
+	if _, _, err := auth.Begin(ctx, k, ""); err != nil {
+		t.Fatalf("first identity: %v", err)
+	}
+
+	root, err := auth.NewPrincipal(auth.First)
+	if err != nil {
+		t.Fatalf("principal: %v", err)
+	}
+
 	server := grpc.NewServer()
-	blobpb.RegisterBlobServiceServer(server, api.NewBlobs(
-		func(context.Context) (blob.Store, error) { return store, nil },
+	blobpb.RegisterBlobServiceServer(server, api.NewBlobs(store, auth.New(k),
+		func(context.Context) (auth.Principal, error) { return root, nil },
 		xlog.New(xlog.NopCore{}),
 	))
 

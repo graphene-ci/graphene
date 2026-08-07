@@ -137,10 +137,8 @@ func Here(
 		// there for somebody else to run. Which of the two it may do is
 		// decided by the grants its identity holds, in one place, like
 		// everything else.
-		blobpb.RegisterBlobServiceServer(server, api.NewBlobs(
-			api.Guarded(bytes, guard, func(context.Context) (auth.Principal, error) {
-				return who, nil
-			}), log))
+		blobpb.RegisterBlobServiceServer(server, api.NewBlobs(bytes, guard,
+			func(context.Context) (auth.Principal, error) { return who, nil }, log))
 
 		return server
 	}, log)

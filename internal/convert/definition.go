@@ -31,11 +31,6 @@ func DefinitionToPb(published def.Published) *graphenepbv1.Definition {
 		refs = append(refs, refToPb(ref))
 	}
 
-	blobs := make([]string, 0, len(definition.Blobs()))
-	for _, field := range definition.Blobs() {
-		blobs = append(blobs, field.String())
-	}
-
 	return &graphenepbv1.Definition{
 		Kind:         definition.Kind().String(),
 		Version:      uint32(published.Version()),
@@ -43,7 +38,6 @@ func DefinitionToPb(published def.Published) *graphenepbv1.Definition {
 		SpecSchema:   definition.Spec().Schema,
 		StatusSchema: definition.Status().Schema,
 		Refs:         refs,
-		Blobs:        blobs,
 	}
 }
 
@@ -76,24 +70,12 @@ func DefinitionFromPb(message *graphenepbv1.Definition) (def.Published, error) {
 		refs = append(refs, ref)
 	}
 
-	blobs := make([]path.FieldPath, 0, len(message.GetBlobs()))
-
-	for _, raw := range message.GetBlobs() {
-		field, err := path.ParseFieldPath(raw)
-		if err != nil {
-			return def.Published{}, fmt.Errorf("%s: blob field: %w", named, err)
-		}
-
-		blobs = append(blobs, field)
-	}
-
 	definition, err := def.New(
 		named,
 		shape,
 		def.Spec(message.GetSpecSchema()),
 		def.Status(message.GetStatusSchema()),
 		def.Reference(refs...),
-		def.Bytes(blobs...),
 	)
 	if err != nil {
 		return def.Published{}, err

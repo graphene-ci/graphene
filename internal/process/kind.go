@@ -16,6 +16,7 @@ import (
 	"github.com/gopherex/schemapb/go/schemapb"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/types/def"
 	"github.com/graphene-ci/graphene/internal/types/kind"
 	"github.com/graphene-ci/graphene/internal/types/path"
@@ -98,6 +99,17 @@ func Definition() def.Definition {
 		panic("process definition: " + err.Error())
 	}
 
+	// The bytes are a REFERENCE and not a string that happens to hold an
+	// id. That is what makes them real to the kernel: a process cannot
+	// name bytes nobody stored, and the bytes cannot be removed while
+	// something is running them. It is also what lets a manifest name a
+	// file and have it uploaded on the way in.
+	bytes, err := def.NewRef(
+		mustFieldPath(def.SpecRoot, blobField), blob.Kind, def.Strong)
+	if err != nil {
+		panic("process definition: " + err.Error())
+	}
+
 	return def.MustNew(
 		Kind,
 		Shape,
@@ -137,11 +149,7 @@ func Definition() def.Definition {
 				schemapb.Int64(startsField),
 			).
 			MustBuild()),
-		def.Reference(identity),
-		// Where the bytes are, said in the definition rather than known
-		// by whatever writes a Process. It is what lets a manifest name a
-		// FILE and have it uploaded on the way in.
-		def.Bytes(mustFieldPath(def.SpecRoot, blobField)),
+		def.Reference(identity, bytes),
 	)
 }
 

@@ -10,9 +10,12 @@ import (
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
+	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/convert"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/process"
+	"github.com/graphene-ci/graphene/internal/types/resource"
+	"github.com/graphene-ci/graphene/internal/types/revision"
 )
 
 // A process holds no credential, so the kernel that started it says who
@@ -49,7 +52,7 @@ func writeProcess(t *testing.T, k kernel.Kernel, on, named, identity string) {
 	}
 
 	write(t, k, id, map[string]any{
-		"blob":     "0123456789abcdef0123456789abcdef",
+		"blob":     storedBlob(t, context.Background(), k, "0123456789abcdef0123456789abcdef"),
 		"format":   process.RawExec,
 		"identity": identity,
 	})
@@ -188,4 +191,39 @@ func TestAVouchForAProcessWithNoIdentityGrantsNothing(t *testing.T) {
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("a process running as nobody: got %v, want Unauthenticated", err)
 	}
+}
+
+// storedBlob defines the blob kind and records one, which is what a
+// Process needs before it can point at bytes.
+func storedBlob(t *testing.T, ctx context.Context, k kernel.Kernel, id string) string {
+	t.Helper()
+
+	if _, err := k.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
+	made, err := blob.NewId(id)
+	if err != nil {
+		t.Fatalf("blob id: %v", err)
+	}
+
+	at, err := blob.ResourceId(made)
+	if err != nil {
+		t.Fatalf("blob resource id: %v", err)
+	}
+
+	if _, err := k.Get(ctx, at); err == nil {
+		return id
+	}
+
+	intent, err := resource.NewIntent(at, blob.Said(blob.Info{Id: made}))
+	if err != nil {
+		t.Fatalf("intent: %v", err)
+	}
+
+	if _, err := k.Put(ctx, intent, revision.Absent); err != nil {
+		t.Fatalf("record blob: %v", err)
+	}
+
+	return id
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
@@ -73,6 +72,11 @@ func attached(
 
 // blobFields is which of a kind's spec fields hold bytes, by name.
 //
+// A reference to the Blob kind, read off the same declaration that says
+// what points at what. There is no second mechanism for "the bytes go
+// here": bytes are a resource, so a field that names one is a reference
+// like any other.
+//
 // Top-level names only, which is what a declared field path amounts to
 // here: `spec.blob` is the only shape anything declares, and a nested one
 // would need a manifest walk this does not do yet. A declaration deeper
@@ -86,13 +90,24 @@ func blobFields(ctx context.Context, on *client.Kernel, kind string) (map[string
 
 	fields := map[string]bool{}
 
-	for _, declared := range answer.GetDefinition().GetBlobs() {
-		head, rest, deeper := strings.Cut(strings.TrimPrefix(declared, "spec."), ".")
-		if deeper && rest != "" {
+	for _, ref := range answer.GetDefinition().GetRefs() {
+		if ref.GetKind() != blob.Kind.String() {
 			continue
 		}
 
-		fields[head] = true
+		// A field path is a list of names: ["spec", "blob"]. Anything
+		// deeper than that is a reference this cannot attach to — a
+		// manifest walk it does not do — and it is left out rather than
+		// half-honored, so a file offered for it is refused by name
+		// instead of quietly ignored.
+		const halfAndField = 2
+
+		named := ref.GetField()
+		if len(named) != halfAndField || named[0] != "spec" {
+			continue
+		}
+
+		fields[named[1]] = true
 	}
 
 	return fields, nil

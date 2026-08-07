@@ -149,6 +149,10 @@ func newWorld(t *testing.T, fetch process.Fetcher) *world {
 	t.Cleanup(func() { _ = bytes.Close() })
 
 	k := kernel.New(bytes)
+	if _, err := k.Define(ctx, blob.Definition()); err != nil {
+		t.Fatalf("define blob: %v", err)
+	}
+
 	if _, err := k.Define(ctx, process.Definition()); err != nil {
 		t.Fatalf("define: %v", err)
 	}
@@ -174,6 +178,12 @@ func newWorld(t *testing.T, fetch process.Fetcher) *world {
 func (w *world) put(name string, fields map[string]any) {
 	w.t.Helper()
 
+	// A process points at bytes with a strong reference, so the record
+	// about them has to exist before anything can name it.
+	if written, named := fields["blob"].(string); named {
+		w.recordBlob(written)
+	}
+
 	id, err := process.Id(kernelName, name)
 	if err != nil {
 		w.t.Fatalf("id: %v", err)
@@ -196,6 +206,33 @@ func (w *world) put(name string, fields map[string]any) {
 
 	if _, err := w.kernel.Put(w.ctx, intent, expect); err != nil {
 		w.t.Fatalf("put %s: %v", name, err)
+	}
+}
+
+// recordBlob writes down that these bytes exist, which is what a Process
+// pointing at them needs.
+func (w *world) recordBlob(id string) {
+	made, err := blob.NewId(id)
+	if err != nil {
+		w.t.Fatalf("blob id: %v", err)
+	}
+
+	at, err := blob.ResourceId(made)
+	if err != nil {
+		w.t.Fatalf("blob resource id: %v", err)
+	}
+
+	if _, err := w.kernel.Get(w.ctx, at); err == nil {
+		return
+	}
+
+	intent, err := resource.NewIntent(at, blob.Said(blob.Info{Id: made}))
+	if err != nil {
+		w.t.Fatalf("intent: %v", err)
+	}
+
+	if _, err := w.kernel.Put(w.ctx, intent, revision.Absent); err != nil {
+		w.t.Fatalf("record blob: %v", err)
 	}
 }
 
