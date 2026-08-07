@@ -36,35 +36,52 @@ func (k Kernel) Define(ctx context.Context, definition def.Definition) (def.Head
 		return def.Head{}, err
 	}
 
-	// A kind nobody has defined yet is not a failure here — it is the
-	// first version. head reports that as ErrNoSuchKind rather than
-	// passing the store's own ErrNotFound through, because everywhere
-	// else the difference matters.
-	current, err := k.head(ctx, definition.Kind())
-	if err != nil && !errors.Is(err, ErrNoSuchKind) {
-		return def.Head{}, err
-	}
+	var head def.Head
 
-	if !current.Value.IsZero() && current.Value.Definition().Eq(definition) {
-		return current.Value, nil
-	}
+	// TWO RECORDS, ONE CHANGE. A version and the head that points at it
+	// are not two writes that happen to follow each other: a head naming
+	// a version nobody published is a kind whose instances cannot be
+	// decoded, and the reverse is a version nothing reaches. The order
+	// used to be the whole mitigation; now there is no in-between to
+	// order.
+	err := k.change(ctx, func(inside Kernel) error {
+		// A kind nobody has defined yet is not a failure here — it is
+		// the first version. head reports that as ErrNoSuchKind rather
+		// than passing the store's own ErrNotFound through, because
+		// everywhere else the difference matters.
+		current, err := inside.head(ctx, definition.Kind())
+		if err != nil && !errors.Is(err, ErrNoSuchKind) {
+			return err
+		}
 
-	published, err := def.Publish(definition, current.Value.Version().Next())
+		if !current.Value.IsZero() && current.Value.Definition().Eq(definition) {
+			head = current.Value
+
+			return nil
+		}
+
+		published, err := def.Publish(definition, current.Value.Version().Next())
+		if err != nil {
+			return err
+		}
+
+		if _, err := inside.published.Put(ctx, published, revision.Absent); err != nil {
+			return fmt.Errorf("publish %s: %w", published, err)
+		}
+
+		head, err = def.NewHead(published)
+		if err != nil {
+			return err
+		}
+
+		if _, err := inside.heads.Put(ctx, head, current.Revision); err != nil {
+			return fmt.Errorf("make %s current: %w", published, err)
+		}
+
+		return nil
+	})
 	if err != nil {
 		return def.Head{}, err
-	}
-
-	if _, err := k.published.Put(ctx, published, revision.Absent); err != nil {
-		return def.Head{}, fmt.Errorf("publish %s: %w", published, err)
-	}
-
-	head, err := def.NewHead(published)
-	if err != nil {
-		return def.Head{}, err
-	}
-
-	if _, err := k.heads.Put(ctx, head, current.Revision); err != nil {
-		return def.Head{}, fmt.Errorf("make %s current: %w", published, err)
 	}
 
 	return head, nil
@@ -185,6 +202,16 @@ func (k Kernel) Kinds(ctx context.Context) iter.Seq2[def.Head, error] {
 // during the sweep leaves versions nobody can reach rather than a kind
 // whose current shape has disappeared from under it.
 func (k Kernel) Undefine(ctx context.Context, named kind.Kind) error {
+	// The count of instances, the head and every version, as one change.
+	// Checked separately, "no instances" is true when it is read and can
+	// be false by the time the head goes.
+	return k.change(ctx, func(inside Kernel) error {
+		return inside.undefine(ctx, named)
+	})
+}
+
+// undefine is Undefine with the transaction already open.
+func (k Kernel) undefine(ctx context.Context, named kind.Kind) error {
 	stored, err := k.head(ctx, named)
 	defined := err == nil
 
