@@ -17,7 +17,7 @@ import (
 func definition(t *testing.T) def.Definition {
 	t.Helper()
 
-	kind, err := kind.New("Process")
+	named, err := kind.New("Process")
 	if err != nil {
 		t.Fatalf("kind: %v", err)
 	}
@@ -35,7 +35,7 @@ func definition(t *testing.T) def.Definition {
 		Fields(schemapb.Str("phase")).
 		MustBuild())
 
-	built, err := def.New(kind, shape, spec, status)
+	built, err := def.New(named, shape, spec, status)
 	if err != nil {
 		t.Fatalf("definition: %v", err)
 	}

@@ -68,7 +68,11 @@ func edit(command *cobra.Command, at string) error {
 		chosen = fallbackEditor
 	}
 
-	editor := exec.CommandContext(command.Context(), chosen, at)
+	// The program is the operator's own EDITOR, run on their own terminal
+	// as themselves. Somebody who can set it can already run anything
+	// this command could; refusing to honor it would only mean editing
+	// the file with something else.
+	editor := exec.CommandContext(command.Context(), chosen, at) //nolint:gosec // the operator's own editor
 	editor.Stdin, editor.Stdout, editor.Stderr = os.Stdin, os.Stdout, os.Stderr
 
 	if err := editor.Run(); err != nil {

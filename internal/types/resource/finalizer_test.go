@@ -49,8 +49,8 @@ func TestFinalizerIsNormalizedAndChecked(t *testing.T) {
 		// A space is simply not in the alphabet; a zero-width character is
 		// refused earlier and more loudly, because it produces a name that
 		// looks identical to the one beside it and compares unequal to it.
-		"gc claim": str.ErrNotAllowed,
-		"gc​claim": str.ErrForbidden,
+		"gc claim":      str.ErrNotAllowed,
+		"gc\u200bclaim": str.ErrForbidden,
 	}
 
 	for raw, want := range refused {

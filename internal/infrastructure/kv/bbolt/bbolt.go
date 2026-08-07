@@ -416,7 +416,10 @@ func (s *Store) log(tx *bolt.Tx, event kv.Event) error {
 		from = at
 	}
 
-	for at.Uint64()-from.Uint64()+1 > uint64(s.keep) {
+	// keep is positive: the option refuses anything else and the default
+	// is a constant, so there is no negative to become an enormous
+	// unsigned number here.
+	for at.Uint64()-from.Uint64()+1 > uint64(s.keep) { //nolint:gosec // positive by construction
 		if err := history.Delete(revisionKey(from)); err != nil {
 			return err
 		}

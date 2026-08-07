@@ -130,7 +130,9 @@ func status(running config.Config, version string, now time.Time) *schemapb.Stru
 
 	if local, keeps := running.Local(); keeps {
 		reported[storeField] = local.Store()
-		reported[cacheField] = uint64(local.Cache())
+		// Positive by construction: a configuration with a cache of zero
+		// or less gets the default instead, in NewLocal.
+		reported[cacheField] = uint64(local.Cache()) //nolint:gosec // positive by construction
 	}
 
 	return schemapb.MustStructFromGo(reported)

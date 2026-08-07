@@ -49,9 +49,9 @@ func TestAShorterKeyIsAPrefixOfWhatIsBeneathIt(t *testing.T) {
 	}
 
 	// A whole kind is the prefix of every resource of it.
-	kind := store.KeyOf(id(t, "Process"))
-	if !bytes.HasPrefix(under, kind) || !bytes.HasPrefix(tenant, kind) {
-		t.Fatalf("%q does not cover its own kind", kind)
+	whole := store.KeyOf(id(t, "Process"))
+	if !bytes.HasPrefix(under, whole) || !bytes.HasPrefix(tenant, whole) {
+		t.Fatalf("%q does not cover its own kind", whole)
 	}
 }
 

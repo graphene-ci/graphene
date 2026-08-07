@@ -61,6 +61,9 @@ func encodeEvent(event kv.Event) []byte {
 	raw := make([]byte, eventHeader+len(event.Entry.Key)+len(entry))
 
 	raw[0] = byte(event.Kind)
+	// A key is a validated path with a maximum length in the hundreds of
+	// bytes, so this is a length that cannot reach four gigabytes.
+	//nolint:gosec // a key is bounded far below what a uint32 holds
 	binary.BigEndian.PutUint32(raw[1:eventHeader], uint32(len(event.Entry.Key)))
 	copy(raw[eventHeader:], event.Entry.Key)
 	copy(raw[eventHeader+len(event.Entry.Key):], entry)

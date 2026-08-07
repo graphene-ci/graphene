@@ -51,7 +51,7 @@ func TestSegmentIsNormalizedAndChecked(t *testing.T) {
 		"a/b":                    str.ErrForbidden,
 		"a\x1eb":                 str.ErrForbidden,
 		"a\x1fb":                 str.ErrForbidden,
-		"na​me":                  str.ErrForbidden,
+		"na\u200bme":             str.ErrForbidden,
 		strings.Repeat("x", 257): str.ErrTooLong,
 	}
 

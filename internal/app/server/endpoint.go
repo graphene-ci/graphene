@@ -120,7 +120,9 @@ func (e *Endpoint) Serve(ctx context.Context) error {
 		changed := e.config.Changed()
 		wanted := e.config.Listen()
 
-		listener, err := net.Listen("tcp", wanted)
+		var listen net.ListenConfig
+
+		listener, err := listen.Listen(ctx, "tcp", wanted)
 		if err != nil {
 			e.log.Error("cannot listen; waiting for the configuration to change",
 				xlog.String("address", wanted), xlog.Err(err))

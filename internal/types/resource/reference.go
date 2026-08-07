@@ -154,7 +154,10 @@ func lookup(value Resource, field path.FieldPath) ([]string, error) {
 
 	at, err := half.Lookup(rest.String())
 	if err != nil {
-		return nil, nil
+		// Not an error, and the comment above says why: the definition
+		// already checked the field exists in the SCHEMA, so failing to
+		// find it in a VALUE means nobody filled it in.
+		return nil, nil //nolint:nilerr // an unfilled optional reference is not a failure
 	}
 
 	return pathsIn(at, field)

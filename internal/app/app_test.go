@@ -96,18 +96,18 @@ func rewrite(t *testing.T, on written, listen string) {
 func TestAMissingFileIsEveryDefault(t *testing.T) {
 	t.Parallel()
 
-	config, err := config.Read(filepath.Join(t.TempDir(), "absent.yaml"))
+	read, err := config.Read(filepath.Join(t.TempDir(), "absent.yaml"))
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
 
-	local, keeps := config.Local()
+	local, keeps := read.Local()
 	if !keeps {
-		t.Fatalf("a file that is not there came back as %s", config)
+		t.Fatalf("a file that is not there came back as %s", read)
 	}
 
-	if config.Listen() != "127.0.0.1:7373" || local.Cache() == 0 || config.Name() == "" {
-		t.Fatalf("defaults came back as %s", config)
+	if read.Listen() != "127.0.0.1:7373" || local.Cache() == 0 || read.Name() == "" {
+		t.Fatalf("defaults came back as %s", read)
 	}
 }
 

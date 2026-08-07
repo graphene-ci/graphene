@@ -156,9 +156,9 @@ func TestInvisibleCharactersAreRefused(t *testing.T) {
 	t.Parallel()
 
 	traps := map[string]string{
-		"zero width space": "na​me",
+		"zero width space": "na\u200bme",
 		"non-breaking":     "na me",
-		"soft hyphen":      "na­me",
+		"soft hyphen":      "na\u00adme",
 		"tab":              "na\tme",
 	}
 
@@ -228,7 +228,7 @@ func TestRunesAreNotBytes(t *testing.T) {
 func TestDropRemovesWhatForbidRefuses(t *testing.T) {
 	t.Parallel()
 
-	const pasted = "na​me"
+	const pasted = "na\u200bme"
 
 	dropped, err := str.New[str.String](pasted, str.Drop('​'))
 	if err != nil || dropped.String() != "name" {
@@ -285,7 +285,7 @@ func TestSegmentShape(t *testing.T) {
 		"a/b":                    str.ErrForbidden,
 		"a\x1eb":                 str.ErrForbidden,
 		"a\x00b":                 str.ErrForbidden,
-		"na​me":                  str.ErrForbidden,
+		"na\u200bme":             str.ErrForbidden,
 		"-leading":               str.ErrPattern,
 		"ядро":                   str.ErrPattern,
 		strings.Repeat("x", 257): str.ErrTooLong,

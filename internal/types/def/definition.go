@@ -36,34 +36,34 @@ type Definition struct {
 // schema would validate half of itself — all three are mistakes worth
 // hearing about at once rather than at the first write.
 func New(
-	kind kind.Kind,
+	named kind.Kind,
 	shape path.TPath,
 	spec SpecSchema,
 	status StatusSchema,
 	refs ...Ref,
 ) (Definition, error) {
 	switch {
-	case kind.IsZero():
+	case named.IsZero():
 		return Definition{}, ErrNoKind
 	case shape.IsZero():
-		return Definition{}, fmt.Errorf("%w: %s", ErrNoShape, kind)
+		return Definition{}, fmt.Errorf("%w: %s", ErrNoShape, named)
 	case spec.Schema == nil:
-		return Definition{}, fmt.Errorf("%w: %s has no spec schema", ErrNoSchema, kind)
+		return Definition{}, fmt.Errorf("%w: %s has no spec schema", ErrNoSchema, named)
 	case status.Schema == nil:
-		return Definition{}, fmt.Errorf("%w: %s has no status schema", ErrNoSchema, kind)
+		return Definition{}, fmt.Errorf("%w: %s has no status schema", ErrNoSchema, named)
 	}
 
-	if err := compiles(kind, spec.Schema, status.Schema); err != nil {
+	if err := compiles(named, spec.Schema, status.Schema); err != nil {
 		return Definition{}, err
 	}
 
-	declared, err := checkRefs(kind, refs)
+	declared, err := checkRefs(named, refs)
 	if err != nil {
 		return Definition{}, err
 	}
 
 	built := Definition{
-		kind:   kind,
+		kind:   named,
 		shape:  shape,
 		spec:   spec,
 		status: status,
@@ -74,7 +74,7 @@ func New(
 	// place once the definition is assembled.
 	for _, ref := range declared {
 		if err := built.checkRefField(ref); err != nil {
-			return Definition{}, fmt.Errorf("%s: %w", kind, err)
+			return Definition{}, fmt.Errorf("%s: %w", named, err)
 		}
 	}
 
@@ -88,13 +88,13 @@ func New(
 // nobody to hand an error to. Never reach for it with anything that came
 // from outside.
 func MustNew(
-	kind kind.Kind,
+	named kind.Kind,
 	shape path.TPath,
 	spec SpecSchema,
 	status StatusSchema,
 	refs ...Ref,
 ) Definition {
-	built, err := New(kind, shape, spec, status, refs...)
+	built, err := New(named, shape, spec, status, refs...)
 	if err != nil {
 		panic("builtin definition: " + err.Error())
 	}
@@ -112,10 +112,10 @@ func MustNew(
 // schema and compiles on first use anyway, so keeping it would buy
 // nothing and would put derived state inside a value whose whole
 // character is that it has none.
-func compiles(kind kind.Kind, schemas ...*schemapb.Schema) error {
+func compiles(named kind.Kind, schemas ...*schemapb.Schema) error {
 	for _, schema := range schemas {
 		if _, err := schemapb.Compile(schema); err != nil {
-			return fmt.Errorf("%s: %w: %w", kind, ErrSchemaBroken, err)
+			return fmt.Errorf("%s: %w: %w", named, ErrSchemaBroken, err)
 		}
 	}
 
@@ -126,18 +126,18 @@ func compiles(kind kind.Kind, schemas ...*schemapb.Schema) error {
 // field: where a value points would then have two answers and nothing to
 // choose between them. Whether the field exists is settled afterwards,
 // against the schemas.
-func checkRefs(kind kind.Kind, refs []Ref) ([]Ref, error) {
+func checkRefs(named kind.Kind, refs []Ref) ([]Ref, error) {
 	declared := make([]Ref, 0, len(refs))
 
 	for _, ref := range refs {
 		if ref.IsZero() {
-			return nil, fmt.Errorf("%s: %w", kind, ErrRefField)
+			return nil, fmt.Errorf("%s: %w", named, ErrRefField)
 		}
 
 		if slices.ContainsFunc(declared, func(seen Ref) bool {
 			return seen.Field().Eq(ref.Field())
 		}) {
-			return nil, fmt.Errorf("%s: %w: %s", kind, ErrDuplicateRef, ref.Field())
+			return nil, fmt.Errorf("%s: %w: %s", named, ErrDuplicateRef, ref.Field())
 		}
 
 		declared = append(declared, ref)

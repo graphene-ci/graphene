@@ -24,8 +24,8 @@ type Id struct {
 // and a Path are both types that cannot be built wrong. What this does
 // not settle is whether the path has the shape the kind declares — that
 // needs the definition, and it is asked where the definition is.
-func NewId(kind kind.Kind, at path.Path) Id {
-	return Id{kind: kind, path: at}
+func NewId(named kind.Kind, at path.Path) Id {
+	return Id{kind: named, path: at}
 }
 
 // Kind is what the resource is.

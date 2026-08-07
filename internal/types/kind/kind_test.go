@@ -87,7 +87,7 @@ func TestKindAlphabetIsClosed(t *testing.T) {
 		"kernel_lease":           str.ErrNotAllowed,
 		"aws/vm":                 str.ErrNotAllowed,
 		"a\x1eb":                 str.ErrForbidden,
-		"na​me":                  str.ErrForbidden,
+		"na\u200bme":             str.ErrForbidden,
 		strings.Repeat("x", 129): str.ErrTooLong,
 	}
 

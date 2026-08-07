@@ -15,12 +15,12 @@ import (
 func processKind(t *testing.T) kind.Kind {
 	t.Helper()
 
-	kind, err := kind.New("Process")
+	named, err := kind.New("Process")
 	if err != nil {
 		t.Fatalf("kind: %v", err)
 	}
 
-	return kind
+	return named
 }
 
 func processShape(t *testing.T) path.TPath {

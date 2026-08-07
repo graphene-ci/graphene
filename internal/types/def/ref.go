@@ -30,20 +30,20 @@ type Ref struct {
 // The strength is required and has no default. Every value of it is a
 // different answer to "what happens when the target is deleted", and
 // there is no safe guess among refusing, cascading and doing nothing.
-func NewRef(field path.FieldPath, kind kind.Kind, strength Strength) (Ref, error) {
+func NewRef(field path.FieldPath, named kind.Kind, strength Strength) (Ref, error) {
 	if field.IsZero() {
-		return Ref{}, fmt.Errorf("%w: reference to %s names no field", ErrRefField, kind)
+		return Ref{}, fmt.Errorf("%w: reference to %s names no field", ErrRefField, named)
 	}
 
-	if kind.IsZero() {
+	if named.IsZero() {
 		return Ref{}, fmt.Errorf("%w: reference at %s names no kind", ErrRefKind, field)
 	}
 
 	if strength.IsZero() {
-		return Ref{}, fmt.Errorf("%w: %s → %s", ErrRefStrength, field, kind)
+		return Ref{}, fmt.Errorf("%w: %s → %s", ErrRefStrength, field, named)
 	}
 
-	return Ref{field: field, kind: kind, strength: strength}, nil
+	return Ref{field: field, kind: named, strength: strength}, nil
 }
 
 // ParseRef is NewRef from what a person writes.
