@@ -130,44 +130,9 @@ func (s *Store) Put(
 	value []byte,
 	expect revision.Revision,
 ) (revision.Revision, error) {
-	if err := ctx.Err(); err != nil {
-		return revision.None, err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closed {
-		return revision.None, kv.ErrClosed
-	}
-
-	current, found := s.entries[string(key)]
-
-	// Absent means "nothing is there yet"; anything else means "still
-	// exactly this". Both are the same question asked of different
-	// answers, so both are one comparison.
-	if found != !expect.IsZero() || (found && !current.Revision.Eq(expect)) {
-		return revision.None, conflict(key, expect, current, found)
-	}
-
-	s.revision = s.revision.Next()
-
-	created := s.revision
-	if found {
-		created = current.CreatedRevision
-	}
-
-	entry := kv.Entry{
-		Key:             key.Clone(),
-		Value:           slices.Clone(value),
-		Revision:        s.revision,
-		CreatedRevision: created,
-	}
-
-	s.entries[string(key)] = entry
-	s.record(kv.Event{Kind: kv.EventPut, Entry: entry})
-
-	return s.revision, nil
+	return s.one(ctx, func(tx *txn) (revision.Revision, error) {
+		return tx.Put(ctx, key, value, expect)
+	})
 }
 
 // Delete removes the entry under the same guard as Put.
@@ -175,39 +140,48 @@ func (s *Store) Put(
 // A key that is not there is ErrNotFound and not a conflict: the caller
 // asked to remove something that does not exist, which is a different
 // mistake from asking to remove the version somebody else replaced.
-func (s *Store) Delete(ctx context.Context, key kv.Key, expect revision.Revision) (revision.Revision, error) {
-	if err := ctx.Err(); err != nil {
+func (s *Store) Delete(
+	ctx context.Context,
+	key kv.Key,
+	expect revision.Revision,
+) (revision.Revision, error) {
+	return s.one(ctx, func(tx *txn) (revision.Revision, error) {
+		return tx.Delete(ctx, key, expect)
+	})
+}
+
+// one runs a single guarded write as the transaction it already is.
+//
+// Every write this store makes goes through Do, which is what keeps the
+// guarded-write rules — the revision comparison, the history, the event —
+// in one place rather than in one place per method.
+func (s *Store) one(
+	ctx context.Context,
+	write func(tx *txn) (revision.Revision, error),
+) (revision.Revision, error) {
+	var at revision.Revision
+
+	err := s.Do(ctx, func(tx kv.Tx) error {
+		inside, ok := tx.(*txn)
+		if !ok {
+			// Do hands back its own transaction. Anything else is a
+			// store that has been wrapped in a way this cannot see
+			// through, and guessing would write through a wrapper that
+			// exists to be in the way.
+			return kv.ErrClosed
+		}
+
+		var err error
+
+		at, err = write(inside)
+
+		return err
+	})
+	if err != nil {
 		return revision.None, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closed {
-		return revision.None, kv.ErrClosed
-	}
-
-	current, found := s.entries[string(key)]
-	if !found {
-		return revision.None, kv.ErrNotFound
-	}
-
-	if !current.Revision.Eq(expect) {
-		return revision.None, conflict(key, expect, current, found)
-	}
-
-	s.revision = s.revision.Next()
-	delete(s.entries, string(key))
-
-	// The event carries the value the entry LAST had. Whoever filters a
-	// stream has to be able to ask what it was that went away, and after
-	// the delete there is nowhere else to ask.
-	departed := current.Clone()
-	departed.Revision = s.revision
-
-	s.record(kv.Event{Kind: kv.EventDelete, Entry: departed})
-
-	return s.revision, nil
+	return at, nil
 }
 
 // Scan walks every entry under prefix, in key order.
@@ -248,6 +222,14 @@ func (s *Store) snapshot(prefix kv.Key) ([]kv.Entry, error) {
 		return nil, kv.ErrClosed
 	}
 
+	return s.walk(prefix), nil
+}
+
+// walk is snapshot with the lock already held, which is how it is reached
+// from inside a transaction. Splitting it is not a nicety: Do holds the
+// lock for the whole of the work, and a scan that took it again would
+// deadlock on the store's own transaction.
+func (s *Store) walk(prefix kv.Key) []kv.Entry {
 	keys := slices.Sorted(maps.Keys(s.entries))
 	matched := make([]kv.Entry, 0, len(keys))
 
@@ -258,7 +240,7 @@ func (s *Store) snapshot(prefix kv.Key) ([]kv.Entry, error) {
 		}
 	}
 
-	return matched, nil
+	return matched
 }
 
 // Revision is the store-wide revision as of now.

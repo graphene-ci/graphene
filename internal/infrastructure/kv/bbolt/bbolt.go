@@ -183,37 +183,8 @@ func (s *Store) Put(
 	value []byte,
 	expect revision.Revision,
 ) (revision.Revision, error) {
-	return s.commit(ctx, func(tx *bolt.Tx, at revision.Revision) (kv.Event, error) {
-		entries := tx.Bucket(entriesBucket)
-
-		current, found, err := lookup(entries, key)
-		if err != nil {
-			return kv.Event{}, err
-		}
-
-		// Absent means "nothing is there yet"; anything else means "still
-		// exactly this". One comparison serves both.
-		if found != !expect.IsZero() || (found && !current.Revision.Eq(expect)) {
-			return kv.Event{}, conflict(key, expect, current, found)
-		}
-
-		created := at
-		if found {
-			created = current.CreatedRevision
-		}
-
-		entry := kv.Entry{
-			Key:             key.Clone(),
-			Value:           append([]byte(nil), value...),
-			Revision:        at,
-			CreatedRevision: created,
-		}
-
-		if err := entries.Put(key, encodeEntry(entry)); err != nil {
-			return kv.Event{}, err
-		}
-
-		return kv.Event{Kind: kv.EventPut, Entry: entry}, nil
+	return s.one(ctx, func(tx *txn) (revision.Revision, error) {
+		return tx.Put(ctx, key, value, expect)
 	})
 }
 
@@ -222,35 +193,44 @@ func (s *Store) Put(
 // A key that is not there is ErrNotFound and not a conflict: removing
 // something that does not exist is a different mistake from removing the
 // version somebody else replaced.
-func (s *Store) Delete(ctx context.Context, key kv.Key, expect revision.Revision) (revision.Revision, error) {
-	return s.commit(ctx, func(tx *bolt.Tx, at revision.Revision) (kv.Event, error) {
-		entries := tx.Bucket(entriesBucket)
-
-		current, found, err := lookup(entries, key)
-		if err != nil {
-			return kv.Event{}, err
-		}
-
-		if !found {
-			return kv.Event{}, kv.ErrNotFound
-		}
-
-		if !current.Revision.Eq(expect) {
-			return kv.Event{}, conflict(key, expect, current, found)
-		}
-
-		if err := entries.Delete(key); err != nil {
-			return kv.Event{}, err
-		}
-
-		// The event carries the value the entry LAST had. Whoever filters
-		// a stream has to be able to ask what went away, and afterwards
-		// there is nowhere else to ask.
-		departed := current
-		departed.Revision = at
-
-		return kv.Event{Kind: kv.EventDelete, Entry: departed}, nil
+func (s *Store) Delete(
+	ctx context.Context,
+	key kv.Key,
+	expect revision.Revision,
+) (revision.Revision, error) {
+	return s.one(ctx, func(tx *txn) (revision.Revision, error) {
+		return tx.Delete(ctx, key, expect)
 	})
+}
+
+// one runs a single guarded write as the transaction it already is.
+func (s *Store) one(
+	ctx context.Context,
+	write func(tx *txn) (revision.Revision, error),
+) (revision.Revision, error) {
+	var at revision.Revision
+
+	err := s.Do(ctx, func(tx kv.Tx) error {
+		inside, ok := tx.(*txn)
+		if !ok {
+			// Do hands back its own transaction. Anything else is a
+			// store that has been wrapped in a way this cannot see
+			// through, and guessing would write through a wrapper that
+			// exists to be in the way.
+			return kv.ErrClosed
+		}
+
+		var err error
+
+		at, err = write(inside)
+
+		return err
+	})
+	if err != nil {
+		return revision.None, err
+	}
+
+	return at, nil
 }
 
 // Scan walks every entry under prefix, in key order.
@@ -347,58 +327,50 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// commit runs one guarded write and hands the event it produced to every
-// watcher it belongs to.
+// Do runs reads and writes as one change.
 //
 // Delivery happens AFTER the commit, never inside it: an event handed out
-// from inside a transaction that then rolled back would be a change
-// nobody made. The lock spans both so that two commits cannot reach a
-// watcher in the other order.
-func (s *Store) commit(
-	ctx context.Context,
-	apply func(tx *bolt.Tx, at revision.Revision) (kv.Event, error),
-) (revision.Revision, error) {
+// from a transaction that then rolled back would be a change nobody made.
+// The lock spans both so that two transactions cannot reach a watcher in
+// the other order.
+//
+// bbolt allows one writer at a time, so this lock costs nothing that was
+// not already being paid — it moves the serialization to where it can be
+// reasoned about rather than leaving it inside the engine.
+func (s *Store) Do(ctx context.Context, work func(tx kv.Tx) error) error {
 	if err := ctx.Err(); err != nil {
-		return revision.None, err
+		return err
 	}
 
 	s.write.Lock()
 	defer s.write.Unlock()
 
 	if s.isClosed() {
-		return revision.None, kv.ErrClosed
+		return kv.ErrClosed
 	}
 
-	var event kv.Event
+	var events []kv.Event
 
 	err := s.db.Update(func(tx *bolt.Tx) error {
-		meta := tx.Bucket(metaBucket)
-		at := readRevision(meta, revisionKeyName).Next()
+		inside := &txn{store: s, tx: tx}
 
-		produced, err := apply(tx, at)
-		if err != nil {
+		if err := work(inside); err != nil {
 			return err
 		}
 
-		if err := meta.Put(revisionKeyName, revisionKey(at)); err != nil {
-			return err
-		}
-
-		if err := s.log(tx, produced); err != nil {
-			return err
-		}
-
-		event = produced
+		events = inside.events
 
 		return nil
 	})
 	if err != nil {
-		return revision.None, err
+		return err
 	}
 
-	s.deliver(event)
+	for _, event := range events {
+		s.deliver(event)
+	}
 
-	return event.Entry.Revision, nil
+	return nil
 }
 
 // log appends an event and forgets the oldest once the log is full.

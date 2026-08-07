@@ -22,8 +22,18 @@ import (
 	"github.com/graphene-ci/graphene/internal/types/revision"
 )
 
-// Store is the port. All methods are safe for concurrent use.
-type Store interface {
+// Tx is what can be done to a store, and the whole of what can be done
+// INSIDE a transaction.
+//
+// It is a separate interface from Store for one reason: a watch cannot be
+// opened inside a transaction. A transaction is a moment; a watch is a
+// stream of moments after one, and asking for it from inside is asking
+// for changes that have not happened yet from a view that cannot see
+// them.
+//
+// The store itself satisfies it, so every call outside a transaction is
+// the same call as inside one — a transaction of a single write.
+type Tx interface {
 	// Get returns the entry under key, or ErrNotFound.
 	Get(ctx context.Context, key Key) (Entry, error)
 
@@ -41,6 +51,35 @@ type Store interface {
 	// does not block, so paging is the implementation's business and has
 	// no reason to be in the signature. Stop early by breaking out.
 	Scan(ctx context.Context, prefix Key) iter.Seq2[Entry, error]
+
+	// Revision is the store-wide revision as of now: the cursor to take
+	// before a snapshot.
+	Revision(ctx context.Context) (revision.Revision, error)
+}
+
+// Store is the port. All methods are safe for concurrent use.
+type Store interface {
+	Tx
+
+	// Do runs several reads and writes as ONE change.
+	//
+	// This is what makes an invariant spanning more than one key
+	// enforceable. A check followed by a write is not a guarantee when
+	// anything can land in between: "refuse to point at what is not
+	// there" and "refuse to remove what is pointed at" are each correct
+	// alone and, run concurrently, leave a reference pointing at nothing.
+	// Inside Do the reads and the writes are the same moment.
+	//
+	// Each write inside still takes its own revision, in order. One
+	// revision for the whole transaction would be tidier to say and would
+	// break the history, which is keyed by revision and holds one event
+	// each. A watcher sees every write of a transaction or none of them,
+	// which is the property that was wanted.
+	//
+	// NOT REENTRANT. The Tx handed in is the only way to reach the store
+	// from inside; calling the store's own methods there is a deadlock,
+	// and calling Do is refused.
+	Do(ctx context.Context, work func(tx Tx) error) error
 
 	// Watch follows changes under prefix, starting after the given
 	// revision.
@@ -63,10 +102,6 @@ type Store interface {
 	// It returns revision.ErrCompacted if history no longer reaches back
 	// that far — at the call, not somewhere in the middle of the stream.
 	Watch(ctx context.Context, prefix Key, after revision.Revision) (Stream, error)
-
-	// Revision is the store-wide revision as of now: the cursor to take
-	// before a snapshot.
-	Revision(ctx context.Context) (revision.Revision, error)
 
 	// Close releases the store. Streams handed out before it are dead
 	// afterwards and say so through Next.

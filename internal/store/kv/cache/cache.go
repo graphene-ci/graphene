@@ -147,6 +147,54 @@ func (c *Cache) Put(
 	return at, err
 }
 
+// Do runs a transaction underneath, and forgets everything it touched.
+//
+// The cache is bypassed INSIDE the transaction rather than consulted: a
+// cached read is a read from before the transaction started, and a check
+// answered from before is a check about a world that has moved. What the
+// work sees is the store.
+//
+// Everything written is forgotten afterwards, and forgetting is by key
+// rather than wholesale — the transaction says what it touched, so there
+// is no reason to throw away what it did not.
+func (c *Cache) Do(ctx context.Context, work func(tx kv.Tx) error) error {
+	touched := map[string]struct{}{}
+
+	err := c.under.Do(ctx, func(tx kv.Tx) error {
+		return work(&watched{Tx: tx, touched: touched})
+	})
+
+	for key := range touched {
+		c.forget(kv.Key(key))
+	}
+
+	return err
+}
+
+// watched is a transaction that remembers which keys were written, so the
+// cache above can forget exactly those.
+type watched struct {
+	kv.Tx
+
+	touched map[string]struct{}
+}
+
+func (w *watched) Put(
+	ctx context.Context, key kv.Key, value []byte, expect revision.Revision,
+) (revision.Revision, error) {
+	w.touched[string(key)] = struct{}{}
+
+	return w.Tx.Put(ctx, key, value, expect)
+}
+
+func (w *watched) Delete(
+	ctx context.Context, key kv.Key, expect revision.Revision,
+) (revision.Revision, error) {
+	w.touched[string(key)] = struct{}{}
+
+	return w.Tx.Delete(ctx, key, expect)
+}
+
 // Delete writes through, under the same rule as Put.
 func (c *Cache) Delete(ctx context.Context, key kv.Key, expect revision.Revision) (revision.Revision, error) {
 	c.forget(key)

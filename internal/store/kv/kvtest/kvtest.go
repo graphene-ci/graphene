@@ -50,6 +50,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("writes", func(t *testing.T) { testWrites(t, factory) })
 	t.Run("scan", func(t *testing.T) { testScan(t, factory) })
 	t.Run("watch", func(t *testing.T) { testWatch(t, factory) })
+	t.Run("transactions", func(t *testing.T) { testTransactions(t, factory) })
 	t.Run("close", func(t *testing.T) { testClose(t, factory) })
 }
 
