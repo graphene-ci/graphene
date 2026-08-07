@@ -170,6 +170,84 @@ func TestSomethingThatRunsAsAnIdentityCannotNameOneBeyondItsAuthor(t *testing.T)
 	}
 }
 
+// The same rule, in the other half. A kind may declare a reference to an
+// Identity in its STATUS — a controller saying what it found — and
+// whoever may report on it would otherwise hand out that identity's
+// authority with no check at all, because the check only ever read specs.
+func TestAStatusCannotNameAnIdentityBeyondItsAuthor(t *testing.T) {
+	t.Parallel()
+
+	k, guard := open(t)
+	ctx := context.Background()
+
+	if _, err := k.Define(ctx, reporterKind(t)); err != nil {
+		t.Fatalf("define reporter: %v", err)
+	}
+
+	role(t, k, "everything", grant("delete", "Process", ""))
+	identity(t, k, "root", "everything")
+
+	role(t, k, "may-report",
+		grant("put", "Reporter", ""),
+		grant("report", "Reporter", ""),
+	)
+
+	session := guard.As(identity(t, k, "operator", "may-report"))
+
+	at, err := session.Put(ctx, intentFor(t, reporterId(t, "one"), map[string]any{}), revision.Absent)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	asRoot := schemapb.MustStructFromGo(map[string]any{"identity": "root"})
+
+	if _, err := session.Report(ctx, reporterId(t, "one"), asRoot, at); !errors.Is(err, auth.ErrEscalation) {
+		t.Fatalf("naming root in a status: want ErrEscalation, got %v", err)
+	}
+
+	// And naming nobody is the ordinary case a controller is for.
+	nothing := schemapb.MustStructFromGo(map[string]any{"identity": ""})
+
+	if _, err := session.Report(ctx, reporterId(t, "one"), nothing, at); err != nil {
+		t.Fatalf("reporting nothing: %v", err)
+	}
+}
+
+// reporterKind declares its reference in the STATUS half, which is the
+// whole point of it.
+func reporterKind(t *testing.T) def.Definition {
+	t.Helper()
+
+	field, err := path.NewFieldPath(def.StatusRoot, "identity")
+	if err != nil {
+		t.Fatalf("field path: %v", err)
+	}
+
+	found, err := def.NewRef(field, auth.IdentityKind, def.Weak)
+	if err != nil {
+		t.Fatalf("ref: %v", err)
+	}
+
+	return def.MustNew(
+		kind.MustNew("Reporter"), path.MustNewTPath("name"),
+		def.Spec(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "reporter-spec"}).MustBuild()),
+		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "reporter-status"}).
+			Fields(schemapb.Str("identity")).MustBuild()),
+		def.Reference(found),
+	)
+}
+
+func reporterId(t *testing.T, name string) resource.Id {
+	t.Helper()
+
+	at, err := path.MustNewTPath("name").New(name)
+	if err != nil {
+		t.Fatalf("path: %v", err)
+	}
+
+	return resource.NewId(kind.MustNew("Reporter"), at)
+}
+
 // The check reads the store, not the request, so an author who gains a
 // role gains the right to hand it out — and one whose role is narrowed
 // loses it. Nothing is remembered from when the grant was written.

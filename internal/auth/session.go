@@ -83,7 +83,7 @@ func (s Session) Put(
 		return revision.None, err
 	}
 
-	if err := s.checkEscalation(ctx, intent); err != nil {
+	if err := s.checkEscalation(ctx, intent.Id(), intent.Spec(), def.SpecRoot); err != nil {
 		return revision.None, err
 	}
 
@@ -98,6 +98,14 @@ func (s Session) Report(
 	expect revision.Revision,
 ) (revision.Revision, error) {
 	if err := s.allow(ctx, Report, id); err != nil {
+		return revision.None, err
+	}
+
+	// A status can hand out authority too. If a kind declares a reference
+	// to an Identity or a Role in its status half, then whoever may
+	// report on it names one — and a check that only ever read the spec
+	// would make where the field sits decide whether the rule applies.
+	if err := s.checkEscalation(ctx, id, status, def.StatusRoot); err != nil {
 		return revision.None, err
 	}
 
@@ -224,8 +232,10 @@ func (s Session) Revision(ctx context.Context) (revision.Revision, error) {
 // Identity IS the hand-out, the definition already says which fields are
 // references, so what confers authority is read off the same declaration
 // that says what points at what.
-func (s Session) checkEscalation(ctx context.Context, intent resource.Intent) error {
-	stated, err := s.conferred(ctx, intent)
+func (s Session) checkEscalation(
+	ctx context.Context, id resource.Id, half *schemapb.StructValue, root string,
+) error {
+	stated, err := s.conferred(ctx, id, half, root)
 	if err != nil {
 		return err
 	}
@@ -251,26 +261,30 @@ func (s Session) checkEscalation(ctx context.Context, intent resource.Intent) er
 // The references are read out of the DEFINITION and the grants out of the
 // store, both unguarded: the question is what this write hands out, and a
 // caller who may not read a role can still be refused for naming it.
-func (s Session) conferred(ctx context.Context, intent resource.Intent) ([]Grant, error) {
+func (s Session) conferred(
+	ctx context.Context, id resource.Id, half *schemapb.StructValue, root string,
+) ([]Grant, error) {
 	var stated []Grant
 
-	if intent.Id().Kind().Eq(RoleKind) {
-		granted, err := grantsOf(intent.Spec(), s.shapeOf(ctx))
+	// A Role states grants in its SPEC and nowhere else, so a status
+	// write cannot state one however the kind is declared.
+	if id.Kind().Eq(RoleKind) && root == def.SpecRoot {
+		granted, err := grantsOf(half, s.shapeOf(ctx))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+			return nil, fmt.Errorf("%s: %w", id, err)
 		}
 
 		stated = append(stated, granted...)
 	}
 
-	head, err := s.guard.kernel.Definition(ctx, intent.Id().Kind())
+	head, err := s.guard.kernel.Definition(ctx, id.Kind())
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+		return nil, fmt.Errorf("%s: %w", id, err)
 	}
 
-	refs, err := resource.ReferencesIn(head.Definition(), intent.Spec())
+	refs, err := resource.ReferencesIn(head.Definition(), half, root)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", intent.Id(), err)
+		return nil, fmt.Errorf("%s: %w", id, err)
 	}
 
 	for _, ref := range refs {

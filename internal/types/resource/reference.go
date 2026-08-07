@@ -71,27 +71,29 @@ func References(definition def.Definition, value Resource) ([]Reference, error) 
 	return found, nil
 }
 
-// ReferencesIn is the same reading, done on a spec that is not a resource
-// yet.
+// ReferencesIn is the same reading, done on one half that is not part of
+// a resource yet.
 //
-// It exists for the checks that must run BEFORE admission: what a write
+// It exists for the checks that must run BEFORE the write: what a write
 // hands out has to be known while it can still be refused, and by then
-// there is no resource to read. Only spec-rooted references are found,
-// because an intent has no status half — a status-rooted reference is not
-// missing here, it is not yet a thing.
-func ReferencesIn(definition def.Definition, spec *schemapb.StructValue) ([]Reference, error) {
-	if definition.IsZero() || spec == nil {
+// there is no stored resource to read. Which half is named rather than
+// assumed, because BOTH can carry a reference — an author writes one in a
+// spec, a controller reports one in a status — and a check that only ever
+// looked at the spec would let the second one hand out what the first
+// cannot.
+func ReferencesIn(definition def.Definition, half *schemapb.StructValue, root string) ([]Reference, error) {
+	if definition.IsZero() || half == nil {
 		return nil, nil
 	}
 
 	var found []Reference
 
 	for _, ref := range definition.Refs() {
-		if ref.Field().Head().String() != def.SpecRoot {
+		if ref.Field().Head().String() != root {
 			continue
 		}
 
-		raw, err := inSpec(spec, ref.Field())
+		raw, err := inSpec(half, ref.Field())
 		if err != nil {
 			return nil, err
 		}
