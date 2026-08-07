@@ -27,6 +27,7 @@ type Definition struct {
 	spec   SpecSchema
 	status StatusSchema
 	refs   []Ref
+	blobs  []path.FieldPath
 }
 
 // New builds a definition.
@@ -40,7 +41,7 @@ func New(
 	shape path.TPath,
 	spec SpecSchema,
 	status StatusSchema,
-	refs ...Ref,
+	options ...Option,
 ) (Definition, error) {
 	switch {
 	case named.IsZero():
@@ -57,18 +58,23 @@ func New(
 		return Definition{}, err
 	}
 
-	declared, err := checkRefs(named, refs)
-	if err != nil {
-		return Definition{}, err
-	}
-
 	built := Definition{
 		kind:   named,
 		shape:  shape,
 		spec:   spec,
 		status: status,
-		refs:   declared,
 	}
+
+	for _, option := range options {
+		option(&built)
+	}
+
+	declared, err := checkRefs(named, built.refs)
+	if err != nil {
+		return Definition{}, err
+	}
+
+	built.refs = declared
 
 	// Resolving happens last: it needs the schemas, and they are only in
 	// place once the definition is assembled.
@@ -76,6 +82,10 @@ func New(
 		if err := built.checkRefField(ref); err != nil {
 			return Definition{}, fmt.Errorf("%s: %w", named, err)
 		}
+	}
+
+	if err := built.checkBlobs(); err != nil {
+		return Definition{}, fmt.Errorf("%s: %w", named, err)
 	}
 
 	return built, nil
@@ -92,9 +102,9 @@ func MustNew(
 	shape path.TPath,
 	spec SpecSchema,
 	status StatusSchema,
-	refs ...Ref,
+	options ...Option,
 ) Definition {
-	built, err := New(named, shape, spec, status, refs...)
+	built, err := New(named, shape, spec, status, options...)
 	if err != nil {
 		panic("builtin definition: " + err.Error())
 	}

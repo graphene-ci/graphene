@@ -42,17 +42,22 @@ func applyCommand() *cobra.Command {
 			"  kind: Process\n" +
 			"  path: local/one\n" +
 			"  spec:\n" +
-			"    bundle: something\n\n" +
+			"    blob: {file: ./hello}\n" +
+			"    format: raw-exec\n\n" +
+			"A field the kind declares as holding bytes can be given a " +
+			"FILE, which is uploaded and replaced by its id on the way " +
+			"in. Which fields those are is the kind's answer, not this " +
+			"command's.\n\n" +
 			"A file cannot set a status or anything else the kernel keeps " +
 			"about a resource. Use - to read standard input.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			written, err := read(command, args[0])
+			manifest, err := read(command, args[0])
 			if err != nil {
 				return err
 			}
 
-			asked, err := parsed(written)
+			asked, err := parsed(manifest)
 			if err != nil {
 				return fmt.Errorf("%s: %w", args[0], err)
 			}
@@ -69,7 +74,15 @@ func applyCommand() *cobra.Command {
 				return err
 			}
 
-			spec, err := schemapb.StructFromGo(asked.Spec)
+			// Files first: a resource pointing at bytes nobody stored is
+			// a resource that cannot run, and the reverse only costs
+			// disk.
+			written, err := attached(ctx, on, asked.Kind, asked.Spec)
+			if err != nil {
+				return fmt.Errorf("%s: %w", args[0], err)
+			}
+
+			spec, err := schemapb.StructFromGo(written)
 			if err != nil {
 				return fmt.Errorf("%s: spec: %w", args[0], err)
 			}

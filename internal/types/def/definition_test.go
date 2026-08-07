@@ -115,8 +115,8 @@ func TestOneReferencePerField(t *testing.T) {
 	t.Parallel()
 
 	_, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t),
-		ref(t, "spec.bundle", "Bundle"),
-		ref(t, "spec.bundle", "Blob"),
+		def.Reference(ref(t, "spec.bundle", "Bundle")),
+		def.Reference(ref(t, "spec.bundle", "Blob")),
 	)
 	if !errors.Is(err, def.ErrDuplicateRef) {
 		t.Fatalf("want ErrDuplicateRef, got %v", err)
@@ -124,8 +124,8 @@ func TestOneReferencePerField(t *testing.T) {
 
 	// Two references on DIFFERENT fields are ordinary.
 	built, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t),
-		ref(t, "spec.bundle", "Bundle"),
-		ref(t, "spec.identity", "Identity"),
+		def.Reference(ref(t, "spec.bundle", "Bundle")),
+		def.Reference(ref(t, "spec.identity", "Identity")),
 	)
 	if err != nil {
 		t.Fatalf("two fields: %v", err)
@@ -166,7 +166,7 @@ func TestEqIsSameShape(t *testing.T) {
 	build := func(refs ...def.Ref) def.Definition {
 		t.Helper()
 
-		built, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t), refs...)
+		built, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t), def.Reference(refs...))
 		if err != nil {
 			t.Fatalf("build: %v", err)
 		}
@@ -224,7 +224,7 @@ func TestReferenceFieldMustExist(t *testing.T) {
 	t.Parallel()
 
 	_, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t),
-		ref(t, "spec.bundel", "Bundle")) // the letters swapped
+		def.Reference(ref(t, "spec.bundel", "Bundle"))) // the letters swapped
 	if !errors.Is(err, def.ErrRefNoField) {
 		t.Fatalf("want ErrRefNoField, got %v", err)
 	}
@@ -249,7 +249,7 @@ func TestReferenceLivesInSpecOrStatus(t *testing.T) {
 
 	for _, field := range []string{"revision", "key.kind", "metadata.name"} {
 		_, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t),
-			ref(t, field, "Bundle"))
+			def.Reference(ref(t, field, "Bundle")))
 		if !errors.Is(err, def.ErrRefRoot) {
 			t.Fatalf("%q: want ErrRefRoot, got %v", field, err)
 		}
@@ -257,7 +257,7 @@ func TestReferenceLivesInSpecOrStatus(t *testing.T) {
 
 	// status is as good a place as spec.
 	if _, err := def.New(processKind(t), processShape(t), specSchema(t), statusSchema(t),
-		ref(t, "status.phase", "Bundle")); err != nil {
+		def.Reference(ref(t, "status.phase", "Bundle"))); err != nil {
 		t.Fatalf("a reference in status: %v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestReferenceFieldMustHoldAPath(t *testing.T) {
 	ok := []string{"spec.bundle", "spec.roles", "spec.nested.inner"}
 	for _, field := range ok {
 		if _, err := def.New(processKind(t), processShape(t), spec, statusSchema(t),
-			ref(t, field, "Bundle")); err != nil {
+			def.Reference(ref(t, field, "Bundle"))); err != nil {
 			t.Fatalf("%q refused: %v", field, err)
 		}
 	}
@@ -289,7 +289,7 @@ func TestReferenceFieldMustHoldAPath(t *testing.T) {
 	refused := []string{"spec.count", "spec.sizes", "spec.nested"}
 	for _, field := range refused {
 		_, err := def.New(processKind(t), processShape(t), spec, statusSchema(t),
-			ref(t, field, "Bundle"))
+			def.Reference(ref(t, field, "Bundle")))
 		if !errors.Is(err, def.ErrRefKindMismatch) {
 			t.Fatalf("%q: want ErrRefKindMismatch, got %v", field, err)
 		}

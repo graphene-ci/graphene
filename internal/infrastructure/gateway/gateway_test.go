@@ -20,6 +20,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/convert"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob/fs"
 	"github.com/graphene-ci/graphene/internal/infrastructure/gateway"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/process"
@@ -219,7 +220,7 @@ func newWorld(ctx context.Context, t *testing.T, dir string) *world {
 
 	return &world{
 		kernel:  own,
-		gateway: gateway.Here(dir, auth.New(own), own, xlog.New(xlog.NopCore{})),
+		gateway: gateway.Here(dir, auth.New(own), own, blobStore(t), xlog.New(xlog.NopCore{})),
 		t:       t,
 	}
 }
@@ -316,4 +317,20 @@ func dial(t *testing.T, path string) graphenepbv1.KernelServiceClient {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	return graphenepbv1.NewKernelServiceClient(conn)
+}
+
+// blobStore is a byte store for the door to answer for. On disk rather than
+// in memory because there is no in-memory one: a store of blobs is a
+// directory, and a temporary directory is the same thing for a test.
+func blobStore(t *testing.T) blob.Store {
+	t.Helper()
+
+	store, err := fs.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("blobs: %v", err)
+	}
+
+	t.Cleanup(func() { _ = store.Close() })
+
+	return store
 }

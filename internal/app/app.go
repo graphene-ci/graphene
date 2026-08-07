@@ -218,7 +218,7 @@ func (a *App) execute(
 	a.bytes = api.NewBlobs(api.Guarded(bytes, guard, api.ByCredential(guard, own, log)), log)
 
 	a.agent = a.running(beside, process.Here(own), bytes,
-		gateway.Here(filepath.Join(beside, "doors"), guard, own, log), log)
+		gateway.Here(filepath.Join(beside, "doors"), guard, own, bytes, log), log)
 
 	return nil
 }
@@ -279,6 +279,10 @@ func (a *App) subordinate(linkTo config.Upstream, log *xlog.Logger) error {
 	}
 
 	a.service = above.Serving()
+	// And the bytes, forwarded the same way. A subordinate that answered
+	// "not implemented" for blobs would be a kernel you could talk to
+	// about everything except the thing you were about to run.
+	a.bytes = above.Forwarding()
 	a.record = above.Recording()
 	a.source = above.Recording()
 	a.release = above.Close

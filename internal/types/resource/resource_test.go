@@ -411,7 +411,7 @@ func TestAReferenceFieldThatIsNotAPathIsRefused(t *testing.T) {
 			Fields(schemapb.Str("bundle").Required()).MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "process-status"}).
 			MustBuild()),
-		mustRef(t, "spec.bundle", "Bundle"),
+		def.Reference(mustRef(t, "spec.bundle", "Bundle")),
 	)
 	if err != nil {
 		t.Fatalf("definition: %v", err)

@@ -137,7 +137,11 @@ func Definition() def.Definition {
 				schemapb.Int64(startsField),
 			).
 			MustBuild()),
-		identity,
+		def.Reference(identity),
+		// Where the bytes are, said in the definition rather than known
+		// by whatever writes a Process. It is what lets a manifest name a
+		// FILE and have it uploaded on the way in.
+		def.Bytes(mustFieldPath(def.SpecRoot, blobField)),
 	)
 }
 

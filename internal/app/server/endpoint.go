@@ -168,9 +168,9 @@ func (e *Endpoint) run(ctx context.Context, listener net.Listener) error {
 	graphenepbv1.RegisterKernelServiceServer(server, e.service)
 	hv1.RegisterHealthServer(server, e.health)
 
-	// A subordinate keeps no bytes and answers for none: a caller asking
-	// it for a blob is told the service is not implemented, which is
-	// exactly what is true.
+	// nil is a kernel that was built without one, which is a programming
+	// mistake rather than a mode: both kinds answer for bytes, one out of
+	// a directory and one by forwarding.
 	if e.bytes != nil {
 		blobpb.RegisterBlobServiceServer(server, e.bytes)
 	}

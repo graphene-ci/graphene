@@ -98,7 +98,7 @@ func Identity() def.Definition {
 			).
 			MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "identity-status"}).MustBuild()),
-		roles,
+		def.Reference(roles),
 	)
 }
 

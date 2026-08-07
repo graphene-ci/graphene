@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
+	"github.com/gopherex/schemapb/go/schemapb"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
 
@@ -23,7 +26,9 @@ import (
 // not a convenience: a prefix names a subtree, and a whole path names the
 // one resource in it.
 func getCommand() *cobra.Command {
-	return &cobra.Command{
+	var whole bool
+
+	command := &cobra.Command{
 		Use:   "get <kind> [path]",
 		Short: "Read resources",
 		Long: "Read one resource, or everything under a path, or every " +
@@ -46,6 +51,10 @@ func getCommand() *cobra.Command {
 			listing, err := on.Calls().List(ctx, &graphenepbv1.ListRequest{Prefix: at})
 			if err != nil {
 				return err
+			}
+
+			if whole {
+				return printed(command.OutOrStdout(), listing)
 			}
 
 			return tabulated(command.OutOrStdout(), func(write func(...string)) error {
@@ -84,6 +93,109 @@ func getCommand() *cobra.Command {
 			})
 		},
 	}
+
+	command.Flags().BoolVarP(&whole, "output", "o", false,
+		"print each record whole — spec and status — instead of a listing")
+
+	return command
+}
+
+// printed writes the records out whole.
+//
+// A listing answers "what is there"; this answers "what does it SAY",
+// which is the question anybody debugging a controller has. Without it a
+// status written by something else can only be inferred from a column
+// reading "reported", which is the least useful true thing to say about
+// it.
+func printed(out io.Writer, listing graphenepbv1.KernelService_ListClient) error {
+	for {
+		answer, err := listing.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		stored := answer.GetRecord()
+
+		written, err := yaml.Marshal(map[string]any{
+			"kind":     stored.GetResource().GetId().GetKind(),
+			"path":     "/" + pathOf(stored.GetResource().GetId()),
+			"revision": stored.GetRevision(),
+			"spec":     plain(stored.GetResource().GetSpec()),
+			"status":   plain(stored.GetResource().GetStatus()),
+		})
+		if err != nil {
+			return err
+		}
+
+		if _, err := fmt.Fprintf(out, "---\n%s", written); err != nil {
+			return err
+		}
+	}
+}
+
+// plain turns a schema value into what a person wrote, or would have.
+//
+// The wire encoding is not it: protojson renders `{"stringValue": "x"}`,
+// which is faithful and unreadable, and reading a status is the whole
+// reason this output exists. So the tags are unwrapped, and what comes
+// out is the shape a manifest is written in.
+func plain(value *schemapb.StructValue) map[string]any {
+	if value == nil {
+		return map[string]any{}
+	}
+
+	read := make(map[string]any, len(value.GetFields()))
+	for name, field := range value.GetFields() {
+		read[name] = scalar(field)
+	}
+
+	return read
+}
+
+// scalar unwraps one value, whatever kind it turns out to be.
+func scalar(value *schemapb.Value) any {
+	if items, isList := value.AsList(); isList {
+		read := make([]any, 0, len(items))
+		for _, item := range items {
+			read = append(read, scalar(item))
+		}
+
+		return read
+	}
+
+	if fields, isStruct := value.AsStruct(); isStruct {
+		read := make(map[string]any, len(fields))
+		for name, field := range fields {
+			read[name] = scalar(field)
+		}
+
+		return read
+	}
+
+	if text, isText := schemapb.As[string](value); isText {
+		return text
+	}
+
+	if number, isInt := schemapb.As[int64](value); isInt {
+		return number
+	}
+
+	if number, isFloat := schemapb.As[float64](value); isFloat {
+		return number
+	}
+
+	if yes, isBool := schemapb.As[bool](value); isBool {
+		return yes
+	}
+
+	// Null, or something a later contract added. Written as nothing
+	// rather than guessed at: an empty value that printed as `false`
+	// would be a value nobody wrote.
+	return nil
 }
 
 // written is the path a person typed, or none.

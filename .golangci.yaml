@@ -434,7 +434,7 @@ linters:
       # have to know how many proxies it went through.
       - linters:
           - wrapcheck
-        path: internal/app/upstream/service\.go
+        path: internal/app/upstream/(service|bytes)\.go
     paths:
       - third_party$
       - builtin$

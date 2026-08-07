@@ -8,7 +8,10 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
 
+	"github.com/graphene-ci/graphene/internal/blob"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob/remote"
 	"github.com/graphene-ci/graphene/internal/link"
 )
 
@@ -51,6 +54,15 @@ func Dial(one Context) (*Kernel, error) {
 		conn:    conn,
 		client:  graphenepbv1.NewKernelServiceClient(conn),
 	}, nil
+}
+
+// Bytes is the kernel's byte store, as this client may use it.
+//
+// The same connection and the same credential: bytes are a separate
+// service because they are a separate kind of thing, not because they are
+// somewhere else.
+func (k *Kernel) Bytes() blob.Store {
+	return remote.Over(blobpb.NewBlobServiceClient(k.conn))
 }
 
 // Close lets the connection go.

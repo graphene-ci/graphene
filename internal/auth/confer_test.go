@@ -43,7 +43,7 @@ func runnerKind(t *testing.T) def.Definition {
 			Fields(schemapb.Str("identity")).MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "runner-status"}).
 			MustBuild()),
-		runs,
+		def.Reference(runs),
 	)
 }
 

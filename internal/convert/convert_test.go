@@ -35,7 +35,7 @@ func definition(t *testing.T) def.Definition {
 		Fields(schemapb.Str("phase")).
 		MustBuild())
 
-	built, err := def.New(named, shape, spec, status, ref(t, "spec.bundle", "Bundle"))
+	built, err := def.New(named, shape, spec, status, def.Reference(ref(t, "spec.bundle", "Bundle")))
 	if err != nil {
 		t.Fatalf("definition: %v", err)
 	}

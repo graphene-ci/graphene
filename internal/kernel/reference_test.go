@@ -54,7 +54,7 @@ func pointer(t *testing.T, strength def.Strength) def.Definition {
 			Fields(schemapb.Str("bundle")).
 			MustBuild()),
 		def.Status(schemapb.NewSchema(&schemapb.SchemaIdentity{Name: "process-status"}).MustBuild()),
-		ref,
+		def.Reference(ref),
 	)
 	if err != nil {
 		t.Fatalf("pointer: %v", err)

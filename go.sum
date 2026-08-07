@@ -39,14 +39,8 @@ github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0 h1:ZBzE1R386gj+4aV1Oazss0w1
 github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0/go.mod h1:3JqbOdN8j/evP+p1/e4WidVvRzOypItDdhZu+MIuGTY=
 github.com/gopherex/xshutdown v1.0.0 h1:oXj0J3iNW+bOzyDbtVBS/p17b3U26loDuIxx2S1EXZc=
 github.com/gopherex/xshutdown v1.0.0/go.mod h1:VP9PHNALDhbpRtqDS67qP+M1PQKjj2MgokukD01KQUA=
-github.com/graphene-ci/graphenepb v0.0.0-20260806104542-c1a0399126f3 h1:aKjTlA2bUr8JrdXljTRTTOmuRtvYvi4i60Xqe71XF04=
-github.com/graphene-ci/graphenepb v0.0.0-20260806104542-c1a0399126f3/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
-github.com/graphene-ci/graphenepb v0.0.0-20260806165747-84c8f57362b6 h1:WwyZtInPPnNmuPYGQXc+vUafxkfb7aQ7yKsJZpqropA=
-github.com/graphene-ci/graphenepb v0.0.0-20260806165747-84c8f57362b6/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
-github.com/graphene-ci/graphenepb v0.0.0-20260806171220-3752f1ba2dea h1:Az7sLW7W/5675SAT7ktIoHhY7wzUDNne4wvHARA7lkM=
-github.com/graphene-ci/graphenepb v0.0.0-20260806171220-3752f1ba2dea/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
-github.com/graphene-ci/graphenepb v0.0.0-20260806171427-757cfd496f5e h1:c4Tf7+/6Il9LJBSeDpHDR/wi2z5iFV5Bfw0qRsO1z20=
-github.com/graphene-ci/graphenepb v0.0.0-20260806171427-757cfd496f5e/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
+github.com/graphene-ci/graphenepb v0.0.0-20260807002600-b063120ecfb7 h1:MTVdwdVz+55geyl5WoImWYzOU3xqrUge1/blqb0yYtI=
+github.com/graphene-ci/graphenepb v0.0.0-20260807002600-b063120ecfb7/go.mod h1:txTRACzyLj9ivINICEdysq2efHccXHRX6xGnEvoM23E=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/kardianos/service v1.3.0 h1:/LGy+xPP2TM+GLTiCZ2di7cy0Jd/qrawlTUfqKYFdTI=

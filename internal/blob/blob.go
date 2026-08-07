@@ -13,7 +13,9 @@ package blob
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/graphene-ci/graphene/internal/types/kind"
@@ -103,4 +105,40 @@ type Writer interface {
 type Reader interface {
 	Open(ctx context.Context, id Id, offset uint64) (io.ReadCloser, Info, error)
 	Stat(ctx context.Context, id Id) (Info, error)
+}
+
+// Put streams everything from a reader into a store and seals it.
+//
+// The checksum is computed WHILE the bytes go out, not before, which is
+// the whole reason the declaration is part of Commit: a sender streaming
+// a file only knows what it sent once it has sent it, and demanding the
+// checksum up front would mean reading everything twice or not declaring
+// at all.
+//
+// A reader that fails half way leaves nothing stored: the writer is
+// aborted, and an upload nobody completed is not an upload.
+func Put(ctx context.Context, into Store, from io.Reader) (Info, error) {
+	writer, err := into.Create(ctx)
+	if err != nil {
+		return Info{}, err
+	}
+
+	sum := sha256.New()
+
+	written, err := io.Copy(io.MultiWriter(writer, sum), from)
+	if err != nil {
+		_ = writer.Abort()
+
+		return Info{}, fmt.Errorf("blob: upload: %w", err)
+	}
+
+	// io.Copy cannot return a negative count, so this cannot wrap.
+	info, err := writer.Commit(sum.Sum(nil), uint64(written)) //nolint:gosec // a byte count
+	if err != nil {
+		_ = writer.Abort()
+
+		return Info{}, err
+	}
+
+	return info, nil
 }

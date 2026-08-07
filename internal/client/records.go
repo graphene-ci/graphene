@@ -34,7 +34,7 @@ func (k *Kernel) Records() *Records { return &Records{on: k} }
 func (r *Records) Get(ctx context.Context, id resource.Id) (store.Value[resource.Resource], error) {
 	answer, err := r.on.Calls().Get(r.on.As(ctx), &graphenepbv1.GetRequest{Id: convert.IdToPb(id)})
 	if err != nil {
-		return store.Value[resource.Resource]{}, remote(err)
+		return store.Value[resource.Resource]{}, asHere(err)
 	}
 
 	read, err := convert.ResourceFromPb(answer.GetRecord().GetResource())
@@ -59,20 +59,20 @@ func (r *Records) Put(
 		Expect: expect.Uint64(),
 	})
 	if err != nil {
-		return revision.None, remote(err)
+		return revision.None, asHere(err)
 	}
 
 	return revision.Revision(answer.GetRevision()), nil
 }
 
-// remote gives a failure from the kernel the name it would have had here.
+// asHere gives a failure from the kernel the name it would have had here.
 //
 // Only "there is no such record", because that one is the difference
 // between creating something and updating it, and a caller comparing
 // errors should not have to know it was talking over a wire. Everything
 // else travels as the kernel said it: what a person is shown is the
 // sentence the kernel wrote, not a translation of it.
-func remote(err error) error {
+func asHere(err error) error {
 	if status.Code(err) == codes.NotFound {
 		return fmt.Errorf("%w: %s", store.ErrNotFound, status.Convert(err).Message())
 	}

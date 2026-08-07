@@ -37,10 +37,12 @@ import (
 	"github.com/gopherex/xlog"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
+	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
 
 	"github.com/graphene-ci/graphene/internal/app/api"
 	"github.com/graphene-ci/graphene/internal/app/upstream"
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/process"
 )
@@ -100,6 +102,7 @@ func Above(dir string, above *upstream.Upstream, log *xlog.Logger) *Gateway {
 		open: func(name, _ string) *grpc.Server {
 			server := grpc.NewServer()
 			graphenepbv1.RegisterKernelServiceServer(server, above.ForProcess(name))
+			blobpb.RegisterBlobServiceServer(server, above.BlobsFor(name))
 
 			return server
 		},
@@ -111,7 +114,9 @@ func Above(dir string, above *upstream.Upstream, log *xlog.Logger) *Gateway {
 // The vouch is resolved here rather than made: this kernel knows which
 // process it opened the door for and holds the store that says what that
 // process runs as, so there is nobody to ask.
-func Here(dir string, guard auth.Guard, own kernel.Kernel, log *xlog.Logger) *Gateway {
+func Here(
+	dir string, guard auth.Guard, own kernel.Kernel, bytes blob.Store, log *xlog.Logger,
+) *Gateway {
 	return New(dir, func(_, identity string) *grpc.Server {
 		who, err := principalFor(identity)
 		if err != nil {
@@ -126,6 +131,16 @@ func Here(dir string, guard auth.Guard, own kernel.Kernel, log *xlog.Logger) *Ga
 
 		server := grpc.NewServer()
 		graphenepbv1.RegisterKernelServiceServer(server, api.As(guard, own, who, log))
+
+		// The byte service too, and authorized the same way: a process
+		// that may run something may also be a thing that PUTS something
+		// there for somebody else to run. Which of the two it may do is
+		// decided by the grants its identity holds, in one place, like
+		// everything else.
+		blobpb.RegisterBlobServiceServer(server, api.NewBlobs(
+			api.Guarded(bytes, guard, func(context.Context) (auth.Principal, error) {
+				return who, nil
+			}), log))
 
 		return server
 	}, log)
