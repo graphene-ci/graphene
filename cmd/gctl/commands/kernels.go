@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
+	"github.com/graphene-ci/graphene/internal/app/join"
 	"github.com/graphene-ci/graphene/internal/client"
 )
 
@@ -37,7 +40,7 @@ func kernelsCommand() *cobra.Command {
 		},
 	}
 
-	kernels.AddCommand(useCommand(), saveCommand(), forgetCommand())
+	kernels.AddCommand(useCommand(), saveCommand(), forgetCommand(), joinCommand())
 
 	return kernels
 }
@@ -93,6 +96,49 @@ func saveCommand() *cobra.Command {
 			}
 
 			return all.Save(one)
+		},
+	}
+}
+
+// joinCommand makes a kernel allowed to be one.
+//
+// It writes two resources on the kernel this client is talking to: a role
+// holding exactly what a kernel does, and an identity holding that role.
+// What comes back is a credential, once — the store keeps a digest and
+// cannot hand it back — which goes into the new kernel's `upstream.token`
+// beside the pin.
+//
+// The grants are not asked for and cannot be chosen. They are what a
+// kernel does, spelled in one place in the binary: its own record, its
+// own processes' status, and read access to bytes. Typed by hand they
+// would be reinvented per installation and wrong in a way nobody notices
+// until a machine stops reporting.
+func joinCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "join <name>",
+		Short: "Let a kernel join this one, and print its credential",
+		Long: "Write the role and identity a subordinate kernel needs, and " +
+			"print its token.\n\nThe token is shown ONCE: what is stored is " +
+			"a digest of it. Put it in that kernel's configuration under " +
+			"`upstream.token`, beside the pin this kernel prints with " +
+			"`graphened pin`.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			on, err := reached()
+			if err != nil {
+				return err
+			}
+
+			token, err := join.Join(command.Context(), on.Records(), args[0])
+			if err != nil {
+				return err
+			}
+
+			// Stdout, because this is a value meant to be piped into a
+			// configuration file rather than read off a terminal.
+			fmt.Fprintln(command.OutOrStdout(), token)
+
+			return nil
 		},
 	}
 }

@@ -20,13 +20,15 @@ import (
 // spellings of "grants" agree until one of them is changed, and then a
 // role full of permissions reads as a role with none.
 const (
-	rolesField = "roles"
-
-	// DigestsField is exported because the transport writes and reads it:
-	// a credential is checked at the edge, before there is a session to
-	// check it with, so the one place that knows where digests live has
-	// to be reachable from there.
+	// RolesField and DigestsField are exported because things outside
+	// this package WRITE identities: the transport checks a credential at
+	// the edge, before there is a session to check it with, and joining a
+	// kernel writes one. The one place that knows where each lives has to
+	// be reachable from both.
+	RolesField   = "roles"
 	DigestsField = "digests"
+
+	rolesField = RolesField
 
 	grantsField      = "grants"
 	grantVerbField   = "verb"

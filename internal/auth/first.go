@@ -9,6 +9,7 @@ import (
 
 	"github.com/gopherex/schemapb/go/schemapb"
 
+	"github.com/graphene-ci/graphene/internal/blob"
 	"github.com/graphene-ci/graphene/internal/kernel"
 	"github.com/graphene-ci/graphene/internal/store"
 	"github.com/graphene-ci/graphene/internal/types/def"
@@ -140,15 +141,21 @@ func everything(ctx context.Context, k kernel.Kernel) error {
 }
 
 // kinds is every kind the first caller is granted: the ones defined at
-// this moment, plus the one that is never defined.
+// this moment, plus the two that are never defined.
 //
 // KIND ITSELF IS NOT A DEFINITION. Define, Undefine, GetDefinition and
 // the two kind listings are authorized against the kind named "Kind" —
 // the one a definition is stored under — and nothing ever declares it,
 // so walking the definitions alone leaves the first caller unable to
 // declare anything or even list what is there.
+//
+// BLOB IS THE SAME SHAPE for the same reason: bytes are addressed by an
+// opaque id and not by a path, so there is no definition to walk to and
+// no prefix to confine. Leaving it out left the byte store unusable by
+// anybody at all — including the caller that is supposed to be able to
+// grant it to somebody else.
 func kinds(ctx context.Context, k kernel.Kernel) []string {
-	defined := []string{def.HeadKind.String()}
+	defined := []string{def.HeadKind.String(), blob.Kind.String()}
 
 	for head, err := range k.Kinds(ctx) {
 		if err != nil {

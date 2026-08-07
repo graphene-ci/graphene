@@ -46,6 +46,22 @@ func Split(token string) (string, string, error) {
 	return name, secret, nil
 }
 
+// Issue mints a credential for a named identity.
+//
+// The secret exists in the clear once, in what this returns, and what
+// gets stored is a digest of it. It is here rather than beside the thing
+// that writes identities so that there is ONE place credentials are made
+// — the first caller's and every kernel's alike — and one answer to how
+// much of a secret they get.
+func Issue(who Principal) (Token, error) {
+	made, err := secret()
+	if err != nil {
+		return "", err
+	}
+
+	return Token(who.String() + separator + made), nil
+}
+
 // Digest is what an identity stores instead of a secret.
 //
 // A digest and not the secret itself, so that reading an identity — which
