@@ -341,7 +341,7 @@ func Read(path string) (Config, error) {
 	case loaded.Exists(upstreamKey):
 		read, err := NewUpstream(name, listen,
 			loaded.String(addressKey), loaded.String(tokenKey),
-			loaded.String(workKey), pinsIn(loaded, pinKey)...)
+			loaded.String(workKey), PinsIn(loaded, pinKey)...)
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
 		}
@@ -447,7 +447,10 @@ func defaultStore() string {
 	return "kernel.db"
 }
 
-// pinsIn reads a pin field that may be one or several.
+// PinsIn reads a pin field that may be one or several.
+//
+// Exported because a client reads the same field out of its own file, and
+// two readers of one format disagree the day one of them is fixed.
 //
 // By ASKING WHAT IS THERE rather than by trying a scalar first: koanf
 // renders a list through String() as "[a b]", which is not empty, so a
@@ -457,7 +460,7 @@ func defaultStore() string {
 // on one line is the ordinary case, and the list appears for as long as a
 // key is being replaced. Making somebody write a list of one forever, to
 // pay for a case that lasts an afternoon, would be the wrong trade.
-func pinsIn(loaded *koanf.Koanf, key string) []string {
+func PinsIn(loaded *koanf.Koanf, key string) []string {
 	switch found := loaded.Get(key).(type) {
 	case string:
 		if found == "" {

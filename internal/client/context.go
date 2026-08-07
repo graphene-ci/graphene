@@ -26,6 +26,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 
+	"github.com/graphene-ci/graphene/internal/app/config"
 	"github.com/graphene-ci/graphene/internal/link"
 )
 
@@ -163,7 +164,7 @@ func Read(path string) (*Contexts, error) {
 		read, err := NewContext(name,
 			loaded.String(kernelsKey+"."+name+"."+addressField),
 			loaded.String(kernelsKey+"."+name+"."+tokenField),
-			pinsIn(loaded, kernelsKey+"."+name+"."+pinField)...)
+			config.PinsIn(loaded, kernelsKey+"."+name+"."+pinField)...)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %s: %w", path, name, err)
 		}
@@ -172,33 +173,6 @@ func Read(path string) (*Contexts, error) {
 	}
 
 	return all, nil
-}
-
-// pinsIn reads a pin field that may be one or several.
-//
-// By ASKING WHAT IS THERE rather than by trying a scalar first: koanf
-// renders a list through String() as "[a b]", which is not empty, so a
-// scalar-first read takes a list of two pins for one unreadable one.
-//
-// A file is written by a person, and both spellings are theirs: one pin
-// on one line is the ordinary case, and the list appears for as long as a
-// key is being replaced. Making somebody write a list of one forever, to
-// pay for a case that lasts an afternoon, would be the wrong trade.
-func pinsIn(loaded *koanf.Koanf, key string) []string {
-	switch found := loaded.Get(key).(type) {
-	case string:
-		if found == "" {
-			return nil
-		}
-
-		return []string{found}
-
-	case []any, []string:
-		return loaded.Strings(key)
-
-	default:
-		return nil
-	}
 }
 
 // names is every kernel the file names, in the order a person reads.
