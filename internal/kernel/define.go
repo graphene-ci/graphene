@@ -60,6 +60,22 @@ func (k Kernel) Define(ctx context.Context, definition def.Definition) (def.Head
 			return nil
 		}
 
+		// THE SHAPE IS PART OF WHAT A KIND IS. "/local/one" under
+		// (kernel, name) and under (tenant, name) are two different
+		// resources, so a version that changed the shape would not be a
+		// new version of this kind — it would be a different kind wearing
+		// the name. Every reference to it, stored as a written path and
+		// resolved through the current shape, would quietly come to mean
+		// something else.
+		//
+		// So it is refused, and the answer is a new kind under a new
+		// name. Schemas may still change: what a resource IS may grow,
+		// what addresses it may not.
+		if !current.Value.IsZero() && !current.Value.Definition().Shape().Eq(definition.Shape()) {
+			return fmt.Errorf("%w: %s is %s and cannot become %s", ErrShapeChanged,
+				definition.Kind(), current.Value.Definition().Shape(), definition.Shape())
+		}
+
 		published, err := def.Publish(definition, current.Value.Version().Next())
 		if err != nil {
 			return err
@@ -258,6 +274,29 @@ func (k Kernel) undefine(ctx context.Context, named kind.Kind) error {
 	}
 
 	return nil
+}
+
+// versions walks every published version of a kind, oldest first.
+//
+// It exists because a resource is read through the version it was
+// admitted under, so questions about what a kind CAN say — which of its
+// fields are references, which of those point at something — are
+// questions about all of its versions and not about the current one.
+func (k Kernel) versions(ctx context.Context, named kind.Kind) iter.Seq2[def.Published, error] {
+	return func(yield func(def.Published, error) bool) {
+		under, err := def.PublishedShape.New(named.String())
+		if err != nil {
+			yield(def.Published{}, err)
+
+			return
+		}
+
+		for stored, err := range k.published.Scan(ctx, resource.NewId(def.PublishedKind, under)) {
+			if !yield(stored.Value, err) || err != nil {
+				return
+			}
+		}
+	}
 }
 
 // sweep removes every published version of a kind, and says how many it

@@ -7,6 +7,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/store"
 	"github.com/graphene-ci/graphene/internal/types/def"
+	"github.com/graphene-ci/graphene/internal/types/kind"
 	"github.com/graphene-ci/graphene/internal/types/resource"
 	"github.com/graphene-ci/graphene/internal/types/revision"
 )
@@ -123,6 +124,28 @@ type Holder struct {
 // This is where a reverse index will earn itself, and when it does the
 // check above it stays the same code: what changes is where the candidate
 // list comes from, not what is done with it.
+// everPointsAt reports whether any published version of a kind declares a
+// reference to another kind.
+//
+// Every version and not the current one, because a resource is read
+// through the version it was admitted under: a kind whose head no longer
+// points at something may still have instances that do.
+func (k Kernel) everPointsAt(ctx context.Context, from, to kind.Kind) (bool, error) {
+	for published, err := range k.versions(ctx, from) {
+		if err != nil {
+			return false, err
+		}
+
+		for _, ref := range published.Definition().Refs() {
+			if ref.Kind().Eq(to) {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func (k Kernel) Holders(ctx context.Context, id resource.Id) ([]Holder, error) {
 	var found []Holder
 
@@ -131,14 +154,14 @@ func (k Kernel) Holders(ctx context.Context, id resource.Id) ([]Holder, error) {
 			return nil, err
 		}
 
-		points := false
-
-		for _, ref := range head.Definition().Refs() {
-			if ref.Kind().Eq(id.Kind()) {
-				points = true
-
-				break
-			}
+		// EVERY VERSION, not the current one. A kind that pointed at
+		// this in v1 and stopped in v2 still has v1 resources, and each
+		// of them still points: a candidate list built from heads makes
+		// those holders invisible and lets the target be removed out from
+		// under them.
+		points, err := k.everPointsAt(ctx, head.Kind(), id.Kind())
+		if err != nil {
+			return nil, err
 		}
 
 		if !points {
@@ -155,7 +178,17 @@ func (k Kernel) Holders(ctx context.Context, id resource.Id) ([]Holder, error) {
 				return nil, err
 			}
 
-			references, err := k.resolve(ctx, head.Definition(), stored.Value)
+			// The definition the resource was ADMITTED under, which is
+			// what says which of its fields are references at all. Read
+			// through the head instead and a v1 resource is searched for
+			// v2's references, which it does not have and may never have
+			// had.
+			published, err := k.DefinitionAt(ctx, head.Kind(), stored.Value.DefinitionVersion())
+			if err != nil {
+				return nil, err
+			}
+
+			references, err := k.resolve(ctx, published.Definition(), stored.Value)
 			if err != nil {
 				return nil, err
 			}

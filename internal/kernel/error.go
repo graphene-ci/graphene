@@ -39,6 +39,15 @@ var (
 	// invisible until something died that should not have.
 	ErrOwnerChanged = errors.New("an owning reference cannot be re-pointed")
 
+	// ErrShapeChanged — a new version of a kind addresses its instances
+	// differently.
+	//
+	// A shape is part of what a kind IS, so this is not a version of the
+	// same kind; it is a different kind under a taken name. References to
+	// it are written paths resolved through the current shape, and they
+	// would all come to mean something else at once.
+	ErrShapeChanged = errors.New("a kind cannot change how its instances are addressed")
+
 	// ErrReservedKind — a kind named the way the kernel names its own
 	// records. Its instances would land in the key space the heads or the
 	// published shapes live in, and one would overwrite the other without
