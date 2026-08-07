@@ -6,148 +6,59 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
-	"time"
 
-	"google.golang.org/grpc"
-
-	"github.com/gopherex/xlog"
-
-	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
-	blobpb "github.com/graphene-ci/graphenepb/v1/blob"
+	"github.com/graphene-ci/graphene/internal/app/server"
 )
 
-// Stdio serves one client on this process's own pipes.
+// ErrNotRunning — there is no kernel on this machine to relay to.
 //
-// It is a whole kernel, opened the same way `run` opens one and answering
-// the same service — this is not a cut-down mode. What it is not is a
-// LISTENER: there is one connection, it was already there when the
-// process started, and when it ends so does this.
-//
-// Nothing about the pipe is encrypted or pinned, and that is not a gap.
-// Encryption answers "can somebody on the path read this"; the path is a
-// pipe belonging to whoever started this process, usually through ssh,
-// and that is the thing being trusted. A second tunnel inside it would
-// only hide which one was doing the work.
-//
-// The kernel it serves is the one this machine's configuration describes,
-// including its store — so two of these at once are two kernels on one
-// store, which the store refuses. One client at a time is what this is.
-func Stdio(ctx context.Context, boot Bootstrap, in io.Reader, out io.Writer) error {
-	// Its log goes NOWHERE. Stdout is the wire: a line of JSON written
-	// into it would be framed as gRPC and understood as nothing, and the
-	// client would report a protocol error instead of whatever happened.
-	log := xlog.New(xlog.NopCore{})
+// A separate answer from "the socket refused me", because it is a
+// different thing to do about it: start the kernel.
+var ErrNotRunning = errors.New("no kernel is running on this machine")
 
-	kernel, err := Open(ctx, boot, log)
+// Stdio relays this process's pipes to the kernel running on this
+// machine.
+//
+// IT OPENS NOTHING. An earlier version of this opened the store and
+// served a whole kernel on the pipe, which cannot work for the case it
+// exists for: `ssh host graphened stdio` is aimed at a machine where a
+// kernel is ALREADY running, and one store is one process — the second
+// one waits for a lock it will never get. It stopped, silently, forever.
+//
+// So it is a relay. What crosses the pipe is what would have crossed a
+// socket, byte for byte, and everything that decides anything — who the
+// caller is, what they may do — happens in the kernel at the other end,
+// exactly as it does over a port.
+func Stdio(ctx context.Context, dir string, in io.Reader, out io.Writer) error {
+	var dialer net.Dialer
+
+	conn, err := dialer.DialContext(ctx, "unix", server.Socket(dir))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %s: %w", ErrNotRunning, server.Socket(dir), err)
 	}
 
-	defer func() { _ = kernel.Close() }()
+	defer func() { _ = conn.Close() }()
 
-	server := grpc.NewServer()
-	graphenepbv1.RegisterKernelServiceServer(server, kernel.Service())
+	// Two copies, and the FIRST one to end ends both. A relay that waited
+	// for the other direction would hang on a client that stopped talking
+	// and is waiting to be told the conversation is over. The channel
+	// holds both so the copy that loses the race is not left blocked on
+	// one nobody reads.
+	const directions = 2
 
-	if bytes := kernel.Bytes(); bytes != nil {
-		blobpb.RegisterBlobServiceServer(server, bytes)
-	}
+	done := make(chan error, directions)
 
-	go func() {
-		<-ctx.Done()
-		server.Stop()
-	}()
+	go func() { _, err := io.Copy(conn, in); done <- err }()
+	go func() { _, err := io.Copy(out, conn); done <- err }()
 
-	// One connection, handed over as if it had been accepted. gRPC's
-	// Serve wants a listener, so it is given one that has exactly this to
-	// hand out.
-	spent := make(chan struct{})
-	listener := &once{conn: &pipe{in: in, out: out, spent: spent}, spent: spent}
-
-	if err := server.Serve(listener); err != nil && !errors.Is(err, errNoMore) {
-		return fmt.Errorf("stdio: %w", err)
-	}
-
-	return nil
-}
-
-// once is a listener with one connection in it.
-type once struct {
-	conn  net.Conn
-	spent <-chan struct{}
-	done  bool
-}
-
-// errNoMore — the one connection has been served and has ended.
-//
-// gRPC's Serve stops when Accept fails, and stopping is right ONCE the
-// connection is over. Saying so immediately is what the first version of
-// this did, and it tore the connection down the moment it was handed out.
-var errNoMore = errors.New("stdio serves one connection")
-
-// Accept hands the connection over, and then waits.
-//
-// The second call blocks until that connection is finished, because gRPC
-// calls Accept in a loop and treats a failure as "stop serving". A
-// listener that answered at once would end the conversation it had just
-// started.
-func (o *once) Accept() (net.Conn, error) {
-	if o.done {
-		<-o.spent
-
-		return nil, errNoMore
-	}
-
-	o.done = true
-
-	return o.conn, nil
-}
-
-func (o *once) Close() error   { return nil }
-func (o *once) Addr() net.Addr { return pipeAddr("stdio") }
-
-// pipe wears this process's own input and output as a connection.
-type pipe struct {
-	in    io.Reader
-	out   io.Writer
-	spent chan struct{}
-	once  sync.Once
-}
-
-//nolint:wrapcheck // the pipe's own error, given to whoever is reading it
-func (p *pipe) Read(into []byte) (int, error) { return p.in.Read(into) }
-
-//nolint:wrapcheck // see Read
-func (p *pipe) Write(from []byte) (int, error) { return p.out.Write(from) }
-
-// Close closes what can be closed. Standard input and output belong to
-// the process rather than to this, and the process is about to end.
-func (p *pipe) Close() error {
-	p.once.Do(func() {
-		if closer, can := p.in.(io.Closer); can {
-			_ = closer.Close()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-done:
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("relay: %w", err)
 		}
 
-		if closer, can := p.out.(io.Closer); can {
-			_ = closer.Close()
-		}
-
-		// And this is what lets the listener stop waiting, which is what
-		// lets Serve return, which is what ends the process.
-		close(p.spent)
-	})
-
-	return nil
+		return nil
+	}
 }
-
-// The rest of net.Conn, which a pipe does not have and gRPC does not use.
-func (p *pipe) LocalAddr() net.Addr                { return pipeAddr("stdio") }
-func (p *pipe) RemoteAddr() net.Addr               { return pipeAddr("client") }
-func (p *pipe) SetDeadline(_ time.Time) error      { return nil }
-func (p *pipe) SetReadDeadline(_ time.Time) error  { return nil }
-func (p *pipe) SetWriteDeadline(_ time.Time) error { return nil }
-
-type pipeAddr string
-
-func (a pipeAddr) Network() string { return "pipe" }
-func (a pipeAddr) String() string  { return string(a) }

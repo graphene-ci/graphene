@@ -82,7 +82,14 @@ type App struct {
 	// as is the key this kernel is recognized by, made at the first start
 	// and kept beside everything else it owns.
 	as link.Identity
+	// beside is the directory this kernel owns: its key, its bytes, the
+	// sockets it opens. Where everything that is about ONE kernel on ONE
+	// machine goes.
+	beside string
 }
+
+// Beside is the directory this kernel keeps its own things in.
+func (a *App) Beside() string { return a.beside }
 
 // As is the key this kernel answers on, and the pin whoever points at it
 // must be told.
@@ -139,7 +146,9 @@ func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) err
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(local.Store()), err)
 	}
 
-	as, err := link.Open(filepath.Dir(local.Store()))
+	a.beside = filepath.Dir(local.Store())
+
+	as, err := link.Open(a.beside)
 	if err != nil {
 		return err
 	}
@@ -266,7 +275,9 @@ func (a *App) subordinate(linkTo config.Upstream, log *xlog.Logger) error {
 	// A subordinate answers on TCP like any other kernel, so it needs a
 	// key of its own — being subordinate is about where the answers come
 	// from, not about who may listen to them on the way.
-	as, err := link.Open(linkTo.Work())
+	a.beside = linkTo.Work()
+
+	as, err := link.Open(a.beside)
 	if err != nil {
 		return err
 	}

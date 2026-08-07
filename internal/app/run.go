@@ -94,6 +94,17 @@ func Run(ctx context.Context, boot Bootstrap, log *xlog.Logger) error {
 
 	stop.Go(func(ctx context.Context) { Beat(ctx, kernel, log) })
 
+	// The door on this machine. A second listener and not a second
+	// kernel: one store is one process, so anything that opened the store
+	// again would wait for a lock this one is holding.
+	local := server.Listening(kernel.Beside(), kernel.Service(), kernel.Bytes(), log)
+
+	stop.Go(func(ctx context.Context) {
+		if err := local.Serve(ctx); err != nil {
+			log.Error("local door", xlog.Err(err))
+		}
+	})
+
 	// The agent. Both kinds of kernel have one — a subordinate watches
 	// the kernel above for what to run — so the nil check is for a kernel
 	// that failed to build one, not for a kind that has none.

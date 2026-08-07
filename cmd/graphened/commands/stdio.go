@@ -4,9 +4,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/app"
+	"github.com/graphene-ci/graphene/internal/app/config"
 )
 
-// stdioCommand answers on the pipe it was started in.
+// stdioCommand relays the pipe it was started in to the kernel running
+// on this machine.
 //
 // It is how a kernel is reached with no port open:
 //
@@ -17,6 +19,13 @@ import (
 // can be found by scanning, and the credential that got there is the
 // operator's own.
 //
+// IT SERVES NOTHING AND DECIDES NOTHING. What crosses the pipe is what
+// would have crossed a socket, and the kernel at the other end reads the
+// caller's credential exactly as it does over a port. The kernel has to
+// be RUNNING — that is the case this exists for, and an earlier version
+// that opened the store itself could not handle it: one store is one
+// process, so it waited for a lock the running kernel was holding.
+//
 // A CLIENT'S WAY IN AND NOT A KERNEL'S. A kernel that forwards to another
 // one holds the link open for as long as it runs and has to survive it
 // dropping; a pipe that dies is a kernel that has stopped forwarding, and
@@ -26,14 +35,20 @@ func stdioCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stdio",
 		Short: "Answer on standard input and output instead of a port",
-		Long: "Serve one client on this process's own pipes, for reaching " +
-			"a kernel that listens on nothing:\n\n" +
+		Long: "Relay this process's pipes to the kernel running on this " +
+			"machine, for reaching one without a port:\n\n" +
 			"  gctl kernels save one \"exec:ssh host graphened stdio\" <token>\n\n" +
-			"One client, for as long as the pipe is open. The kernel this " +
-			"talks to is the one this machine's configuration describes.",
+			"The kernel must be running: this serves nothing itself, it " +
+			"carries bytes to the socket that kernel opened.",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return app.Stdio(command.Context(), boot(), command.InOrStdin(), command.OutOrStdout())
+			read, err := config.Read(configPath)
+			if err != nil {
+				return err
+			}
+
+			return app.Stdio(command.Context(), keptIn(read),
+				command.InOrStdin(), command.OutOrStdout())
 		},
 	}
 }
