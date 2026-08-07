@@ -78,7 +78,7 @@ func (k Kernel) Put(
 			return err
 		}
 
-		at, err = inside.resources.Put(ctx, admitted, expect)
+		at, err = inside.resources.Put(ctx, admitted.By(k.by), expect)
 
 		return err
 	})
@@ -111,7 +111,7 @@ func (k Kernel) Claim(
 		return revision.None, err
 	}
 
-	return k.resources.Put(ctx, claimed, expect)
+	return k.resources.Put(ctx, claimed.By(k.by), expect)
 }
 
 // Release lets go of a claim, and removes the resource if that was the
@@ -142,7 +142,7 @@ func (k Kernel) Release(
 		return k.resources.Delete(ctx, id, expect)
 	}
 
-	return k.resources.Put(ctx, released, expect)
+	return k.resources.Put(ctx, released.By(k.by), expect)
 }
 
 // held reads the resource a claim is being placed on or taken off, and
@@ -207,7 +207,7 @@ func (k Kernel) Report(
 			return err
 		}
 
-		at, err = inside.resources.Put(ctx, reported, expect)
+		at, err = inside.resources.Put(ctx, reported.By(k.by), expect)
 
 		return err
 	})
@@ -266,7 +266,7 @@ func (k Kernel) remove(
 		return revision.None, err
 	}
 
-	return k.resources.Put(ctx, marked, expect)
+	return k.resources.Put(ctx, marked.By(k.by), expect)
 }
 
 // collect settles what happens to everything pointing at a resource

@@ -46,6 +46,25 @@ type Kernel struct {
 	heads     store.Store[def.Head]
 	published store.Store[def.Published]
 	resources store.Store[resource.Resource]
+
+	// by is who this kernel's writes are made by. Empty is the kernel
+	// itself, which is what a store being bootstrapped and a kernel
+	// writing down that it exists both are.
+	by resource.Author
+}
+
+// As is this kernel, writing on somebody's behalf.
+//
+// The same shape the guard has, and for the same reason: who is calling
+// is known once, at the edge, and everything below is the same code
+// either way. A parameter on every write would be a parameter every
+// implementation of every port had to carry, including the ones across a
+// link — where the far side works the author out from the credential and
+// would have to ignore what it was sent.
+func (k Kernel) As(by resource.Author) Kernel {
+	k.by = by
+
+	return k
 }
 
 // New puts a kernel on a byte store.

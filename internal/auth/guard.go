@@ -62,7 +62,23 @@ func New(k kernel.Kernel) Guard { return Guard{kernel: k} }
 // this" — a certificate, a token. Nothing here checks that; by the time
 // this runs the answer is in hand and the only question left is what it
 // is allowed to do.
-func (g Guard) As(who Principal) Session { return Session{guard: g, who: who} }
+func (g Guard) As(who Principal) Session {
+	// The kernel this session writes through is stamped with the caller,
+	// so every record it leaves says who left it. A principal is already
+	// checked, so becoming an author cannot fail; a name that somehow
+	// could not is recorded as nobody rather than refusing the call,
+	// because the write is allowed either way and losing the name is the
+	// smaller wrong.
+	author, err := resource.NewAuthor(who.String())
+	if err != nil {
+		author = resource.NoAuthor
+	}
+
+	stamped := g
+	stamped.kernel = g.kernel.As(author)
+
+	return Session{guard: stamped, who: who}
+}
 
 // Session is the kernel as one caller sees it.
 type Session struct {

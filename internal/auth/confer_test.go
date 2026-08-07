@@ -302,3 +302,68 @@ func widen(t *testing.T, k kernel.Kernel, name string, grants ...any) {
 		t.Fatalf("put %s: %v", id, err)
 	}
 }
+
+// Every record says who wrote it, and nobody can say otherwise. The
+// question "who changed this" used to have no answer at all.
+func TestARecordSaysWhoWroteIt(t *testing.T) {
+	t.Parallel()
+
+	k, guard := open(t)
+	ctx := context.Background()
+
+	role(t, k, "writer", grant("put", "Process", ""), grant("report", "Process", ""))
+
+	session := guard.As(identity(t, k, "operator", "writer"))
+
+	id := processId(t, "local", "web")
+
+	at, err := session.Put(ctx, intentFor(t, id, map[string]any{"bundle": "b1"}), revision.Absent)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	stored, err := k.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	if stored.Value.Author().String() != "operator" {
+		t.Fatalf("written by %q", stored.Value.Author())
+	}
+
+	// A status write is a write too, and by somebody else as often as not.
+	role(t, k, "reporter", grant("report", "Process", ""))
+
+	controller := guard.As(identity(t, k, "watcher", "reporter"))
+
+	if _, err := controller.Report(ctx, id,
+		schemapb.MustStructFromGo(map[string]any{"phase": "running"}), at); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+
+	stored, err = k.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	if stored.Value.Author().String() != "watcher" {
+		t.Fatalf("the status write was attributed to %q", stored.Value.Author())
+	}
+
+	// And a write through the unguarded kernel is the kernel's own: a
+	// store being bootstrapped has no caller, and naming one would be
+	// worse than saying there was none.
+	if _, err := k.Report(ctx, id,
+		schemapb.MustStructFromGo(map[string]any{"phase": "exited"}), stored.Revision); err != nil {
+		t.Fatalf("report unguarded: %v", err)
+	}
+
+	stored, err = k.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	if !stored.Value.Author().IsZero() {
+		t.Fatalf("the kernel's own write was attributed to %q", stored.Value.Author())
+	}
+}

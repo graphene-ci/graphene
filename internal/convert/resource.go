@@ -40,6 +40,7 @@ func ResourceToPb(value resource.Resource) *graphenepbv1.Resource {
 		Generation:        uint64(flat.Generation),
 		DefinitionVersion: uint32(flat.Version),
 		Deleting:          flat.Deleting,
+		Author:            flat.Author.String(),
 	}
 }
 
@@ -71,6 +72,11 @@ func ResourceFromPb(message *graphenepbv1.Resource) (resource.Resource, error) {
 		finalizers = append(finalizers, finalizer)
 	}
 
+	author, err := resource.NewAuthor(message.GetAuthor())
+	if err != nil {
+		return resource.Resource{}, fmt.Errorf("%s: author: %w", id, err)
+	}
+
 	return resource.Restore(resource.Snapshot{
 		Id:         id,
 		Spec:       message.GetSpec(),
@@ -79,5 +85,6 @@ func ResourceFromPb(message *graphenepbv1.Resource) (resource.Resource, error) {
 		Generation: resource.Generation(message.GetGeneration()),
 		Version:    def.Version(message.GetDefinitionVersion()),
 		Deleting:   message.GetDeleting(),
+		Author:     author,
 	})
 }

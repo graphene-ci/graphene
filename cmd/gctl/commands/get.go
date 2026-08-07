@@ -124,8 +124,12 @@ func printed(out io.Writer, listing graphenepbv1.KernelService_ListClient) error
 			"kind":     stored.GetResource().GetId().GetKind(),
 			"path":     "/" + pathOf(stored.GetResource().GetId()),
 			"revision": stored.GetRevision(),
-			"spec":     plain(stored.GetResource().GetSpec()),
-			"status":   plain(stored.GetResource().GetStatus()),
+			// Who wrote it last. Empty is the kernel itself, and it is
+			// printed anyway rather than left out: "nobody" and "the
+			// field is not there" would look the same.
+			"author": stored.GetResource().GetAuthor(),
+			"spec":   plain(stored.GetResource().GetSpec()),
+			"status": plain(stored.GetResource().GetStatus()),
 		})
 		if err != nil {
 			return err

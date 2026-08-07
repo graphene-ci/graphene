@@ -8,7 +8,7 @@ require (
 	github.com/gopherex/xprobe v1.0.0
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
-	github.com/graphene-ci/graphenepb v0.0.0-20260807110733-0705df57c818
+	github.com/graphene-ci/graphenepb v0.0.0-20260807113305-c5cfb5aee153
 	github.com/kardianos/service v1.3.0
 	github.com/knadh/koanf/parsers/yaml v1.1.1
 	github.com/knadh/koanf/providers/file v1.2.1

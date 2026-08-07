@@ -32,6 +32,25 @@ type Resource struct {
 	generation Generation
 	version    def.Version
 	deleting   bool
+	// author is who made the last write, whichever half it touched. It
+	// is set by the kernel from the session and by nothing else: a value
+	// a caller could send would be a value a caller could choose.
+	author Author
+}
+
+// Author is who last wrote this. Empty is the kernel itself.
+func (r Resource) Author() Author { return r.author }
+
+// By is this resource, stamped with who wrote it.
+//
+// A method on the value rather than an argument threaded through
+// admission, because who wrote a thing is not part of deciding whether
+// the thing is allowed: every check runs the same for everybody, and this
+// is applied to what came out.
+func (r Resource) By(author Author) Resource {
+	r.author = author
+
+	return r
 }
 
 // Intent is the part of this that an author asked for.

@@ -23,6 +23,7 @@ type Snapshot struct {
 	Generation Generation
 	Version    def.Version
 	Deleting   bool
+	Author     Author
 }
 
 // A canary, and the only unkeyed literal in the codebase.
@@ -41,7 +42,7 @@ type Snapshot struct {
 // It is here rather than in the converter because vet refuses unkeyed
 // literals of another package's struct, and it is right to: this is the
 // one place the exception is earned.
-var _ = Snapshot{Id{}, nil, nil, nil, 0, 0, false}
+var _ = Snapshot{Id{}, nil, nil, nil, 0, 0, false, ""}
 
 // Restore rebuilds a resource that was admitted once already — read back
 // from the store, or decoded off the wire.
@@ -97,6 +98,7 @@ func Restore(snapshot Snapshot) (Resource, error) {
 		generation: snapshot.Generation,
 		version:    snapshot.Version,
 		deleting:   snapshot.Deleting,
+		author:     snapshot.Author,
 	}, nil
 }
 
@@ -113,5 +115,6 @@ func (r Resource) Flatten() Snapshot {
 		Generation: r.generation,
 		Version:    r.version,
 		Deleting:   r.deleting,
+		Author:     r.author,
 	}
 }
