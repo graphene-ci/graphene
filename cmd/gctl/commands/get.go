@@ -31,7 +31,7 @@ func getCommand() *cobra.Command {
 			"local/one.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(command *cobra.Command, args []string) error {
-			on, err := reached(command)
+			on, err := reached()
 			if err != nil {
 				return err
 			}
@@ -87,8 +87,11 @@ func getCommand() *cobra.Command {
 }
 
 // written is the path a person typed, or none.
+//
+// The second argument, because the first is the kind: `get Process
+// /k1` is one question with more of a path in it.
 func written(args []string) string {
-	if len(args) < 2 {
+	if len(args) < withPath {
 		return ""
 	}
 
@@ -152,9 +155,16 @@ func roughly(over time.Duration) time.Duration {
 	return over.Round(time.Hour)
 }
 
+// withPath is how many arguments a command has when one of them is a
+// path, and columnGap is how far apart the columns of a listing sit.
+const (
+	withPath  = 2
+	columnGap = 3
+)
+
 // tabulated writes columns that line up.
 func tabulated(out io.Writer, rows func(write func(...string)) error) error {
-	table := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
+	table := tabwriter.NewWriter(out, 0, 0, columnGap, ' ', 0)
 
 	err := rows(func(cells ...string) {
 		for at, cell := range cells {

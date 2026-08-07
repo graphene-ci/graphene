@@ -52,6 +52,11 @@ var (
 )
 
 // defaultHistory is how many events are kept for watchers catching up.
+// storeMode is what a kernel's store is: readable by the user that runs
+// it and by nobody else. Everything in it — identities, grants, what
+// every machine was told to run — is decided by whoever can read it.
+const storeMode = 0o600
+
 const defaultHistory = 4096
 
 // Store is a kv.Store on a bbolt file.
@@ -101,13 +106,13 @@ func WithBacklog(events int) Option {
 
 // Open opens or creates a store at path.
 func Open(path string, options ...Option) (*Store, error) {
-	db, err := bolt.Open(path, 0o600, nil)
+	opened, err := bolt.Open(path, storeMode, nil)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
 	store := &Store{
-		db:       db,
+		db:       opened,
 		watchers: map[*watcher]struct{}{},
 		keep:     defaultHistory,
 		backlog:  defaultBacklog,
@@ -117,7 +122,7 @@ func Open(path string, options ...Option) (*Store, error) {
 		option(store)
 	}
 
-	if err := db.Update(func(tx *bolt.Tx) error {
+	if err := opened.Update(func(tx *bolt.Tx) error {
 		for _, name := range [][]byte{entriesBucket, historyBucket, metaBucket} {
 			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
 				return err
@@ -126,7 +131,7 @@ func Open(path string, options ...Option) (*Store, error) {
 
 		return nil
 	}); err != nil {
-		_ = db.Close()
+		_ = opened.Close()
 
 		return nil, fmt.Errorf("prepare %s: %w", path, err)
 	}

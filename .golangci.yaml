@@ -209,10 +209,26 @@ linters:
         - github.com/graphene-ci/graphene/internal/store
         - github.com/graphene-ci/graphene/internal/kernel
         - github.com/graphene-ci/graphene/internal/process
+        - github.com/graphene-ci/graphene/internal/app/health
         # grpc's transport credentials are an interface and there is no
         # concrete type to hand back: what this returns is what grpc.Creds
         # takes.
         - google.golang.org/grpc/credentials
+        # Generated services and clients ARE interfaces: the contract has
+        # no concrete type, and an accessor handing one back is handing
+        # back exactly what the generated code defines.
+        - github.com/graphene-ci/graphenepb
+        - google.golang.org/grpc/health/grpc_health_v1
+        # A probe and a reporter are the health library's own ports.
+        - github.com/gopherex/xprobe
+    mnd:
+      # A command's arity is a number and naming it does not make it one
+      # of anything: cobra.ExactArgs(2) already reads as "two arguments".
+      ignored-functions:
+        - cobra.ExactArgs
+        - cobra.MaximumNArgs
+        - cobra.MinimumNArgs
+        - cobra.RangeArgs
     lll:
       line-length: 120
     revive:
@@ -256,9 +272,21 @@ linters:
       # locals mirror the proto vocabulary and stay within max-distance.
       ignore-names:
         - err
-        # "Up" is the whole word. A longer name for it would be a worse
-        # name, and this is a constant read in one place.
+        # These are not abbreviations, they are this codebase's words, and
+        # each is the whole of what it means. A revision is where a write
+        # landed AT; a process runs ON a kernel; a subordinate forwards TO
+        # one, and that one is UP. Lengthening them produces "atRevision",
+        # which says the type twice and the meaning no better.
         - Up
+        - at
+        - on
+        - to
+        - up
+        # tx is what every database library in the world calls a
+        # transaction, and w is one watcher inside its own loop.
+        - tx
+        - w
+        - do
         - tc
         - ok
         - f
@@ -362,7 +390,16 @@ linters:
           # runner rather than at the assertion that failed, which is the
           # opposite of what it is for. Real helpers here do call it.
           - thelper
-        path: _test\.go
+          # Style linters that are about production code being read for
+          # years. A test fixture is read while it is being written and
+          # then only when it fails, and the numbers in one — three keys,
+          # two events, seven writes — are the test, not magic.
+          - gocritic
+          - mnd
+          - prealloc
+          - unparam
+          - contextcheck
+        path: (_test\.go|internal/store/kv/kvtest/)
       - linters:
           - govet
         text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
@@ -373,6 +410,9 @@ linters:
       - linters:
           - testpackage
         path: internal/link/resume_test\.go
+      # kvtest is a conformance SUITE — test bodies that live outside
+      # _test.go so that every store implementation can run the same ones.
+      # It is test code by every measure except its filename.
       # A store implementation IS the kv port. What leaves it is either
       # the port's vocabulary — ErrNotFound, ErrConflict, ErrClosed, which
       # callers compare and must not have to read past a prefix — or the

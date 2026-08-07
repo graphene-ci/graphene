@@ -44,6 +44,11 @@ import (
 	"github.com/graphene-ci/graphene/internal/store/kv/cache"
 )
 
+// dirMode is what a kernel's own directories are: readable by the user
+// that runs it and by nobody else. Everything under them — a store, a
+// key, fetched bytes — is either a secret or something a process runs.
+const dirMode = 0o700
+
 // Bootstrap is the one thing that cannot come from the configuration:
 // where the configuration is.
 type Bootstrap struct {
@@ -130,7 +135,7 @@ func Open(ctx context.Context, boot Bootstrap, log *xlog.Logger) (*App, error) {
 // but the first. There is no separate "have I been here before" flag to
 // get wrong.
 func (a *App) own(ctx context.Context, local config.Local, log *xlog.Logger) error {
-	if err := os.MkdirAll(filepath.Dir(local.Store()), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(local.Store()), dirMode); err != nil {
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(local.Store()), err)
 	}
 

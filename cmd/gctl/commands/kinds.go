@@ -23,7 +23,7 @@ func kindsCommand() *cobra.Command {
 		Short: "List the kinds this kernel has been told about",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			on, err := reached(command)
+			on, err := reached()
 			if err != nil {
 				return err
 			}

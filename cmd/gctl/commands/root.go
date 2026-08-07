@@ -81,7 +81,7 @@ func Execute() int {
 // Named, or the current one, or the one running on this machine — and in
 // the last case it is SAVED, so it is discovered once and is an ordinary
 // context afterwards.
-func reached(command *cobra.Command) (*client.Kernel, error) {
+func reached() (*client.Kernel, error) {
 	all, err := client.Read(contextsPath)
 	if err != nil {
 		return nil, err

@@ -110,8 +110,8 @@ func bearer(ctx context.Context) (string, bool) {
 
 // digestsOf reads the digests an identity knows.
 func digestsOf(spec *schemapb.StructValue) []string {
-	items, ok := spec.Field(auth.DigestsField).AsList()
-	if !ok {
+	items, listed := spec.Field(auth.DigestsField).AsList()
+	if !listed {
 		return nil
 	}
 

@@ -193,8 +193,8 @@ func (s Session) shapeOf(ctx context.Context) func(kind.Kind) (path.TPath, error
 
 // roleNames reads the roles an identity names.
 func roleNames(identity resource.Resource) []string {
-	items, ok := identity.Spec().Field(rolesField).AsList()
-	if !ok {
+	items, listed := identity.Spec().Field(rolesField).AsList()
+	if !listed {
 		return nil
 	}
 

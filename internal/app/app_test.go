@@ -26,7 +26,7 @@ import (
 
 // patience bounds a wait that is expected to end at once. Nothing here
 // sleeps for it: the config is applied by the loop, and this only stops a
-// bug from hanging the suite.
+// mistake from hanging the suite.
 const patience = 5 * time.Second
 
 // open starts a kernel configured by a file in a fresh directory.

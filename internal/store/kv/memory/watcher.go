@@ -100,7 +100,7 @@ func (w *watcher) Next(ctx context.Context) (kv.Event, error) {
 //
 // Split out so that the lock is released before the wait: holding it
 // across a select would stop every writer until somebody read.
-func (w *watcher) take() (event kv.Event, err error, wait bool) {
+func (w *watcher) take() (kv.Event, error, bool) {
 	w.store.mu.Lock()
 	defer w.store.mu.Unlock()
 

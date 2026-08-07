@@ -30,6 +30,11 @@ const (
 	cacheKey      = "store.cache"
 	storeTokenKey = "store.token"
 
+	// dirMode and fileMode: a configuration file carries a credential, and
+	// a file that is only sometimes private is a file nobody can trust.
+	dirMode  = 0o700
+	fileMode = 0o600
+
 	upstreamKey = "upstream"
 	addressKey  = "upstream.address"
 	tokenKey    = "upstream.token"
@@ -329,13 +334,13 @@ func Read(path string) (Config, error) {
 // them from the file it rewrites — including any the administrator left
 // there themselves.
 func Write(path string, config Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return fmt.Errorf("prepare %s: %w", filepath.Dir(path), err)
 	}
 
 	// 0600 because an upstream configuration carries a credential, and a
 	// file that is only sometimes private is a file nobody can trust.
-	if err := os.WriteFile(path, []byte(written(config)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(written(config)), fileMode); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 

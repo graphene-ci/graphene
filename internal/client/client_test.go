@@ -73,8 +73,8 @@ func TestContextsSurviveBeingWrittenDown(t *testing.T) {
 		t.Fatalf("read again: %v", err)
 	}
 
-	if current, _ := moved.Current(); current.Name() != "prod" {
-		t.Fatalf("use did not stick: %s", current)
+	if after, _ := moved.Current(); after.Name() != "prod" {
+		t.Fatalf("use did not stick: %s", after)
 	}
 }
 

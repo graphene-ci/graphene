@@ -79,7 +79,8 @@ func (k Kernel) checkReferences(
 		return err
 	}
 
-	for _, reference := range references {
+	for at := range references {
+		reference := &references[at]
 		if !reference.Strength.Requires() {
 			continue
 		}
@@ -159,7 +160,8 @@ func (k Kernel) Holders(ctx context.Context, id resource.Id) ([]Holder, error) {
 				return nil, err
 			}
 
-			for _, reference := range references {
+			for at := range references {
+				reference := &references[at]
 				if reference.id.Eq(id) {
 					found = append(found, Holder{
 						Id:       stored.Value.Id(),

@@ -121,7 +121,9 @@ func (f FieldPath) Head() FieldName {
 // Rest is the path after the first step; the zero path when there is
 // nothing after it.
 func (f FieldPath) Rest() FieldPath {
-	if len(f.names) < 2 {
+	// Fewer than two names is a path with no rest: one name is the head
+	// and nothing follows it.
+	if len(f.names) < 2 { //nolint:mnd // two is "a head and something after it"
 		return FieldPath{}
 	}
 

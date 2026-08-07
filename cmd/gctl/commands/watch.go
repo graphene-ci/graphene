@@ -24,7 +24,7 @@ func watchCommand() *cobra.Command {
 			"printed for what is already there: run get for that.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(command *cobra.Command, args []string) error {
-			on, err := reached(command)
+			on, err := reached()
 			if err != nil {
 				return err
 			}

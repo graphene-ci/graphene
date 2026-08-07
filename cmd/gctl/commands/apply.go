@@ -57,7 +57,7 @@ func applyCommand() *cobra.Command {
 				return fmt.Errorf("%s: %w", args[0], err)
 			}
 
-			on, err := reached(command)
+			on, err := reached()
 			if err != nil {
 				return err
 			}

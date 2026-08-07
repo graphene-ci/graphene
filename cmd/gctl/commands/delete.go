@@ -29,7 +29,7 @@ func deleteCommand() *cobra.Command {
 			"last claim is released.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(command *cobra.Command, args []string) error {
-			on, err := reached(command)
+			on, err := reached()
 			if err != nil {
 				return err
 			}

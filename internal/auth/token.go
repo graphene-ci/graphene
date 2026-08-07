@@ -37,7 +37,7 @@ var (
 )
 
 // Split takes a token apart.
-func Split(token string) (name, secret string, err error) {
+func Split(token string) (string, string, error) {
 	name, secret, found := strings.Cut(strings.TrimSpace(token), separator)
 	if !found || name == "" || secret == "" {
 		return "", "", ErrMalformedToken
