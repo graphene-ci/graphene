@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"sync"
+	"time"
 
 	"github.com/gopherex/schemapb/go/schemapb"
 	"github.com/gopherex/xlog"
@@ -104,13 +105,27 @@ func (a *Agent) Run(ctx context.Context) error {
 			a.report("watch ended", err)
 		}
 
+		// A PAUSE, and it is not politeness. The usual reason follow
+		// returns at once is a kernel that cannot be reached — an
+		// upstream that is down, a credential that was revoked — and
+		// without this the loop retries as fast as the machine allows,
+		// burning a core and writing a log line per attempt for as long
+		// as the outage lasts.
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
+		case <-time.After(patience):
 		}
 	}
 }
+
+// patience is how long to wait before taking a watch again.
+//
+// Short enough that a kernel that lost its link picks work up again while
+// somebody is still watching, long enough that an outage is quiet. It
+// does not back off: a fixed wait is one number to reason about, and the
+// thing being retried costs a connection rather than a computation.
+const patience = 2 * time.Second
 
 // follow takes one snapshot and consumes one stream to its end.
 func (a *Agent) follow(ctx context.Context, prefix resource.Id) error {

@@ -20,11 +20,14 @@ package bbolt
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
+	bolterr "go.etcd.io/bbolt/errors"
 
 	"github.com/graphene-ci/graphene/internal/store/kv"
 	"github.com/graphene-ci/graphene/internal/types/revision"
@@ -52,6 +55,19 @@ var (
 )
 
 // defaultHistory is how many events are kept for watchers catching up.
+// lockPatience is how long to wait for the file lock before saying who
+// has it. Long enough that a kernel restarting while the old one is still
+// letting go succeeds; short enough that a person watching notices an
+// answer rather than a hang.
+const lockPatience = 3 * time.Second
+
+// ErrStoreInUse — another process holds this store.
+//
+// Named because the alternative is the worst kind of failure: silence.
+// One store is one kernel, which is what makes a kernel's writes ordered
+// at all, so this is a configuration mistake and says so.
+var ErrStoreInUse = errors.New("another process is using this store")
+
 // storeMode is what a kernel's store is: readable by the user that runs
 // it and by nobody else. Everything in it — identities, grants, what
 // every machine was told to run — is decided by whoever can read it.
@@ -106,8 +122,17 @@ func WithBacklog(events int) Option {
 
 // Open opens or creates a store at path.
 func Open(path string, options ...Option) (*Store, error) {
-	opened, err := bolt.Open(path, storeMode, nil)
+	// THE TIMEOUT IS THE POINT. bbolt takes an exclusive lock on the file
+	// and waits forever for it by default, so a second kernel started on
+	// one store does not fail — it stops, with no log line and no error,
+	// looking exactly like a kernel that is running. Diagnosing that once
+	// took a goroutine dump.
+	opened, err := bolt.Open(path, storeMode, &bolt.Options{Timeout: lockPatience})
 	if err != nil {
+		if errors.Is(err, bolterr.ErrTimeout) {
+			return nil, fmt.Errorf("%w: %s", ErrStoreInUse, path)
+		}
+
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
