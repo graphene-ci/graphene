@@ -171,8 +171,8 @@ func TestAClientFindsTheKernelOnThisMachine(t *testing.T) {
 		t.Fatalf("found %s with %q", found, found.Token())
 	}
 
-	if !found.Pin().Eq(running.Pin()) {
-		t.Fatalf("discovered the pin %s, the kernel's is %s", found.Pin(), running.Pin())
+	if pins := found.Pins(); len(pins) != 1 || !pins[0].Eq(running.Pin()) {
+		t.Fatalf("discovered the pins %v, the kernel's is %s", pins, running.Pin())
 	}
 
 	// SAVED, so it is discovered once and is an ordinary context after

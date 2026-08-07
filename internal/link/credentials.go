@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"google.golang.org/grpc/credentials"
 )
@@ -40,17 +42,30 @@ func (i Identity) Serving() credentials.TransportCredentials {
 // whether the key is the exact key that was named. A kernel's certificate
 // is its own, signed by nobody, and carries no name — so the usual check
 // has nothing to do and would refuse it.
-func Reaching(pinned Pin) (credentials.TransportCredentials, error) {
-	if pinned.IsZero() {
+//
+// MORE THAN ONE is allowed, and that is what makes a key replaceable: a
+// client that accepts the old key and the next one can be told about the
+// next one BEFORE the kernel starts serving it, so there is no moment
+// where a correctly configured client cannot connect. See rotate.go.
+func Reaching(pinned ...Pin) (credentials.TransportCredentials, error) {
+	accepted := make([]Pin, 0, len(pinned))
+
+	for _, one := range pinned {
+		if !one.IsZero() {
+			accepted = append(accepted, one)
+		}
+	}
+
+	if len(accepted) == 0 {
 		return nil, ErrNoPin
 	}
 
-	return credentials.NewTLS(reaching(pinned)), nil
+	return credentials.NewTLS(reaching(accepted...)), nil
 }
 
 // reaching is the configuration itself, so the check can be tested
 // against a real handshake rather than through a transport.
-func reaching(pinned Pin) *tls.Config {
+func reaching(pinned ...Pin) *tls.Config {
 	return &tls.Config{
 		MinVersion: minimumVersion,
 		//nolint:gosec // not skipped: replaced below, by a stricter check
@@ -60,7 +75,7 @@ func reaching(pinned Pin) *tls.Config {
 		// session does not run it, so a client that had once connected
 		// would stop checking which kernel it was connected to. This one
 		// runs on every handshake, resumed or not.
-		VerifyConnection: verifyPin(pinned),
+		VerifyConnection: verifyPin(pinned...),
 	}
 }
 
@@ -75,7 +90,7 @@ var ErrNoPin = errors.New("reaching a kernel needs its pin; ask it to print one"
 
 // verifyPin is the whole check: the key the far side used, hashed, must
 // be the key that was named.
-func verifyPin(pinned Pin) func(tls.ConnectionState) error {
+func verifyPin(pinned ...Pin) func(tls.ConnectionState) error {
 	return func(state tls.ConnectionState) error {
 		if len(state.PeerCertificates) == 0 {
 			return ErrWrongKernel
@@ -86,10 +101,22 @@ func verifyPin(pinned Pin) func(tls.ConnectionState) error {
 			return fmt.Errorf("%w: %w", ErrWrongKernel, err)
 		}
 
-		if !found.Eq(pinned) {
-			return fmt.Errorf("%w: expected %s, answered %s", ErrWrongKernel, pinned, found)
+		if slices.ContainsFunc(pinned, found.Eq) {
+			return nil
 		}
 
-		return nil
+		return fmt.Errorf("%w: answered %s, and that is none of %s",
+			ErrWrongKernel, found, written(pinned))
 	}
+}
+
+// written lists the pins a client was told, for the one error that has to
+// say which ones they were.
+func written(pinned []Pin) string {
+	names := make([]string, 0, len(pinned))
+	for _, one := range pinned {
+		names = append(names, one.String())
+	}
+
+	return strings.Join(names, ", ")
 }

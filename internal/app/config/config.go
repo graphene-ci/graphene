@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
@@ -126,7 +128,11 @@ type Upstream struct {
 	address string
 	token   string
 	work    string
-	pin     string
+	// pins is one or more: a subordinate that accepts the kernel above's
+	// next key beside its current one can be told about the next one
+	// before it is served, which is what makes a key replaceable without
+	// a window where nothing can connect.
+	pins []string
 }
 
 // Address is the kernel this one forwards to.
@@ -138,13 +144,14 @@ func (u Upstream) Address() string { return u.address }
 // credential instead.
 func (u Upstream) Token() string { return u.token }
 
-// Pin is WHICH kernel is above: the hash of its key.
+// Pins are WHICH kernel is above: the hash of its key, or of its keys
+// while one is being replaced.
 //
 // Required, and there is no trust-on-first-use to fall back to. The first
 // connection is exactly the one worth being in the middle of, and a
 // subordinate that remembered whoever answered first would have spent its
 // security to save a line of configuration.
-func (u Upstream) Pin() string { return u.pin }
+func (u Upstream) Pins() []string { return slices.Clone(u.pins) }
 
 // Work is the directory a subordinate runs things out of: fetched bytes,
 // working directories, and the sockets processes talk back through.
@@ -183,13 +190,21 @@ func NewLocal(name, listen, store string, cache int, token string) Config {
 // Both halves are required, and neither has a default worth guessing: an
 // address nobody gave is a kernel talking to itself, and a credential
 // nobody gave is a kernel refused everything it asks for.
-func NewUpstream(name, listen, address, token, work, pin string) (Config, error) {
+func NewUpstream(name, listen, address, token, work string, pins ...string) (Config, error) {
+	pinned := make([]string, 0, len(pins))
+
+	for _, one := range pins {
+		if one != "" {
+			pinned = append(pinned, one)
+		}
+	}
+
 	switch {
 	case address == "":
 		return Config{}, ErrNoAddress
 	case token == "":
 		return Config{}, ErrNoToken
-	case pin == "":
+	case len(pinned) == 0:
 		return Config{}, ErrNoPin
 	}
 
@@ -200,7 +215,7 @@ func NewUpstream(name, listen, address, token, work, pin string) (Config, error)
 	return Config{
 		name:   named(name),
 		listen: listening(listen),
-		up:     Upstream{address: address, token: token, work: work, pin: pin},
+		up:     Upstream{address: address, token: token, work: work, pins: pinned},
 	}, nil
 }
 
@@ -249,7 +264,20 @@ func (c Config) Local() (Local, bool) { return c.local, c.local.store != "" }
 func (c Config) Upstream() (Upstream, bool) { return c.up, c.up.address != "" }
 
 // Eq reports two configurations asking for the same thing.
-func (c Config) Eq(other Config) bool { return c == other }
+//
+// Field by field rather than by comparing the structs, because one of
+// them holds a list now. Worth being explicit about anyway: this is what
+// decides whether an edited file changed anything, and a comparison that
+// silently stopped being total would make a kernel ignore a change.
+func (c Config) Eq(other Config) bool {
+	return c.name == other.name &&
+		c.listen == other.listen &&
+		c.local == other.local &&
+		c.up.address == other.up.address &&
+		c.up.token == other.up.token &&
+		c.up.work == other.up.work &&
+		slices.Equal(c.up.pins, other.up.pins)
+}
 
 // String says what a kernel is, WITHOUT its credential. This ends up in
 // logs and in error text, and a token that reached either of those is a
@@ -313,7 +341,7 @@ func Read(path string) (Config, error) {
 	case loaded.Exists(upstreamKey):
 		read, err := NewUpstream(name, listen,
 			loaded.String(addressKey), loaded.String(tokenKey),
-			loaded.String(workKey), loaded.String(pinKey))
+			loaded.String(workKey), pinsIn(loaded, pinKey)...)
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
 		}
@@ -378,9 +406,9 @@ func written(config Config) string {
 			"%s:\n"+
 			"  address: %s\n"+
 			"  token: %s\n"+
-			"  pin: %s\n"+
+			"%s"+
 			"  work: %s\n",
-			upstreamKey, up.address, up.token, up.pin, up.work)
+			upstreamKey, up.address, up.token, writtenPins(up.pins), up.work)
 	}
 
 	written := head + fmt.Sprintf(""+
@@ -417,6 +445,49 @@ func defaultStore() string {
 	}
 
 	return "kernel.db"
+}
+
+// pinsIn reads a pin field that may be one or several.
+//
+// By ASKING WHAT IS THERE rather than by trying a scalar first: koanf
+// renders a list through String() as "[a b]", which is not empty, so a
+// scalar-first read takes a list of two pins for one unreadable one.
+//
+// A file is written by a person, and both spellings are theirs: one pin
+// on one line is the ordinary case, and the list appears for as long as a
+// key is being replaced. Making somebody write a list of one forever, to
+// pay for a case that lasts an afternoon, would be the wrong trade.
+func pinsIn(loaded *koanf.Koanf, key string) []string {
+	switch found := loaded.Get(key).(type) {
+	case string:
+		if found == "" {
+			return nil
+		}
+
+		return []string{found}
+
+	case []any, []string:
+		return loaded.Strings(key)
+
+	default:
+		return nil
+	}
+}
+
+func writtenPins(pins []string) string {
+	if len(pins) == 1 {
+		return fmt.Sprintf("  pin: %s\n", pins[0])
+	}
+
+	var written strings.Builder
+
+	written.WriteString("  pin:\n")
+
+	for _, one := range pins {
+		fmt.Fprintf(&written, "    - %s\n", one)
+	}
+
+	return written.String()
 }
 
 // defaultWork is where a subordinate runs things out of when nobody says

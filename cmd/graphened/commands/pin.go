@@ -48,6 +48,13 @@ func pinCommand() *cobra.Command {
 			// arrive on somebody's terminal and nowhere else.
 			fmt.Fprintln(command.OutOrStdout(), pinned)
 
+			// A prepared key is printed too, on stderr, so that a person
+			// checking a pin mid-rotation sees there is another one
+			// without a script that captures stdout seeing two lines.
+			if next, waiting, err := link.Pending(keptIn(read)); err == nil && waiting {
+				command.PrintErrf("a key is prepared and not yet served: %s\n", next)
+			}
+
 			return nil
 		},
 	}

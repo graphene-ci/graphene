@@ -57,12 +57,18 @@ func Open(to config.Upstream) (*Upstream, error) {
 	// forwards everybody else's, so an address that turned out to be
 	// somebody else would hand them every credential that ever crossed
 	// this link.
-	pinned, err := link.NewPin(to.Pin())
-	if err != nil {
-		return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
+	pinned := make([]link.Pin, 0, len(to.Pins()))
+
+	for _, written := range to.Pins() {
+		one, err := link.NewPin(written)
+		if err != nil {
+			return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
+		}
+
+		pinned = append(pinned, one)
 	}
 
-	creds, err := link.Reaching(pinned)
+	creds, err := link.Reaching(pinned...)
 	if err != nil {
 		return nil, fmt.Errorf("upstream %s: %w", to.Address(), err)
 	}

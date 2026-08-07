@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -64,13 +65,17 @@ type Context struct {
 	name    string
 	address string
 	token   string
-	pin     link.Pin
+	// pins is one or more: a client that accepts the kernel's next key
+	// beside its current one can be told about the next one before it is
+	// served, which is what makes a key replaceable without a window
+	// where nothing can connect.
+	pins []link.Pin
 }
 
 // NewContext states one, refusing the halves that mean nothing on their
 // own: an address with no credential is refused by every call, and a
 // credential with no address has nowhere to go.
-func NewContext(name, address, token, pin string) (Context, error) {
+func NewContext(name, address, token string, pins ...string) (Context, error) {
 	switch {
 	case strings.TrimSpace(name) == "":
 		return Context{}, ErrNoSuchContext
@@ -78,16 +83,28 @@ func NewContext(name, address, token, pin string) (Context, error) {
 		return Context{}, ErrNoAddress
 	case token == "":
 		return Context{}, ErrNoToken
-	case pin == "":
+	}
+
+	pinned := make([]link.Pin, 0, len(pins))
+
+	for _, written := range pins {
+		if written == "" {
+			continue
+		}
+
+		one, err := link.NewPin(written)
+		if err != nil {
+			return Context{}, fmt.Errorf("%w: %w", ErrNoPin, err)
+		}
+
+		pinned = append(pinned, one)
+	}
+
+	if len(pinned) == 0 {
 		return Context{}, ErrNoPin
 	}
 
-	pinned, err := link.NewPin(pin)
-	if err != nil {
-		return Context{}, fmt.Errorf("%w: %w", ErrNoPin, err)
-	}
-
-	return Context{name: name, address: address, token: token, pin: pinned}, nil
+	return Context{name: name, address: address, token: token, pins: pinned}, nil
 }
 
 // Name is what this kernel is called here — a label of the operator's,
@@ -100,8 +117,9 @@ func (c Context) Address() string { return c.address }
 // Token is what to call it with.
 func (c Context) Token() string { return c.token }
 
-// Pin is which kernel that address has to turn out to be.
-func (c Context) Pin() link.Pin { return c.pin }
+// Pins are the keys that address may answer with. More than one while a
+// kernel's key is being replaced, and one the rest of the time.
+func (c Context) Pins() []link.Pin { return slices.Clone(c.pins) }
 
 // IsZero reports a context that was never stated.
 func (c Context) IsZero() bool { return c.address == "" }
@@ -143,7 +161,7 @@ func Read(path string) (*Contexts, error) {
 		read, err := NewContext(name,
 			loaded.String(kernelsKey+"."+name+"."+addressField),
 			loaded.String(kernelsKey+"."+name+"."+tokenField),
-			loaded.String(kernelsKey+"."+name+"."+pinField))
+			pinsIn(loaded, kernelsKey+"."+name+"."+pinField)...)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %s: %w", path, name, err)
 		}
@@ -152,6 +170,33 @@ func Read(path string) (*Contexts, error) {
 	}
 
 	return all, nil
+}
+
+// pinsIn reads a pin field that may be one or several.
+//
+// By ASKING WHAT IS THERE rather than by trying a scalar first: koanf
+// renders a list through String() as "[a b]", which is not empty, so a
+// scalar-first read takes a list of two pins for one unreadable one.
+//
+// A file is written by a person, and both spellings are theirs: one pin
+// on one line is the ordinary case, and the list appears for as long as a
+// key is being replaced. Making somebody write a list of one forever, to
+// pay for a case that lasts an afternoon, would be the wrong trade.
+func pinsIn(loaded *koanf.Koanf, key string) []string {
+	switch found := loaded.Get(key).(type) {
+	case string:
+		if found == "" {
+			return nil
+		}
+
+		return []string{found}
+
+	case []any, []string:
+		return loaded.Strings(key)
+
+	default:
+		return nil
+	}
 }
 
 // names is every kernel the file names, in the order a person reads.
@@ -278,9 +323,20 @@ func (c *Contexts) write() error {
 		kernelsKey + ":\n")
 
 	for _, one := range c.All() {
-		fmt.Fprintf(&written, "  %s:\n    %s: %s\n    %s: %s\n    %s: %s\n",
-			one.name, addressField, one.address, tokenField, one.token,
-			pinField, one.pin)
+		fmt.Fprintf(&written, "  %s:\n    %s: %s\n    %s: %s\n",
+			one.name, addressField, one.address, tokenField, one.token)
+
+		if len(one.pins) == 1 {
+			fmt.Fprintf(&written, "    %s: %s\n", pinField, one.pins[0])
+
+			continue
+		}
+
+		fmt.Fprintf(&written, "    %s:\n", pinField)
+
+		for _, pinned := range one.pins {
+			fmt.Fprintf(&written, "      - %s\n", pinned)
+		}
 	}
 
 	if err := os.WriteFile(c.path, []byte(written.String()), fileMode); err != nil {

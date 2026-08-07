@@ -39,7 +39,7 @@ func Dial(one Context) (*Kernel, error) {
 	// WHICH kernel this is, decided before anything is sent. A client
 	// carries a credential and is about to hand it over, so an address
 	// that turned out to be somebody else would be handing it to them.
-	creds, err := link.Reaching(one.Pin())
+	creds, err := link.Reaching(one.Pins()...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", one, err)
 	}
