@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	graphenepbv1 "github.com/graphene-ci/graphenepb/v1"
@@ -36,15 +38,12 @@ type Kernel struct {
 // the call somebody made rather than the connection they did not know
 // they were opening.
 func Dial(one Context) (*Kernel, error) {
-	// WHICH kernel this is, decided before anything is sent. A client
-	// carries a credential and is about to hand it over, so an address
-	// that turned out to be somebody else would be handing it to them.
-	creds, err := link.Reaching(one.Pins()...)
+	options, err := reaching(one)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", one, err)
+		return nil, err
 	}
 
-	conn, err := grpc.NewClient(one.Address(), grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient(target(one.Address()), options...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", one, err)
 	}
@@ -63,6 +62,42 @@ func Dial(one Context) (*Kernel, error) {
 // somewhere else.
 func (k *Kernel) Bytes() blob.Store {
 	return remote.Over(blobpb.NewBlobServiceClient(k.conn))
+}
+
+// reaching is how this kernel is talked to: over a port, checked against
+// its pin, or over a command's pipes, which are checked by being the
+// pipes of a command this client ran.
+func reaching(one Context) ([]grpc.DialOption, error) {
+	if command, piped := Piped(one.Address()); piped {
+		return []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return piping(command)
+			}),
+		}, nil
+	}
+
+	// WHICH kernel this is, decided before anything is sent. A client
+	// carries a credential and is about to hand it over, so an address
+	// that turned out to be somebody else would be handing it to them.
+	creds, err := link.Reaching(one.Pins()...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", one, err)
+	}
+
+	return []grpc.DialOption{grpc.WithTransportCredentials(creds)}, nil
+}
+
+// target is what gRPC is told to resolve.
+//
+// A command is not a name to look up, so the resolver is told to pass one
+// through and the dialer above answers instead.
+func target(address string) string {
+	if _, piped := Piped(address); piped {
+		return "passthrough:///pipe"
+	}
+
+	return address
 }
 
 // Close lets the connection go.

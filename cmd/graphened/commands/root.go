@@ -44,6 +44,7 @@ func Root() *cobra.Command {
 	root.AddCommand(configureCommand())
 	root.AddCommand(pinCommand())
 	root.AddCommand(rekeyCommands())
+	root.AddCommand(stdioCommand())
 	root.AddCommand(serviceCommands()...)
 
 	return root

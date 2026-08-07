@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -62,10 +63,34 @@ func useCommand() *cobra.Command {
 	}
 }
 
-// savedFields is the least `save` is told: a name, an address, a token
-// and one pin. More pins may follow while a kernel's key is being
-// replaced; anything less is a context that cannot be used.
-const savedFields = 4
+// savedFields is the least `save` is told: a name, an address and a
+// token. A pin comes after them for a kernel reached over a port, and
+// more pins while its key is being replaced.
+const savedFields = 3
+
+// savedArgs is "and a pin, unless the address is a command".
+//
+// A command needs none and cannot use one: what it reaches is the process
+// the client started, so there is nobody in between to be. Demanding one
+// anyway would mean inventing a value for a check that does not happen.
+func savedArgs(_ *cobra.Command, args []string) error {
+	if len(args) < savedFields {
+		return fmt.Errorf("%w: a name, an address and a token", errNotEnough)
+	}
+
+	if _, piped := client.Piped(args[1]); piped {
+		return nil
+	}
+
+	if len(args) < savedFields+1 {
+		return fmt.Errorf("%w: a kernel reached over a port needs its pin", errNotEnough)
+	}
+
+	return nil
+}
+
+// errNotEnough — the command was told less than a context is.
+var errNotEnough = errors.New("not enough")
 
 // saveCommand writes down a kernel somebody else's machine is running.
 //
@@ -75,7 +100,7 @@ const savedFields = 4
 // tool of this shape makes.
 func saveCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "save <name> <address> <token> <pin>...",
+		Use:   "save <name> <address> <token> [pin]...",
 		Short: "Write down a kernel to talk to",
 		Long: "Save a kernel under a name. The first one saved becomes the " +
 			"one commands mean.\n\n" +
@@ -86,14 +111,14 @@ func saveCommand() *cobra.Command {
 			"More than one pin may be given, which is how a kernel's key " +
 			"is replaced: accept the next one beside the current one, " +
 			"then drop the current one once it is gone.",
-		Args: cobra.MinimumNArgs(savedFields),
+		Args: savedArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			all, err := client.Read(contextsPath)
 			if err != nil {
 				return err
 			}
 
-			one, err := client.NewContext(args[0], args[1], args[2], args[3:]...)
+			one, err := client.NewContext(args[0], args[1], args[2], args[savedFields:]...)
 			if err != nil {
 				return err
 			}

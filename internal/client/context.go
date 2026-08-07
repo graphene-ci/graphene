@@ -100,7 +100,9 @@ func NewContext(name, address, token string, pins ...string) (Context, error) {
 		pinned = append(pinned, one)
 	}
 
-	if len(pinned) == 0 {
+	// A command needs no pin and cannot use one: what it reaches is the
+	// process this client started, and there is nobody in between to be.
+	if _, piped := Piped(address); !piped && len(pinned) == 0 {
 		return Context{}, ErrNoPin
 	}
 
