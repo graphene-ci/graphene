@@ -2,6 +2,10 @@
 BIN := $(CURDIR)/bin
 export PATH := $(BIN):$(PATH)
 
+# Ничего не пишем в ~/.kube/config: окружение репозитория живёт в самом
+# репозитории и сносится вместе с ним.
+export KUBECONFIG := $(CURDIR)/.kubeconfig
+
 # One toolchain for everything: the build, the tests and the tools in bin/.
 # kubernetes 0.36 requires 1.26, and a linter built with an older toolchain
 # cannot type-check what the newer one compiles — it panics rather than
@@ -12,13 +16,45 @@ export GOTOOLCHAIN := go$(GO_VERSION)
 CONTROLLER_GEN_VERSION := v0.21.0
 GOLANGCI_LINT_VERSION  := v2.12.2
 KO_VERSION             := v0.19.1
+K3D_VERSION            := v5.9.0
+HELM_VERSION           := v3.21.3
+KUBECTL_VERSION        := v1.36.3
+CROSSPLANE_VERSION     := 2.3.4
+
+CLUSTER  := graphene
+OS       := $(shell go env GOOS)
+ARCH     := $(shell go env GOARCH)
+KUBECTL  := $(BIN)/kubectl
+HELM     := $(BIN)/helm
+K3D      := $(BIN)/k3d
 
 .PHONY: configure
 configure: ## Поставить инструменты в bin/ прибитых версий
 	GOBIN=$(BIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
 	GOBIN=$(BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	GOBIN=$(BIN) go install github.com/google/ko@$(KO_VERSION)
+	GOBIN=$(BIN) go install github.com/k3d-io/k3d/v5@$(K3D_VERSION)
+	GOBIN=$(BIN) go install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION)
+	curl -fsSL -o $(KUBECTL) \
+		https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$(OS)/$(ARCH)/kubectl
+	chmod +x $(KUBECTL)
 	go mod tidy
+
+.PHONY: up
+up: ## Поднять локальное окружение: k3s, Temporal, Crossplane
+	$(K3D) cluster get $(CLUSTER) >/dev/null 2>&1 || \
+		$(K3D) cluster create --config deploy/local/k3d.yaml
+	$(K3D) kubeconfig get $(CLUSTER) > $(KUBECONFIG)
+	$(KUBECTL) apply -f deploy/local/temporal.yaml
+	$(HELM) upgrade --install crossplane \
+		https://charts.crossplane.io/stable/crossplane-$(CROSSPLANE_VERSION).tgz \
+		--namespace crossplane-system --create-namespace --wait
+	go run ./cmd/graphene up --wait
+
+.PHONY: down
+down: ## Снести локальное окружение целиком
+	-$(K3D) cluster delete $(CLUSTER)
+	rm -f $(KUBECONFIG)
 
 .PHONY: test
 test: ## Прогнать тесты
