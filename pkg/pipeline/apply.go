@@ -54,6 +54,8 @@ func Apply[T runtime.Object](run Run, memo string, obj T) Ref[T] {
 		fail("apply "+memo, err)
 	}
 
+	run.s.created = append(run.s.created, out.Ref)
+
 	return Ref[T]{memo: memo, obj: obj, ref: out.Ref}
 }
 

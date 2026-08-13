@@ -27,6 +27,15 @@ const (
 	ActivityTeardown = "graphene.Teardown"
 )
 
+// SystemQueue is where our activities run.
+//
+// It matters that this is not the pipeline's own queue. By default Temporal
+// schedules an activity onto the queue of the workflow that asked for it —
+// and then every pipeline image would have to carry a kubernetes client and
+// the permission to write records. Applying to the cluster is our job, not
+// the pipeline's, so it happens on our queue in our worker.
+const SystemQueue = "graphene-system"
+
 // SignalReady is the signal the operator sends when a record the run owns
 // changes readiness. The workflow does not poll and does not hold a worker
 // slot while a machine boots for three minutes: it sleeps in its history
@@ -88,6 +97,17 @@ type ObjectRef struct {
 // TeardownInput asks for everything a run owns to go away.
 type TeardownInput struct {
 	Owner OwnerRef `json:"owner"`
+
+	// Refs is what the run created, as the run itself remembers it. The
+	// workflow knows this without asking anybody: it is in its own
+	// history. Searching the cluster instead would mean knowing every
+	// kind a pipeline might have applied, which is the one thing we
+	// promised not to know.
+	//
+	// ownerReferences are set on every record besides, so a Run deleted
+	// by hand still takes its things with it. This is the eager path;
+	// that is the safety net.
+	Refs []ObjectRef `json:"refs,omitempty"`
 }
 
 // TeardownOutput reports what was removed.

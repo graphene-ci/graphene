@@ -205,6 +205,10 @@ linters:
         # returning one returns exactly what the machinery takes.
         - k8s.io/apimachinery/pkg/runtime
         - sigs.k8s.io/controller-runtime/pkg/client
+        # The dynamic client and its per-resource handle are interfaces by
+        # design: working with kinds that did not exist at compile time is
+        # what they are for, so there is no concrete type to name.
+        - k8s.io/client-go/dynamic
         # Temporal's client and its futures are interfaces the SDK defines;
         # there is nothing concrete underneath to name.
         - go.temporal.io/sdk/client

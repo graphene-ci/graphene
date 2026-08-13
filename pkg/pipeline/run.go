@@ -43,6 +43,11 @@ type state struct {
 	// must not drop the other two on the floor.
 	arrived map[string]agent.ReadySignal
 
+	// created is everything the run has asked for, in order. Teardown
+	// hands it back rather than searching the cluster: the run knows what
+	// it made, and we promised not to know every kind it might have used.
+	created []agent.ObjectRef
+
 	keep time.Duration
 	torn bool
 }
@@ -113,7 +118,7 @@ func (r Run) Teardown() {
 		}
 	}
 
-	in := agent.TeardownInput{Owner: r.s.owner}
+	in := agent.TeardownInput{Owner: r.s.owner, Refs: r.s.created}
 
 	var out agent.TeardownOutput
 	if err := workflow.ExecuteActivity(ctx, agent.ActivityTeardown, in).Get(ctx, &out); err != nil {

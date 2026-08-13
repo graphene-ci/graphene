@@ -189,6 +189,7 @@ func Workflow(fn any, opts ...Option) (any, error) {
 		// retried until it lands. A timeout is not optional in Temporal,
 		// so it is set here rather than at every call site.
 		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			TaskQueue:           agent.SystemQueue,
 			StartToCloseTimeout: activityTimeout,
 		})
 
