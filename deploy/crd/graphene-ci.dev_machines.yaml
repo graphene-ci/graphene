@@ -1,0 +1,179 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: machines.graphene-ci.dev
+spec:
+  group: graphene-ci.dev
+  names:
+    kind: Machine
+    listKind: MachineList
+    plural: machines
+    singular: machine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.facts.os
+      name: OS
+      type: string
+    - jsonPath: .status.facts.arch
+      name: Arch
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Machine is something that connected.
+
+          The agent writes it, the way a kubelet writes its Node: for a cloud VM
+          nobody has to create one, the agent that comes up creates it. It has no
+          owner, and that is deliberate — the hardware outlives the run that used
+          it. A machine that belonged to a run would be deleted with it while the
+          iron kept running with an agent on it and nobody to answer for it.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MachineSpec is what a PERSON decides about a machine. Everything the
+              agent knows is in the status: a machine describes itself, and what
+              somebody wants of it is a different thing from what it is.
+            properties:
+              taints:
+                description: Taints keep work off this machine unless it tolerates
+                  them.
+                items:
+                  description: |-
+                    Taint keeps work off a machine unless it says it can live with this.
+
+                    Ours rather than corev1.Taint for the same reason as LocalRef: this
+                    package travels into the user's pipeline through pkg/pipeline, and three
+                    fields are not worth k8s.io/api in that import graph.
+                  properties:
+                    effect:
+                      description: TaintEffect says what a taint does to work that
+                        does not tolerate it.
+                      enum:
+                      - NoSchedule
+                      - NoExecute
+                      type: string
+                    key:
+                      minLength: 1
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - effect
+                  - key
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+            type: object
+          status:
+            description: MachineStatus is what the agent reports about the machine
+              it runs on.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              facts:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Facts are what the agent found: os, arch, kernel, docker=27.3.
+                  Arbitrary strings on purpose — a fact is whatever the machine
+                  turned out to have, and the list is not ours to close.
+
+                  Selecting machines by fact needs them as labels, which means
+                  projecting these into metadata under our prefix. That is M5's
+                  business, together with selectors and tolerations; doing it now
+                  would be a second writer of the same truth with no reader.
+                type: object
+              queue:
+                description: Queue is where this installation of the agent listens.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
