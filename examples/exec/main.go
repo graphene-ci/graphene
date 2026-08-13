@@ -16,7 +16,7 @@ import (
 
 // Params is what this pipeline takes.
 type Params struct {
-	// Say is echoed on the machine, so that the test can recognise its
+	// Say is echoed on the machine, so that the test can recognize its
 	// own output rather than any output.
 	Say string `json:"say"`
 }
