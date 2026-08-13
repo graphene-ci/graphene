@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Версия берётся из go.mod, а точный тулчейн — из GOTOOLCHAIN в
+      # Makefile. Здесь она не дублируется намеренно: два места, где
+      # написана версия Go, рано или поздно расходятся.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: configure
+        run: make configure
+
+      # Инструменты в bin/ прибиты по версиям, но go mod tidy внутри
+      # configure может тронуть go.mod или go.sum. Если тронул — значит
+      # они не соответствуют коду, и это ошибка, а не мелочь.
+      - name: go.mod и go.sum не поехали
+        run: git diff --exit-code go.mod go.sum
+
+      - name: lint
+        run: make lint
+
+      - name: test
+        run: make test
