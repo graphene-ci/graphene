@@ -1,0 +1,475 @@
+version: "2"
+run:
+  go: "1.25"
+output:
+  formats:
+    text:
+      path: stdout
+  sort-order:
+    - linter
+    - severity
+    - file
+linters:
+  default: none
+  enable:
+    - asasalint
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - cyclop
+    - decorder
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - err113
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - gochecknoinits
+    - gochecksumtype
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - govet
+    - grouper
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - ireturn
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - mnd
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagalign
+    - tagliatelle
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - varnamelen
+    - wastedassign
+    - whitespace
+    - wrapcheck
+    - wsl_v5
+  settings:
+    errcheck:
+      check-type-assertions: true
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+        # status.Error IS the wrapping for a grpc service: it attaches the
+        # code and message the client is meant to see.
+        - status.Error(
+        # A cancelled context is the caller's own doing, said in the
+        # standard library's words. "store: context canceled" tells them
+        # something they already know about something they did.
+        - ctx.Err(
+      ignore-package-globs:
+        # This module's own errors already carry this module's vocabulary.
+        # wrapcheck exists to stop a foreign error arriving naked; an error
+        # from our own port has a name we chose and a package that says
+        # where it came from, and wrapping it again produces "blob: blob:
+        # not found" — noise that makes the real prefix harder to see.
+        #
+        # It is deliberately the whole module rather than a list, because
+        # the alternative is a list that has to be edited every time a
+        # package is added and is silently wrong until somebody notices.
+        - github.com/graphene-ci/graphened/*
+        # A grpc stream's Send and Recv, and a service manager's Start and
+        # Stop: both are things this program passes THROUGH rather than
+        # does. What a caller needs is the transport's own words — "the
+        # client went away", "the unit is masked" — and a prefix naming
+        # the function that forwarded them buries the sentence that says
+        # what happened.
+        - google.golang.org/grpc*
+        - github.com/kardianos/service*
+      ignore-interface-regexps:
+        # grpc stream Send errors are transport conditions passed through.
+        - ^google\.golang\.org/grpc
+        # A guard, a session, a cache: each is a wrapper whose whole job is
+        # to pass through what it wraps. An error decorated on the way out
+        # of one says only that it went through, which the caller knows.
+        - ^github\.com/graphene-ci/graphened/
+    exhaustive:
+      # maps here are partial by design (message templates, format
+      # extensions); only switches must be exhaustive.
+      check:
+        - switch
+      default-signifies-exhaustive: true
+    cyclop:
+      max-complexity: 15
+    funlen:
+      lines: 75
+    gocognit:
+      min-complexity: 30
+    gocritic:
+      disabled-checks:
+        - dupImport
+        - octalLiteral
+        # A domain type here is immutable and is passed by value on
+        # purpose. The decisive reason is nil: a pointer can be one, so
+        # every method would have to tolerate it and every caller would
+        # have to remember — while a value's zero is safe, composes as a
+        # map key, and compares with ==. Copying a Resource costs a few
+        # words; the pointer costs an allocation and brings nil along.
+        #
+        # The check is right about the bytes and wrong about the trade,
+        # and it is the trade this codebase already decided.
+        - hugeParam
+        - whyNoLint
+        # contradicts nonamedreturns, which we keep
+        - unnamedResult
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+      settings:
+        captLocal:
+          paramsOnly: false
+        underef:
+          skipRecvDeref: false
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+      settings:
+        shadow:
+          strict: true
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - generic
+        # Adapters legitimately return the ports they implement, and the
+        # ports live beside the domain they belong to rather than under one
+        # directory named after the pattern.
+        - github.com/graphene-ci/graphened/pkg/blob
+        - github.com/graphene-ci/graphened/internal/store
+        - github.com/graphene-ci/graphened/internal/kernel
+        - github.com/graphene-ci/graphened/pkg/process
+        - github.com/graphene-ci/graphened/internal/app/health
+        # grpc's transport credentials are an interface and there is no
+        # concrete type to hand back: what this returns is what grpc.Creds
+        # takes.
+        - google.golang.org/grpc/credentials
+        # Generated services and clients ARE interfaces: the contract has
+        # no concrete type, and an accessor handing one back is handing
+        # back exactly what the generated code defines.
+        - github.com/graphene-ci/graphenepb
+        - google.golang.org/grpc/health/grpc_health_v1
+        # A probe and a reporter are the health library's own ports.
+        - github.com/gopherex/xprobe
+    mnd:
+      # A command's arity is a number and naming it does not make it one
+      # of anything: cobra.ExactArgs(2) already reads as "two arguments".
+      ignored-functions:
+        - cobra.ExactArgs
+        - cobra.MaximumNArgs
+        - cobra.MinimumNArgs
+        - cobra.RangeArgs
+    lll:
+      line-length: 120
+    revive:
+      rules:
+        # This codebase writes Id, not ID — resource.Id, blob.Id, kind.Id
+        # — and a convention held everywhere is worth more than the one Go
+        # started with and never applied to its own url.URL. Everything
+        # else revive checks stays on.
+        - name: var-naming
+          disabled: true
+    misspell:
+      locale: US
+      # CANCELLED — pb constant name (wire contract), not renameable.
+      ignore-rules:
+        - cancelled
+    nakedret:
+      max-func-lines: 0
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation:
+        - funlen
+        - gocognit
+        - lll
+      allow-unused: false
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+    varnamelen:
+      max-distance: 5
+      min-name-length: 3
+      check-receiver: false
+      check-return: false
+      check-type-param: false
+      # engine idiom: one-letter names for the pervasive schema/field/value
+      # locals mirror the proto vocabulary and stay within max-distance.
+      ignore-names:
+        - err
+        # These are not abbreviations, they are this codebase's words, and
+        # each is the whole of what it means. A revision is where a write
+        # landed AT; a process runs ON a kernel; a subordinate forwards TO
+        # one, and that one is UP. Lengthening them produces "atRevision",
+        # which says the type twice and the meaning no better.
+        - Up
+        - at
+        - on
+        - to
+        - up
+        # tx is what every database library in the world calls a
+        # transaction, and w is one watcher inside its own loop.
+        - tx
+        - w
+        - do
+        - tc
+        - ok
+        - f
+        - s
+        - k
+        - v
+        - m
+        - b
+        - l
+        - o
+        - r
+        - d
+        - e
+        - n
+        - x
+        - a
+        - p
+        - id
+        - ns
+        - ch
+        - oo
+        - mp
+        - vs
+        - el
+        - it
+        - re
+        - st
+        - en
+        - t
+        - c
+        - g
+        - j
+        - sv
+        - ks
+        - pg
+        - rf
+        - ph
+        - gt
+        - lt
+        - mk
+        - vm
+        - ts
+        - ai
+        - bi
+        - in
+        - dv
+        - rt
+      ignore-type-assert-ok: false
+      ignore-map-index-ok: false
+      ignore-chan-recv-ok: false
+      ignore-decls:
+        - t testing.T
+        - f *foo.Bar
+        - e error
+        - i int
+        - const C
+        - T any
+        - m map[string]int
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - lll
+        source: ^//\s*go:generate\s
+      - linters:
+          - godot
+        source: (noinspection|TODO)
+      - linters:
+          - gocritic
+        source: //noinspection
+      - linters:
+          - errorlint
+        source: ^\s+if _, ok := err\.\([^.]+\.InternalError\); ok {
+      - linters:
+          - bodyclose
+          - containedctx
+          - dupl
+          - err113
+          - errcheck
+          - forcetypeassert
+          - funlen
+          - goconst
+          - gosec
+          - noctx
+          - wrapcheck
+          - gochecknoglobals
+          - cyclop
+          - gocognit
+          - lll
+          - maintidx
+          # test helpers legitimately return grpc client interfaces
+          - ireturn
+          # Every hit is a subtest BODY passed to a runner — each(t, func(t
+          # *testing.T, k kernel.Kernel){...}) — not a helper. t.Helper()
+          # in one would report every failure at the line inside the
+          # runner rather than at the assertion that failed, which is the
+          # opposite of what it is for. Real helpers here do call it.
+          - thelper
+          # Style linters that are about production code being read for
+          # years. A test fixture is read while it is being written and
+          # then only when it fails, and the numbers in one — three keys,
+          # two events, seven writes — are the test, not magic.
+          - gocritic
+          - mnd
+          - prealloc
+          - unparam
+          - contextcheck
+        path: (_test\.go|internal/store/kv/kvtest/)
+      - linters:
+          - govet
+        text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
+      # This one test is about a TLS handshake and needs the configuration
+      # the package builds, not the transport wrapper around it. An
+      # external test package could not see it, and exporting it so a test
+      # could would widen the surface for the test's sake.
+      - linters:
+          - testpackage
+        path: pkg/link/resume_test\.go
+      # The calling of controllers is a thing nothing outside that package
+      # does and nothing outside should be able to. Checking it therefore
+      # has to be done from inside; a door exported so a test could open
+      # it would be a door somebody else could open too.
+      - linters:
+          - testpackage
+        path: internal/app/reconcile/
+      # kvtest is a conformance SUITE — test bodies that live outside
+      # _test.go so that every store implementation can run the same ones.
+      # It is test code by every measure except its filename.
+      # A store implementation IS the kv port. What leaves it is either
+      # the port's vocabulary — ErrNotFound, ErrConflict, ErrClosed, which
+      # callers compare and must not have to read past a prefix — or the
+      # engine's own failure, which names itself. Most of these are inside
+      # a transaction closure and do not reach a caller at all.
+      - linters:
+          - wrapcheck
+        path: (internal/store/kv|internal/infrastructure/kv)/
+      # A command's error is printed to the person who ran it, already
+      # prefixed with the name of the binary. A second prefix naming the
+      # function that returned it is noise in the one place where the
+      # words matter most.
+      - linters:
+          - wrapcheck
+        path: ^cmd/
+      # A command's error is printed to the person who ran it, already
+      # prefixed with the name of the binary. A second prefix naming the
+      # function that returned it is noise in the one place where the
+      # words matter most. Where the commands SIT does not change that:
+      # they are a package here because another binary mounts them.
+      - linters:
+          - wrapcheck
+        path: ^pkg/ctl/
+      # A subordinate kernel hands back the far side's answer unaltered —
+      # error included. Wrapping there would put this kernel's name on a
+      # refusal the kernel above made, and a caller comparing errors would
+      # have to know how many proxies it went through.
+      - linters:
+          - wrapcheck
+        path: internal/app/upstream/(service|bytes)\.go
+    paths:
+      - third_party$
+      - builtin$
+issues:
+  max-same-issues: 50
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      module-path: github.com/graphene-ci/graphened
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/gopherex)
+        - prefix(github.com/graphene-ci/graphenepb)
+        - localmodule
+      custom-order: true
+  exclusions:
+    generated: lax

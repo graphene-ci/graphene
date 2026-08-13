@@ -1,0 +1,12 @@
+# Инструменты, поставленные `make configure`.
+/bin/
+
+# Собранные бинари. Ведущий слэш обязателен: без него шаблон съел бы
+# каталог cmd/graphene с тем же именем.
+/graphene
+/graphene-operator
+/graphene-worker
+/graphene-agent
+
+# Локальное состояние окружения.
+/.kubeconfig
