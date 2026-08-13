@@ -93,7 +93,7 @@ case "$ARCH" in
 esac
 
 mkdir -p /opt/graphene
-curl -fsSL "$GRAPHENE_CONTROL/agent/linux/$ARCH" -o /opt/graphene/graphene-agent
+curl -fsSL "$GRAPHENE_CONTROL/agent/linux/$ARCH/graphene-agent" -o /opt/graphene/graphene-agent
 chmod +x /opt/graphene/graphene-agent
 
 # Служба, если система умеет службы; иначе просто процесс. Второе — про
