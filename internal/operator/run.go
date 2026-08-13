@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +41,15 @@ type Temporal interface {
 	Phase(ctx context.Context, workflowID string) (v1.RunPhase, string, error)
 }
 
+// followEvery is how often a running workflow is asked how far it got.
+//
+// Polling, because nothing else wakes this controller: the record stops
+// changing the moment the workflow starts, and Temporal does not write to
+// the cluster. A workflow could report its own end through one last
+// activity — but a terminated workflow never runs one, so the poll would
+// still have to exist as the safety net. One mechanism, not two.
+const followEvery = 5 * time.Second
+
 // ErrNoRevision means the run points at a revision that is not there.
 var ErrNoRevision = errors.New("ревизия не найдена")
 
@@ -72,10 +82,10 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	if run.Status.WorkflowID != "" {
-		return ctrl.Result{}, r.follow(ctx, &run)
+		return ctrl.Result{RequeueAfter: followEvery}, r.follow(ctx, &run)
 	}
 
-	return ctrl.Result{}, r.start(ctx, &run)
+	return ctrl.Result{RequeueAfter: followEvery}, r.start(ctx, &run)
 }
 
 // start puts the run in motion, or records why it cannot be.

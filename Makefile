@@ -22,6 +22,7 @@ KUBECTL_VERSION        := v1.36.3
 CROSSPLANE_VERSION     := 2.3.4
 
 CLUSTER  := graphene
+REGISTRY := localhost:5555/graphene
 OS       := $(shell go env GOOS)
 ARCH     := $(shell go env GOARCH)
 KUBECTL  := $(BIN)/kubectl
@@ -64,6 +65,24 @@ up: ## Поднять локальное окружение: k3s, Temporal, Cros
 		--namespace crossplane-system --create-namespace --wait
 	go run ./cmd/graphene up --wait
 
+.PHONY: build
+build: ## Собрать наши бинари в bin/
+	go build -o $(BIN)/graphene ./cmd/graphene
+
+.PHONY: install
+install: generate ## Поставить наш управляющий слой в локальный кластер
+	$(KUBECTL) apply -f deploy/crd/
+	$(KUBECTL) apply -f deploy/graphene/rbac.yaml
+	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \
+		./cmd/graphene-operator > .operator-image
+	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \
+		./cmd/graphene-worker > .worker-image
+	sed -e "s|OPERATOR_IMAGE|$$(cat .operator-image)|" \
+		-e "s|WORKER_IMAGE|$$(cat .worker-image)|" \
+		deploy/graphene/control.yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) -n graphene-system rollout status deployment/graphene-operator --timeout=120s
+	$(KUBECTL) -n graphene-system rollout status deployment/graphene-worker --timeout=120s
+
 .PHONY: down
 down: ## Снести локальное окружение целиком
 	-$(K3D) cluster delete $(CLUSTER)
@@ -72,6 +91,10 @@ down: ## Снести локальное окружение целиком
 .PHONY: test
 test: ## Прогнать тесты
 	go test ./...
+
+.PHONY: e2e
+e2e: build ## Сквозная проверка на живом кластере (нужны make up и make install)
+	go test -tags e2e -count=1 -timeout 20m ./test/e2e/...
 
 .PHONY: lint
 lint: ## Линтер

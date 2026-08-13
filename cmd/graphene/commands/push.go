@@ -41,9 +41,8 @@ func kubeClient(cmd *cobra.Command) (client.Client, error) {
 
 func newPush() *cobra.Command {
 	var (
-		name     string
-		repo     string
-		importTo string
+		name string
+		repo string
 	)
 
 	cmd := &cobra.Command{
@@ -72,11 +71,9 @@ func newPush() *cobra.Command {
 			revision, err := cli.Push(cmd.Context(), cli.PushRequest{
 				Kube: kubeClient,
 				Builder: cli.Ko{
-					Path:     toolPath("ko"),
-					Repo:     repo,
-					ImportTo: importTo,
-					K3d:      toolPath("k3d"),
-					Out:      os.Stderr,
+					Path: toolPath("ko"),
+					Repo: repo,
+					Out:  os.Stderr,
 				},
 				Namespace: namespace,
 				Pipeline:  name,
@@ -93,9 +90,8 @@ func newPush() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "имя пайплайна; пусто — имя каталога")
-	cmd.Flags().StringVar(&repo, "repo", "ko.local", "куда класть образ")
-	cmd.Flags().StringVar(&importTo, "import-to", "graphene",
-		"кластер k3d, в который занести собранный образ; пусто — не заносить")
+	cmd.Flags().StringVar(&repo, "repo", "localhost:5555/graphene",
+		"реестр, в который класть образ; кластер обязан читать его по тому же имени")
 
 	return cmd
 }

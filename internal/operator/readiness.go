@@ -3,9 +3,12 @@ package operator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -14,6 +17,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/pkg/agent"
 )
+
+// ErrNotARecord means the prototype handed to this watcher is not a
+// kubernetes record the manager knows.
+var ErrNotARecord = errors.New("вид не зарегистрирован в схеме")
 
 // Signaller wakes a workflow that is waiting for a record.
 type Signaller interface {
@@ -50,8 +57,14 @@ func NewReadinessReconciler(kube client.Client, signal Signaller, resource clien
 // that is fine: the workflow keeps readiness by memo, and hearing the same
 // thing twice does not change what it knows.
 func (r *ReadinessReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(r.resource.GetObjectKind().GroupVersionKind())
+	// A copy of the prototype rather than an unstructured object: a
+	// generated type carries no apiVersion of its own, so an unstructured
+	// Get would have to be told the kind, and there is nowhere to learn it
+	// from here that the typed object does not already know.
+	obj, ok := r.resource.DeepCopyObject().(client.Object)
+	if !ok {
+		return ctrl.Result{}, ErrNotARecord
+	}
 
 	if err := r.kube.Get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -65,7 +78,12 @@ func (r *ReadinessReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	ready, reason := readiness(obj)
+	fields, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("запись не разобралась: %w", err)
+	}
+
+	ready, reason := readiness(fields)
 	if !ready {
 		return ctrl.Result{}, nil
 	}
@@ -85,7 +103,7 @@ func (r *ReadinessReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		Name:   memo,
 		Ready:  true,
 		Reason: reason,
-		Status: statusOf(obj),
+		Status: statusOf(fields),
 	}
 
 	if err := r.signal.Signal(ctx, run.Status.WorkflowID, agent.SignalReady, payload); err != nil {
@@ -96,8 +114,22 @@ func (r *ReadinessReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // SetupWithManager wires the watcher to its kind.
+//
+// The name is explicit because controller-runtime derives one from the kind
+// otherwise, and this watcher shares its kind with whoever else answers for
+// it — a Probe has both its own controller and this one. Two controllers
+// with one name is refused at startup, which is the right moment to find out
+// but only if the name says which is which.
 func (r *ReadinessReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := ctrl.NewControllerManagedBy(mgr).For(r.resource).Complete(r); err != nil {
+	kinds, _, err := mgr.GetScheme().ObjectKinds(r.resource)
+	if err != nil || len(kinds) == 0 {
+		return fmt.Errorf("%w: %T", ErrNotARecord, r.resource)
+	}
+
+	name := "readiness-" + strings.ToLower(kinds[0].Kind)
+
+	err = ctrl.NewControllerManagedBy(mgr).Named(name).For(r.resource).Complete(r)
+	if err != nil {
 		return fmt.Errorf("контроллер готовности не собрался: %w", err)
 	}
 
@@ -106,8 +138,8 @@ func (r *ReadinessReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // readiness reads the Ready condition, which is what every kind in this
 // ecosystem uses to say it has arrived — ours and Crossplane's alike.
-func readiness(obj *unstructured.Unstructured) (bool, string) {
-	conditions, found, err := unstructured.NestedSlice(obj.Object, "status", "conditions")
+func readiness(fields map[string]any) (bool, string) {
+	conditions, found, err := unstructured.NestedSlice(fields, "status", "conditions")
 	if err != nil || !found {
 		return false, ""
 	}
@@ -132,8 +164,8 @@ func readiness(obj *unstructured.Unstructured) (bool, string) {
 
 // statusOf is the record's status as the cluster has it — the address, the
 // id, whatever the provider filled in.
-func statusOf(obj *unstructured.Unstructured) []byte {
-	status, found, err := unstructured.NestedMap(obj.Object, "status")
+func statusOf(fields map[string]any) []byte {
+	status, found, err := unstructured.NestedMap(fields, "status")
 	if err != nil || !found {
 		return nil
 	}
