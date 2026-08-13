@@ -23,6 +23,11 @@ const Group = "graphene-ci.dev"
 // Version is the API version of this package.
 const Version = "v1"
 
+// ConditionReady is what everything in this ecosystem calls the condition
+// that says a thing has arrived — our kinds and Crossplane's alike. Await
+// looks at exactly this, whoever wrote the kind.
+const ConditionReady = "Ready"
+
 // The scheme entry points below are package variables because that is the
 // shape every kubernetes API package has and every consumer expects:
 // v1.AddToScheme(scheme) is how a client learns our kinds. Making them
