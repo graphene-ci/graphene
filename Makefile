@@ -35,8 +35,16 @@ configure: ## Поставить инструменты в bin/ прибитых
 	GOBIN=$(BIN) go install github.com/google/ko@$(KO_VERSION)
 	GOBIN=$(BIN) go install github.com/k3d-io/k3d/v5@$(K3D_VERSION)
 	GOBIN=$(BIN) go install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION)
+	# Единственный инструмент не из go install: kubectl живёт в
+	# k8s.io/kubernetes, а тот не ставится без replace-директив. Поэтому
+	# бинарь качается — и сверяется с опубликованной суммой, иначе
+	# «прибитая версия» означает только имя файла.
 	curl -fsSL -o $(KUBECTL) \
 		https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$(OS)/$(ARCH)/kubectl
+	curl -fsSL -o $(KUBECTL).sha256 \
+		https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$(OS)/$(ARCH)/kubectl.sha256
+	echo "$$(cat $(KUBECTL).sha256)  $(KUBECTL)" | sha256sum --check --status
+	rm -f $(KUBECTL).sha256
 	chmod +x $(KUBECTL)
 	go mod tidy
 
