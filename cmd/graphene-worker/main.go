@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	temporalworker "go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 
 	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/worker"
@@ -85,6 +86,18 @@ func serve() error {
 		},
 		activity.RegisterOptions{Name: agent.ActivityTeardown},
 	)
+
+	w.RegisterActivityWithOptions(
+		func(ctx context.Context, in agent.RegisterInput) error {
+			return applier.Register(ctx, in)
+		},
+		activity.RegisterOptions{Name: agent.ActivityRegister},
+	)
+
+	// Регистрация — воркфлоу, потому что агент это воркер, а не воркфлоу:
+	// поставить activity ему нечем.
+	w.RegisterWorkflowWithOptions(worker.RegisterMachine,
+		workflow.RegisterOptions{Name: agent.WorkflowRegister})
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

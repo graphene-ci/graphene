@@ -4,25 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// queuePrefix keeps our task queues apart from anything else in the same
-// Temporal namespace.
-const queuePrefix = "graphene-machine-"
-
-// InstallationQueue is the Temporal task queue of one installation of the
-// agent.
-//
-// It belongs to the INSTALLATION, not to the machine. Reinstalling the
-// agent on the same hardware must produce a different queue: otherwise a
-// step scheduled into the previous installation's queue would reach a
-// zombie, while the new agent sat waiting for work that went elsewhere.
-//
-// It is a pure function of the installation's name, which is what lets a
-// pipeline schedule a step before the machine exists — the queue is known
-// the moment the name is chosen, and the queue itself is the waiting.
-func InstallationQueue(installation string) string {
-	return queuePrefix + installation
-}
-
 // TaintEffect says what a taint does to work that does not tolerate it.
 // +kubebuilder:validation:Enum=NoSchedule;NoExecute
 type TaintEffect string
@@ -60,7 +41,9 @@ type MachineSpec struct {
 
 // MachineStatus is what the agent reports about the machine it runs on.
 type MachineStatus struct {
-	// Queue is where this installation of the agent listens.
+	// Queue is where this installation of the agent listens. Its name is
+	// agent.InstallationQueue of the installation — a pure function, which
+	// is what lets a pipeline schedule a step before the machine exists.
 	// +optional
 	Queue string `json:"queue,omitempty"`
 

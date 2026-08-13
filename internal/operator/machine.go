@@ -17,16 +17,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
+	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
-// LeaseSeconds is how long an agent's mark is good for. The agent renews
-// well inside it; a machine whose lease is older than this has stopped
-// answering.
+// LeaseSeconds is how long an agent's mark is good for — the agent's own
+// number, because both sides must mean the same thing by silence.
 //
-// The same number kubelet uses for the same job, and for the same reason:
+// The same order kubelet uses for the same job, and for the same reason:
 // short enough that a dead machine is noticed while somebody still cares,
 // long enough that an ordinary network hiccup is not news.
-const LeaseSeconds = 40
+const LeaseSeconds = agent.LeaseSeconds
 
 // MachineReconciler decides whether a machine can be given new work.
 //

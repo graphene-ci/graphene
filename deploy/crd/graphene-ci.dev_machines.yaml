@@ -169,7 +169,10 @@ spec:
                   would be a second writer of the same truth with no reader.
                 type: object
               queue:
-                description: Queue is where this installation of the agent listens.
+                description: |-
+                  Queue is where this installation of the agent listens. Its name is
+                  agent.InstallationQueue of the installation — a pure function, which
+                  is what lets a pipeline schedule a step before the machine exists.
                 type: string
             type: object
         type: object

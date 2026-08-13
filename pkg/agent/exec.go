@@ -22,6 +22,35 @@ const (
 	ActivityRegister = "graphene.Register"
 )
 
+// WorkflowRegister is what an agent starts to get itself into the cluster.
+// A workflow rather than an activity because an activity has to be
+// scheduled by something, and an agent is a worker, not a workflow.
+const WorkflowRegister = "graphene.RegisterMachine"
+
+// queuePrefix keeps our task queues apart from anything else in the same
+// Temporal namespace.
+const queuePrefix = "graphene-machine-"
+
+// InstallationQueue is the Temporal task queue of one installation of the
+// agent.
+//
+// It belongs to the INSTALLATION, not to the machine. Reinstalling the
+// agent on the same hardware must produce a different queue: otherwise a
+// step scheduled into the previous installation's queue would reach a
+// zombie, while the new agent sat waiting for work that went elsewhere.
+//
+// It is a pure function of the installation's name, which is what lets a
+// pipeline schedule a step before the machine exists — the queue is known
+// the moment the name is chosen, and the queue itself is the waiting.
+func InstallationQueue(installation string) string {
+	return queuePrefix + installation
+}
+
+// LeaseSeconds is how long an agent's mark is good for. It lives in the
+// contract because both sides need the same number: the agent decides how
+// often to mark, the operator decides when silence has gone on too long.
+const LeaseSeconds = 40
+
 // MaxOutputBytes is how much of a step's output travels back.
 //
 // Output goes into Temporal's history and stays there for the life of the

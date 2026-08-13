@@ -16,6 +16,7 @@ import (
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/internal/operator"
+	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
 func machineScheme(t *testing.T) *runtime.Scheme {
@@ -35,7 +36,7 @@ func machine() *v1.Machine {
 	return &v1.Machine{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-0", Namespace: "default"},
 		Status: v1.MachineStatus{
-			Queue: v1.InstallationQueue("perf-42-node-0"),
+			Queue: agent.InstallationQueue("perf-42-node-0"),
 			Facts: map[string]string{"os": "linux"},
 		},
 	}
