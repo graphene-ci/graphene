@@ -31,11 +31,13 @@ type RevisionReconciler struct {
 	// Temporal is where the worker is told to connect.
 	Address   string
 	Namespace string
+	// Control is where machines fetch the agent from.
+	Control string
 }
 
 // NewRevisionReconciler builds one.
-func NewRevisionReconciler(kube client.Client, address, namespace string) *RevisionReconciler {
-	return &RevisionReconciler{kube: kube, Address: address, Namespace: namespace}
+func NewRevisionReconciler(kube client.Client, address, namespace, control string) *RevisionReconciler {
+	return &RevisionReconciler{kube: kube, Address: address, Namespace: namespace, Control: control}
 }
 
 // Reconcile makes the revision's worker exist.
@@ -81,6 +83,9 @@ func (r *RevisionReconciler) shape(revision *v1.PipelineRevision, deployment *ap
 			{Name: pipeline.EnvAddress, Value: r.Address},
 			{Name: pipeline.EnvNamespace, Value: r.Namespace},
 			{Name: pipeline.EnvQueue, Value: revision.Spec.Queue},
+			// Откуда машина возьмёт агента. Пайплайн кладёт этот адрес
+			// в скрипт установки, который сам же и порождает.
+			{Name: pipeline.EnvControl, Value: r.Control},
 		},
 	}}
 }

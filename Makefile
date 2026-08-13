@@ -71,6 +71,11 @@ build: ## Собрать наши бинари в bin/
 
 .PHONY: install
 install: generate ## Поставить наш управляющий слой в локальный кластер
+	# Бинарь агента едет внутри образа оператора как ko-данные: тогда
+	# «оператор установлен» и «агента нужной версии можно поставить» —
+	# один и тот же факт, а не два.
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o cmd/graphene-operator/kodata/agent/linux/amd64/graphene-agent \
+		./cmd/graphene-agent
 	$(KUBECTL) apply -f deploy/crd/
 	$(KUBECTL) apply -f deploy/graphene/rbac.yaml
 	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \

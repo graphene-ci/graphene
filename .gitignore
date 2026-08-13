@@ -12,3 +12,6 @@
 /.kubeconfig
 /.operator-image
 /.worker-image
+
+# Бинарь агента, который make install кладёт в образ оператора.
+/cmd/graphene-operator/kodata/

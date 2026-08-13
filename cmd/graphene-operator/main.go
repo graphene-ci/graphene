@@ -24,7 +24,18 @@ const (
 	envAddress   = "GRAPHENE_TEMPORAL_ADDRESS"
 	envNamespace = "GRAPHENE_TEMPORAL_NAMESPACE"
 	envMetrics   = "GRAPHENE_METRICS_ADDRESS"
+	envDist      = "GRAPHENE_DIST_ADDRESS"
+	envControl   = "GRAPHENE_CONTROL"
 )
+
+// distAddress is where the agent binary is served from.
+func distAddress() string {
+	if value := os.Getenv(envDist); value != "" {
+		return value
+	}
+
+	return ":8080"
+}
 
 func main() {
 	os.Exit(run())
@@ -75,6 +86,12 @@ func serve() error {
 		return err
 	}
 
+	// Раздача бинаря агента живёт в менеджере: тогда она поднимается и
+	// гаснет вместе со всем остальным, а не отдельной жизнью.
+	if err := mgr.Add(operator.NewDistributor(distAddress())); err != nil {
+		return fmt.Errorf("раздача агента не встала: %w", err)
+	}
+
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("менеджер остановился: %w", err)
 	}
@@ -90,7 +107,7 @@ func wire(mgr ctrl.Manager, bridge *operator.Client, address, namespace string) 
 		operator.NewRunReconciler(kube, bridge).SetupWithManager,
 		operator.NewProbeReconciler(kube).SetupWithManager,
 		operator.NewReadinessReconciler(kube, bridge, &v1.Probe{}).SetupWithManager,
-		operator.NewRevisionReconciler(kube, address, namespace).SetupWithManager,
+		operator.NewRevisionReconciler(kube, address, namespace, os.Getenv(envControl)).SetupWithManager,
 		operator.NewMachineReconciler(kube).SetupWithManager,
 	}
 
