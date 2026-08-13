@@ -6,7 +6,6 @@ toolchain go1.26.5
 
 require (
 	github.com/spf13/cobra v1.10.2
-	github.com/stretchr/testify v1.11.1
 	go.temporal.io/sdk v1.47.0
 	k8s.io/apiextensions-apiserver v0.36.3
 	k8s.io/apimachinery v0.36.3
@@ -41,6 +40,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.temporal.io/api v1.63.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
