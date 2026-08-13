@@ -7,7 +7,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/graphene-ci/graphene/internal/kube"
 )
 
 // temporal is the component, the namespace and the deployment: one process
@@ -33,14 +34,9 @@ type KubeProbe struct {
 // kubeconfig may be empty, in which case the usual loading rules apply
 // (KUBECONFIG, then ~/.kube/config, then in-cluster).
 func NewKubeProbe(kubeconfig string) (*KubeProbe, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		rules.ExplicitPath = kubeconfig
-	}
-
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, nil).ClientConfig()
+	cfg, err := kube.Config(kubeconfig)
 	if err != nil {
-		return nil, fmt.Errorf("кластер не настроен: %w", err)
+		return nil, err
 	}
 
 	client, err := kubernetes.NewForConfig(cfg)
