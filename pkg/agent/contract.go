@@ -33,6 +33,15 @@ const (
 // until this arrives.
 const SignalReady = "graphene.ready"
 
+// RunInput is what a pipeline's workflow is started with. The owner is
+// passed rather than derived from the workflow id because ownership needs
+// the run's UID, and an id is only a name.
+type RunInput struct {
+	Owner OwnerRef `json:"owner"`
+	// Params as the person wrote them, shaped by the revision's schema.
+	Params []byte `json:"params,omitempty"`
+}
+
 // OwnerRef points at the run that owns what an activity creates. The UID is
 // what makes ownership real: a name can be reused by a later run, and a
 // stale ownerReference would then hand somebody else's machines to it.
