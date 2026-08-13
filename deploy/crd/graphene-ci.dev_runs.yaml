@@ -148,7 +148,7 @@ spec:
                 - Running
                 - Succeeded
                 - Failed
-                - Cancelled
+                - Canceled
                 type: string
               reason:
                 description: Reason says why the run stopped, in the words of whoever

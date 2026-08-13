@@ -10,3 +10,5 @@
 
 # Локальное состояние окружения.
 /.kubeconfig
+/.operator-image
+/.worker-image
