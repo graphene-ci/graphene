@@ -57,4 +57,6 @@ make help        # все цели
 
 ## Требования к машине
 
-Go 1.25+, docker, kubectl, helm. Остальное `make configure` поставит сам.
+Go, docker, kubectl, helm. Версию Go, на которой всё собирается (`GO_VERSION`
+в `Makefile`), Go скачает себе сам — ставить её в систему не нужно.
+Остальные инструменты кладёт в `bin/` цель `configure`.

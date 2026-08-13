@@ -1,6 +1,6 @@
 version: "2"
 run:
-  go: "1.25"
+  go: "1.26"
 output:
   formats:
     text:
@@ -132,22 +132,20 @@ linters:
         # It is deliberately the whole module rather than a list, because
         # the alternative is a list that has to be edited every time a
         # package is added and is silently wrong until somebody notices.
-        - github.com/graphene-ci/graphened/*
-        # A grpc stream's Send and Recv, and a service manager's Start and
-        # Stop: both are things this program passes THROUGH rather than
-        # does. What a caller needs is the transport's own words — "the
-        # client went away", "the unit is masked" — and a prefix naming
-        # the function that forwarded them buries the sentence that says
-        # what happened.
+        - github.com/graphene-ci/graphene/*
+        # A grpc stream's Send and Recv are things this program passes
+        # THROUGH rather than does. What a caller needs is the transport's
+        # own words — "the client went away" — and a prefix naming the
+        # function that forwarded them buries the sentence that says what
+        # happened.
         - google.golang.org/grpc*
-        - github.com/kardianos/service*
       ignore-interface-regexps:
         # grpc stream Send errors are transport conditions passed through.
         - ^google\.golang\.org/grpc
         # A guard, a session, a cache: each is a wrapper whose whole job is
         # to pass through what it wraps. An error decorated on the way out
         # of one says only that it went through, which the caller knows.
-        - ^github\.com/graphene-ci/graphened/
+        - ^github\.com/graphene-ci/graphene/
     exhaustive:
       # maps here are partial by design (message templates, format
       # extensions); only switches must be exhaustive.
@@ -202,25 +200,15 @@ linters:
         - empty
         - stdlib
         - generic
-        # Adapters legitimately return the ports they implement, and the
-        # ports live beside the domain they belong to rather than under one
-        # directory named after the pattern.
-        - github.com/graphene-ci/graphened/pkg/blob
-        - github.com/graphene-ci/graphened/internal/store
-        - github.com/graphene-ci/graphened/internal/kernel
-        - github.com/graphene-ci/graphened/pkg/process
-        - github.com/graphene-ci/graphened/internal/app/health
-        # grpc's transport credentials are an interface and there is no
-        # concrete type to hand back: what this returns is what grpc.Creds
-        # takes.
-        - google.golang.org/grpc/credentials
-        # Generated services and clients ARE interfaces: the contract has
-        # no concrete type, and an accessor handing one back is handing
-        # back exactly what the generated code defines.
-        - github.com/graphene-ci/graphenepb
-        - google.golang.org/grpc/health/grpc_health_v1
-        # A probe and a reporter are the health library's own ports.
-        - github.com/gopherex/xprobe
+        # A kubernetes object is an interface by design: runtime.Object and
+        # client.Object have no concrete type to hand back, and a function
+        # returning one returns exactly what the machinery takes.
+        - k8s.io/apimachinery/pkg/runtime
+        - sigs.k8s.io/controller-runtime/pkg/client
+        # Temporal's client and its futures are interfaces the SDK defines;
+        # there is nothing concrete underneath to name.
+        - go.temporal.io/sdk/client
+        - go.temporal.io/sdk/workflow
     mnd:
       # A command's arity is a number and naming it does not make it one
       # of anything: cobra.ExactArgs(2) already reads as "two arguments".
@@ -231,19 +219,8 @@ linters:
         - cobra.RangeArgs
     lll:
       line-length: 120
-    revive:
-      rules:
-        # This codebase writes Id, not ID — resource.Id, blob.Id, kind.Id
-        # — and a convention held everywhere is worth more than the one Go
-        # started with and never applied to its own url.URL. Everything
-        # else revive checks stays on.
-        - name: var-naming
-          disabled: true
     misspell:
       locale: US
-      # CANCELLED — pb constant name (wire contract), not renameable.
-      ignore-rules:
-        - cancelled
     nakedret:
       max-func-lines: 0
     nolintlint:
@@ -256,8 +233,12 @@ linters:
       allow-unused: false
     tagliatelle:
       case:
+        # Our JSON is kubernetes API JSON, and kubernetes spells fields in
+        # lowerCamelCase everywhere — spec.forProvider, status.atProvider,
+        # metadata.creationTimestamp. A different case here would mean our
+        # kinds read differently from every other kind in the cluster.
         rules:
-          json: snake
+          json: camel
     wsl_v5:
       allow-first-in-block: true
       allow-whole-block: false
@@ -268,72 +249,26 @@ linters:
       check-receiver: false
       check-return: false
       check-type-param: false
-      # engine idiom: one-letter names for the pervasive schema/field/value
-      # locals mirror the proto vocabulary and stay within max-distance.
+      # Short locals whose whole life fits inside a few lines: a loop
+      # variable, one watcher inside its own loop, the transaction every
+      # database library in the world already calls tx. max-distance keeps
+      # them honest — a short name that travels far is still reported.
       ignore-names:
         - err
-        # These are not abbreviations, they are this codebase's words, and
-        # each is the whole of what it means. A revision is where a write
-        # landed AT; a process runs ON a kernel; a subordinate forwards TO
-        # one, and that one is UP. Lengthening them produces "atRevision",
-        # which says the type twice and the meaning no better.
-        - Up
-        - at
-        - on
-        - to
-        - up
-        # tx is what every database library in the world calls a
-        # transaction, and w is one watcher inside its own loop.
         - tx
         - w
         - do
-        - tc
         - ok
-        - f
-        - s
-        - k
-        - v
-        - m
-        - b
-        - l
-        - o
-        - r
-        - d
-        - e
-        - n
-        - x
-        - a
-        - p
         - id
         - ns
         - ch
-        - oo
-        - mp
-        - vs
-        - el
-        - it
-        - re
-        - st
-        - en
-        - t
-        - c
-        - g
+        - fn
+        - i
         - j
-        - sv
-        - ks
-        - pg
-        - rf
-        - ph
-        - gt
-        - lt
-        - mk
-        - vm
-        - ts
-        - ai
-        - bi
-        - in
-        - dv
-        - rt
+        - k
+        - n
+        - t
+        - v
       ignore-type-assert-ok: false
       ignore-map-index-ok: false
       ignore-chan-recv-ok: false
@@ -363,9 +298,6 @@ linters:
           - gocritic
         source: //noinspection
       - linters:
-          - errorlint
-        source: ^\s+if _, ok := err\.\([^.]+\.InternalError\); ok {
-      - linters:
           - bodyclose
           - containedctx
           - dupl
@@ -382,10 +314,10 @@ linters:
           - gocognit
           - lll
           - maintidx
-          # test helpers legitimately return grpc client interfaces
+          # Test helpers legitimately hand back the interfaces the code
+          # under test consumes.
           - ireturn
-          # Every hit is a subtest BODY passed to a runner — each(t, func(t
-          # *testing.T, k kernel.Kernel){...}) — not a helper. t.Helper()
+          # Subtest BODIES passed to a runner are not helpers. t.Helper()
           # in one would report every failure at the line inside the
           # runner rather than at the assertion that failed, which is the
           # opposite of what it is for. Real helpers here do call it.
@@ -399,35 +331,10 @@ linters:
           - prealloc
           - unparam
           - contextcheck
-        path: (_test\.go|internal/store/kv/kvtest/)
+        path: _test\.go
       - linters:
           - govet
         text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
-      # This one test is about a TLS handshake and needs the configuration
-      # the package builds, not the transport wrapper around it. An
-      # external test package could not see it, and exporting it so a test
-      # could would widen the surface for the test's sake.
-      - linters:
-          - testpackage
-        path: pkg/link/resume_test\.go
-      # The calling of controllers is a thing nothing outside that package
-      # does and nothing outside should be able to. Checking it therefore
-      # has to be done from inside; a door exported so a test could open
-      # it would be a door somebody else could open too.
-      - linters:
-          - testpackage
-        path: internal/app/reconcile/
-      # kvtest is a conformance SUITE — test bodies that live outside
-      # _test.go so that every store implementation can run the same ones.
-      # It is test code by every measure except its filename.
-      # A store implementation IS the kv port. What leaves it is either
-      # the port's vocabulary — ErrNotFound, ErrConflict, ErrClosed, which
-      # callers compare and must not have to read past a prefix — or the
-      # engine's own failure, which names itself. Most of these are inside
-      # a transaction closure and do not reach a caller at all.
-      - linters:
-          - wrapcheck
-        path: (internal/store/kv|internal/infrastructure/kv)/
       # A command's error is printed to the person who ran it, already
       # prefixed with the name of the binary. A second prefix naming the
       # function that returned it is noise in the one place where the
@@ -435,21 +342,6 @@ linters:
       - linters:
           - wrapcheck
         path: ^cmd/
-      # A command's error is printed to the person who ran it, already
-      # prefixed with the name of the binary. A second prefix naming the
-      # function that returned it is noise in the one place where the
-      # words matter most. Where the commands SIT does not change that:
-      # they are a package here because another binary mounts them.
-      - linters:
-          - wrapcheck
-        path: ^pkg/ctl/
-      # A subordinate kernel hands back the far side's answer unaltered —
-      # error included. Wrapping there would put this kernel's name on a
-      # refusal the kernel above made, and a caller comparing errors would
-      # have to know how many proxies it went through.
-      - linters:
-          - wrapcheck
-        path: internal/app/upstream/(service|bytes)\.go
     paths:
       - third_party$
       - builtin$
@@ -462,13 +354,11 @@ formatters:
     - goimports
   settings:
     gofumpt:
-      module-path: github.com/graphene-ci/graphened
+      module-path: github.com/graphene-ci/graphene
     gci:
       sections:
         - standard
         - default
-        - prefix(github.com/gopherex)
-        - prefix(github.com/graphene-ci/graphenepb)
         - localmodule
       custom-order: true
   exclusions:
