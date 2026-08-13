@@ -39,7 +39,7 @@ func (r *ProbeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if meta.IsStatusConditionTrue(probe.Status.Conditions, "Ready") {
+	if meta.IsStatusConditionTrue(probe.Status.Conditions, v1.ConditionReady) {
 		return ctrl.Result{}, nil
 	}
 
@@ -49,7 +49,7 @@ func (r *ProbeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	meta.SetStatusCondition(&probe.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
+		Type:    v1.ConditionReady,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Elapsed",
 		Message: "срок вышел",

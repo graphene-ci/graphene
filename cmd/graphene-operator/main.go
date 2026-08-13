@@ -91,6 +91,7 @@ func wire(mgr ctrl.Manager, bridge *operator.Client, address, namespace string) 
 		operator.NewProbeReconciler(kube).SetupWithManager,
 		operator.NewReadinessReconciler(kube, bridge, &v1.Probe{}).SetupWithManager,
 		operator.NewRevisionReconciler(kube, address, namespace).SetupWithManager,
+		operator.NewMachineReconciler(kube).SetupWithManager,
 	}
 
 	for _, setup := range setups {

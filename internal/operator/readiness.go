@@ -150,7 +150,7 @@ func readiness(fields map[string]any) (bool, string) {
 			continue
 		}
 
-		if condition["type"] != "Ready" {
+		if condition["type"] != v1.ConditionReady {
 			continue
 		}
 
