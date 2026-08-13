@@ -118,6 +118,11 @@ linters:
         # status.Error IS the wrapping for a grpc service: it attaches the
         # code and message the client is meant to see.
         - status.Error(
+        # IgnoreNotFound hands back the API server's own error unchanged
+        # or nothing at all. Wrapping it would put our name on the
+        # apiserver's sentence, and a caller comparing errors would have
+        # to read past a prefix to find the code it cares about.
+        - .IgnoreNotFound(
         # A cancelled context is the caller's own doing, said in the
         # standard library's words. "store: context canceled" tells them
         # something they already know about something they did.
