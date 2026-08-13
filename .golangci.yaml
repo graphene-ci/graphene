@@ -335,6 +335,13 @@ linters:
       - linters:
           - govet
         text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
+      # kubernetes spells a trailing acronym in upper case and always has:
+      # podIP, clusterIP, providerID, machineID, bootID, podCIDR. Our kinds
+      # sit next to those in the same cluster and are read by the same
+      # people; workflowId would be the odd one out, not the correct one.
+      - linters:
+          - tagliatelle
+        path: ^api/
       # A command's error is printed to the person who ran it, already
       # prefixed with the name of the binary. A second prefix naming the
       # function that returned it is noise in the one place where the

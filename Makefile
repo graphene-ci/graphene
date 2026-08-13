@@ -48,6 +48,11 @@ configure: ## Поставить инструменты в bin/ прибитых
 	chmod +x $(KUBECTL)
 	go mod tidy
 
+.PHONY: generate
+generate: ## Породить deepcopy и манифесты CRD из типов в api/
+	$(BIN)/controller-gen object paths=./api/...
+	$(BIN)/controller-gen crd paths=./api/... output:crd:dir=deploy/crd
+
 .PHONY: up
 up: ## Поднять локальное окружение: k3s, Temporal, Crossplane
 	$(K3D) cluster get $(CLUSTER) >/dev/null 2>&1 || \
