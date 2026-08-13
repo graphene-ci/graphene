@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
+	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
 func TestSchemeKnowsMachine(t *testing.T) {
@@ -36,7 +37,7 @@ func TestMachineFactsSurviveJSON(t *testing.T) {
 			Taints: []v1.Taint{{Key: "dedicated", Value: "perf", Effect: v1.TaintNoSchedule}},
 		},
 		Status: v1.MachineStatus{
-			Queue: v1.InstallationQueue("perf-42-node-0"),
+			Queue: agent.InstallationQueue("perf-42-node-0"),
 			Facts: map[string]string{
 				"os":     "linux",
 				"arch":   "amd64",
@@ -78,9 +79,9 @@ func TestMachineFactsSurviveJSON(t *testing.T) {
 func TestQueueBelongsToInstallation(t *testing.T) {
 	t.Parallel()
 
-	first := v1.InstallationQueue("perf-42-node-0")
-	again := v1.InstallationQueue("perf-42-node-0")
-	other := v1.InstallationQueue("perf-43-node-0")
+	first := agent.InstallationQueue("perf-42-node-0")
+	again := agent.InstallationQueue("perf-42-node-0")
+	other := agent.InstallationQueue("perf-43-node-0")
 
 	if first != again {
 		t.Fatalf("одна установка дала две очереди: %q и %q", first, again)
