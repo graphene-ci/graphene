@@ -55,6 +55,26 @@ make lint        # линтер
 make help        # все цели
 ```
 
+## Локальное окружение
+
+```sh
+make up          # k3s в docker, Temporal, Crossplane — и проверка готовности
+make down        # снести целиком
+```
+
+`make up` не трогает `~/.kube/config`: доступ к кластеру лежит в
+`.kubeconfig` в корне репозитория и сносится вместе с ним. Поэтому вне
+`make` нужен явный указатель:
+
+```sh
+KUBECONFIG=./.kubeconfig ./bin/kubectl get pods -A
+KUBECONFIG=./.kubeconfig go run ./cmd/graphene up
+```
+
+Наружу проброшено: `localhost:7233` — фронтенд Temporal, `localhost:8233` —
+его веб-интерфейс, `localhost:6443` — API кластера. Порты прибиты в
+`deploy/local/k3d.yaml`; поменять их — значит пересоздать кластер.
+
 ## Требования к машине
 
 Go, docker, kubectl, helm. Версию Go, на которой всё собирается (`GO_VERSION`
