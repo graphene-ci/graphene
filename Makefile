@@ -99,10 +99,10 @@ install: generate ## Поставить наш управляющий слой �
 		./cmd/graphene-operator > .operator-image
 	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \
 		./cmd/graphene-worker > .worker-image
-	sed -e "s|OPERATOR_IMAGE|$$(cat .operator-image)|" \
-		-e "s|WORKER_IMAGE|$$(cat .worker-image)|" \
-		-e "s|CONTROL_URL|$(CONTROL_URL)|" \
-		-e "s|AGENT_TEMPORAL|$(TEMPORAL_URL)|" \
+	sed -e "s|__OPERATOR_IMAGE__|$$(cat .operator-image)|" \
+		-e "s|__WORKER_IMAGE__|$$(cat .worker-image)|" \
+		-e "s|__CONTROL_URL__|$(CONTROL_URL)|" \
+		-e "s|__AGENT_TEMPORAL__|$(TEMPORAL_URL)|" \
 		deploy/graphene/control.yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-operator --timeout=120s
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-worker --timeout=120s
@@ -111,12 +111,13 @@ install: generate ## Поставить наш управляющий слой �
 cloud: ## Поставить провайдер Yandex и учётку из .env
 	@test -n "$(YC_KEY_FILE)" || { echo "нет YC_KEY_FILE — заполни .env"; exit 1; }
 	@test -n "$(YC_FOLDER_ID)" || { echo "нет YC_FOLDER_ID — заполни .env"; exit 1; }
-	sed -e "s|YC_PROVIDER_VERSION|$(YC_PROVIDER_VERSION)|" deploy/local/yandex.yaml | $(KUBECTL) apply -f -
+	sed -e "s|__YC_PROVIDER_VERSION__|$(YC_PROVIDER_VERSION)|" deploy/local/yandex.yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) -n crossplane-system create secret generic yandex-key \
 		--from-file=credentials=$(YC_KEY_FILE) \
 		--dry-run=client -o yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) wait --for=condition=Healthy provider/provider-yc --timeout=300s
-	sed -e "s|YC_FOLDER_ID|$(YC_FOLDER_ID)|" deploy/local/yandex-config.yaml | $(KUBECTL) apply -f -
+	sed -e "s|__YC_FOLDER_ID__|$(YC_FOLDER_ID)|" -e "s|__YC_CLOUD_ID__|$(YC_CLOUD_ID)|" \
+		deploy/local/yandex-config.yaml | $(KUBECTL) apply -f -
 
 .PHONY: tunnel
 tunnel: ## Открыть туннель до публичной машины (нужен .env)
