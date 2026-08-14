@@ -46,6 +46,36 @@ func InstallationQueue(installation string) string {
 	return queuePrefix + installation
 }
 
+// WorkflowRegisterRevision is what a pipeline's worker starts when it comes
+// up, to say which kinds its pipeline applies.
+//
+// The same shape as the agent's registration and for the same reason: a
+// pipeline's worker has no access to the cluster — the import guard makes
+// sure of it — so what it knows travels through Temporal to a worker of
+// ours that does.
+const WorkflowRegisterRevision = "graphene.RegisterRevision"
+
+// ActivityRegisterRevision records what a revision needs.
+const ActivityRegisterRevision = "graphene.RecordRequirements"
+
+// Kind names one kind a pipeline applies.
+type Kind struct {
+	Group   string `json:"group"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
+}
+
+// RegisterRevisionInput is a revision's worker saying what it will need.
+type RegisterRevisionInput struct {
+	Revision  string `json:"revision"`
+	Namespace string `json:"namespace"`
+	// Requires is every kind the pipeline could apply. It comes from the
+	// scheme the pipeline handed to Serve, which is the only place that
+	// knows — the kinds live in the pipeline's own imports.
+	// +optional
+	Requires []Kind `json:"requires,omitempty"`
+}
+
 // LeaseSeconds is how long an agent's mark is good for. It lives in the
 // contract because both sides need the same number: the agent decides how
 // often to mark, the operator decides when silence has gone on too long.

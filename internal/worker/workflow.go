@@ -36,3 +36,19 @@ func RegisterMachine(ctx workflow.Context, req agent.RegisterInput) error {
 
 	return nil
 }
+
+// RegisterRevision is how a pipeline's worker says what its pipeline needs.
+// Same shape as RegisterMachine and for the same reason: a worker cannot
+// schedule an activity, and this one has no business writing records.
+func RegisterRevision(ctx workflow.Context, req agent.RegisterRevisionInput) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:           agent.SystemQueue,
+		StartToCloseTimeout: registerTimeout,
+	})
+
+	if err := workflow.ExecuteActivity(ctx, agent.ActivityRegisterRevision, req).Get(ctx, nil); err != nil {
+		return fmt.Errorf("требования не записались: %w", err)
+	}
+
+	return nil
+}

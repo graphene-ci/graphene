@@ -72,7 +72,30 @@ func serve() error {
 	defer temporal.Close()
 
 	w := temporalworker.New(temporal, agent.SystemQueue, temporalworker.Options{})
+	register(w, applier)
 
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+	stop := make(chan any, 1)
+
+	go func() {
+		<-signals
+		close(stop)
+	}()
+
+	if err := w.Run(stop); err != nil {
+		return fmt.Errorf("воркер остановился: %w", err)
+	}
+
+	return nil
+}
+
+// register attaches everything this worker answers for. Activities write to
+// the cluster; the workflows exist because the things that ask — an agent
+// and a pipeline's worker — are workers themselves and cannot schedule an
+// activity on their own.
+func register(w temporalworker.Worker, applier *worker.Applier) {
 	w.RegisterActivityWithOptions(
 		func(ctx context.Context, in agent.ApplyInput) (agent.ApplyOutput, error) {
 			return applier.Apply(ctx, in)
@@ -96,22 +119,15 @@ func serve() error {
 
 	// Регистрация — воркфлоу, потому что агент это воркер, а не воркфлоу:
 	// поставить activity ему нечем.
+	w.RegisterActivityWithOptions(
+		func(ctx context.Context, in agent.RegisterRevisionInput) error {
+			return applier.RecordRequirements(ctx, in)
+		},
+		activity.RegisterOptions{Name: agent.ActivityRegisterRevision},
+	)
+
 	w.RegisterWorkflowWithOptions(worker.RegisterMachine,
 		workflow.RegisterOptions{Name: agent.WorkflowRegister})
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-
-	stop := make(chan any, 1)
-
-	go func() {
-		<-signals
-		close(stop)
-	}()
-
-	if err := w.Run(stop); err != nil {
-		return fmt.Errorf("воркер остановился: %w", err)
-	}
-
-	return nil
+	w.RegisterWorkflowWithOptions(worker.RegisterRevision,
+		workflow.RegisterOptions{Name: agent.WorkflowRegisterRevision})
 }
