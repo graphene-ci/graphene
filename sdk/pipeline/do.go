@@ -41,7 +41,7 @@ func Do[T any](run Run, memo string, fn func() (T, error)) T {
 	})
 
 	if err := future.Get(ctx, &out); err != nil {
-		fail("вычисление "+memo, err)
+		run.raise("вычисление "+memo, err)
 	}
 
 	return out
