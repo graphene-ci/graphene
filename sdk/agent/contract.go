@@ -30,6 +30,15 @@ const (
 	ActivityKeep = "graphene.Keep"
 	// ActivityClaim takes machines out of the pool for a run.
 	ActivityClaim = "graphene.Claim"
+	// ActivityPresign issues one short-lived place to put one artifact.
+	ActivityPresign = "graphene.Presign"
+	// ActivityPut uploads a file from the machine. It runs on the AGENT:
+	// the bytes are there, and sending them through the control plane
+	// would mean pushing gigabytes through the thing whose job is handing
+	// out tasks.
+	ActivityPut = "graphene.Put"
+	// ActivityRecordArtifact writes down what was uploaded.
+	ActivityRecordArtifact = "graphene.RecordArtifact"
 )
 
 // SystemQueue is where our activities run.
@@ -113,6 +122,48 @@ type TeardownInput struct {
 	// by hand still takes its things with it. This is the eager path;
 	// that is the safety net.
 	Refs []ObjectRef `json:"refs,omitempty"`
+}
+
+// PresignInput asks for somewhere to put one artifact.
+type PresignInput struct {
+	Owner OwnerRef `json:"owner"`
+	// Name is what the pipeline calls this artifact.
+	Name string `json:"name"`
+}
+
+// PresignOutput is that somewhere, and it does not last.
+//
+// One link, one key, one short life. A permanent key to storage handed to
+// an agent would be a key handed out with every installation we ever
+// perform; this is a door that opens once and closes by itself.
+type PresignOutput struct {
+	URL string `json:"url"`
+	Key string `json:"key"`
+}
+
+// PutInput tells the agent what to upload and where.
+type PutInput struct {
+	// Path is the file on the machine.
+	Path string `json:"path"`
+	// URL is where to put it, and it expires.
+	URL string `json:"url"`
+}
+
+// PutOutput is what the agent uploaded.
+type PutOutput struct {
+	// Digest is computed while uploading, so it describes the bytes that
+	// actually went, not the bytes that were meant to.
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
+}
+
+// RecordArtifactInput writes down what now exists.
+type RecordArtifactInput struct {
+	Owner  OwnerRef `json:"owner"`
+	Name   string   `json:"name"`
+	Key    string   `json:"key"`
+	Digest string   `json:"digest"`
+	Size   int64    `json:"size"`
 }
 
 // Match describes the machines a pipeline wants.

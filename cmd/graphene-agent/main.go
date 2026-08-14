@@ -107,6 +107,11 @@ func work(ctx context.Context, temporal client.Client, queue string) error {
 	)
 
 	w.RegisterActivityWithOptions(
+		internalagent.Put,
+		activity.RegisterOptions{Name: agent.ActivityPut},
+	)
+
+	w.RegisterActivityWithOptions(
 		func(ctx context.Context) (agent.FactsOutput, error) {
 			return internalagent.Facts(ctx), nil
 		},

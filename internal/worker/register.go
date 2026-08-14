@@ -209,7 +209,7 @@ func (a *Applier) recordOf(
 				fieldVersion: record.GetAPIVersion(),
 				fieldKind:    record.GetKind(),
 				fieldName:    record.GetName(),
-				"uid":        string(record.GetUID()),
+				fieldUID:     string(record.GetUID()),
 			}
 		}
 	}

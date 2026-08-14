@@ -73,6 +73,21 @@ spec:
               value: temporal.temporal.svc:7233
             - name: GRAPHENE_TEMPORAL_NAMESPACE
               value: graphene
+            # Куда едут артефакты. Endpoint — как до хранилища достаём мы,
+            # PUBLIC — как до него достаёт МАШИНА: имя службы кластера ей
+            # не значит ничего, и это не исключение, а обычный случай.
+            - name: GRAPHENE_STORAGE_ENDPOINT
+              value: storage.storage.svc:9000
+            - name: GRAPHENE_STORAGE_PUBLIC
+              value: __STORAGE_PUBLIC__
+            - name: GRAPHENE_STORAGE_BUCKET
+              value: graphene
+            - name: GRAPHENE_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: storage, key: accessKey}
+            - name: GRAPHENE_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: storage, key: secretKey}
           resources:
             requests:
               cpu: 50m

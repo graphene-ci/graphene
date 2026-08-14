@@ -15,6 +15,10 @@ import (
 // installed under its own name, so the word appears three times on purpose.
 const temporal = "temporal"
 
+// storage is the component, the namespace and the deployment, for the same
+// reason temporal is: one process installed under its own name.
+const storage = "storage"
+
 // Control names the pieces of the control plane `graphene up` reports on.
 // The names match what deploy/local puts into the cluster; changing one
 // here without changing the manifest makes `up` lie.
@@ -22,6 +26,7 @@ func Control() []Component {
 	return []Component{
 		{Name: temporal, Namespace: temporal, Deployment: temporal},
 		{Name: "crossplane", Namespace: "crossplane-system", Deployment: "crossplane"},
+		{Name: storage, Namespace: storage, Deployment: storage},
 	}
 }
 

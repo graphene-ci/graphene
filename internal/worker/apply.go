@@ -36,10 +36,20 @@ const (
 // Поля манифеста, которые мы собираем руками. Строками они встречаются
 // в трёх местах, и линтер прав: одно написание вместо трёх.
 const (
-	fieldKind    = "kind"
-	fieldName    = "name"
-	fieldVersion = "apiVersion"
+	fieldKind     = "kind"
+	fieldName     = "name"
+	fieldVersion  = "apiVersion"
+	fieldMetadata = "metadata"
+	fieldUID      = "uid"
+	fieldLabels   = "labels"
 )
+
+// kindRun is our own kind, spelled once. It appears as the owner of nearly
+// everything a run makes.
+const kindRun = "Run"
+
+// yes is what a label says when it means yes.
+const yes = "true"
 
 // ErrNoKind means the manifest did not say what it is.
 var ErrNoKind = errors.New("в манифесте нет apiVersion или kind")
@@ -48,11 +58,19 @@ var ErrNoKind = errors.New("в манифесте нет apiVersion или kind"
 type Applier struct {
 	client  dynamic.Interface
 	resolve kube.Resolver
+	storage Storage
 }
 
 // NewApplier builds one.
 func NewApplier(client dynamic.Interface, resolve kube.Resolver) *Applier {
 	return &Applier{client: client, resolve: resolve}
+}
+
+// WithStorage tells the applier where artifacts go.
+func (a *Applier) WithStorage(storage Storage) *Applier {
+	a.storage = storage
+
+	return a
 }
 
 // Apply makes the record exist, owned by the run, and reports where it is.
@@ -155,7 +173,7 @@ func (a *Applier) forResource(
 func mark(obj *unstructured.Unstructured, req agent.ApplyInput) {
 	obj.SetOwnerReferences([]metav1.OwnerReference{{
 		APIVersion: v1.GroupVersion.String(),
-		Kind:       "Run",
+		Kind:       kindRun,
 		Name:       req.Owner.Name,
 		UID:        types.UID(req.Owner.UID),
 	}})
@@ -166,7 +184,7 @@ func mark(obj *unstructured.Unstructured, req agent.ApplyInput) {
 	}
 
 	labels[LabelRun] = req.Owner.Name
-	labels[LabelManaged] = "true"
+	labels[LabelManaged] = yes
 	obj.SetLabels(labels)
 
 	annotations := obj.GetAnnotations()

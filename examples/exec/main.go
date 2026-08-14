@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,6 +14,9 @@ import (
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
+
+// errNoDigest means the upload came back without saying what it uploaded.
+var errNoDigest = errors.New("артефакт уехал без дайджеста")
 
 // Params is what this pipeline takes.
 type Params struct {
@@ -41,6 +45,23 @@ func Exec(run pipeline.Run, params Params) error {
 
 	if said.Code != 0 {
 		return fmt.Errorf("команда вернула %d: %s", said.Code, said.Stderr)
+	}
+
+	// Отчёт: шаг оставил файл, файл уехал в хранилище прямо с машины.
+	// Байты через управляющий слой не шли — он выдал дверь, которая
+	// открывается один раз, и машина в неё прошла.
+	report := pipeline.On(run, node).Command("report", agent.ExecInput{
+		Script: `printf %s "$SAY" > /tmp/report.txt`,
+		Env:    map[string]string{"SAY": params.Say},
+	})
+
+	if report.Code != 0 {
+		return fmt.Errorf("отчёт не составился: %s", report.Stderr)
+	}
+
+	digest := pipeline.Artifact(run, node, "report", "/tmp/report.txt")
+	if digest == "" {
+		return errNoDigest
 	}
 
 	facts := pipeline.On(run, node).Facts()

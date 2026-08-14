@@ -60,7 +60,7 @@ func serve() error {
 		return err
 	}
 
-	applier := worker.NewApplier(dynamic, resolve)
+	applier := worker.NewApplier(dynamic, resolve).WithStorage(worker.StorageFrom(os.Getenv))
 
 	temporal, err := client.Dial(client.Options{
 		HostPort:  os.Getenv(envAddress),
@@ -108,6 +108,20 @@ func register(w temporalworker.Worker, applier *worker.Applier) {
 			return applier.Teardown(ctx, in)
 		},
 		activity.RegisterOptions{Name: agent.ActivityTeardown},
+	)
+
+	w.RegisterActivityWithOptions(
+		func(ctx context.Context, in agent.PresignInput) (agent.PresignOutput, error) {
+			return applier.Presign(ctx, in)
+		},
+		activity.RegisterOptions{Name: agent.ActivityPresign},
+	)
+
+	w.RegisterActivityWithOptions(
+		func(ctx context.Context, in agent.RecordArtifactInput) error {
+			return applier.RecordArtifact(ctx, in)
+		},
+		activity.RegisterOptions{Name: agent.ActivityRecordArtifact},
 	)
 
 	w.RegisterActivityWithOptions(
