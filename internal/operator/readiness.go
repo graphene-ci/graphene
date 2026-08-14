@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,6 +21,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/sdk/agent"
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 // ErrNotWatchable means the cluster does not serve the kind we were asked
@@ -171,6 +173,13 @@ func (r *Readiness) report(ctx context.Context, obj any) {
 		return
 	}
 
+	// Ожидание, которое никто не держал: запись попросили тогда, готовой
+	// она стала сейчас, и между этими двумя моментами не было процесса,
+	// который мог бы держать отрезок трассы открытым. Закрыть его может
+	// только тот, кто заметил конец, — и трассу для этого он берёт с
+	// самой записи. Ровно это отвечает на «почему стояло восемь минут».
+	waited(ctx, record)
+
 	payload := agent.ReadySignal{
 		Name:   memo,
 		Ready:  true,
@@ -182,6 +191,29 @@ func (r *Readiness) report(ctx context.Context, obj any) {
 		log.FromContext(ctx).Error(err, "сигнал готовности не дошёл",
 			"прогон", runName, "памятка", memo)
 	}
+}
+
+// waited writes down how long this record took to arrive.
+func waited(ctx context.Context, record *unstructured.Unstructured) {
+	packed := record.GetAnnotations()[worker.AnnotationTrace]
+	if packed == "" {
+		return
+	}
+
+	var carried map[string]string
+	if err := json.Unmarshal([]byte(packed), &carried); err != nil {
+		return
+	}
+
+	began := record.GetCreationTimestamp().Time
+	if began.IsZero() {
+		return
+	}
+
+	tracing.Took(tracing.Resume(ctx, carried), "готовность "+record.GetKind(), began,
+		attribute.String("record.kind", record.GetKind()),
+		attribute.String("record.name", record.GetName()),
+		attribute.String("memo", record.GetAnnotations()[worker.AnnotationMemo]))
 }
 
 // readiness reads the Ready condition, which is what everything in this

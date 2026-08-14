@@ -20,6 +20,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/sdk/agent"
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 // How a record says who made it and why. The labels are for selecting, the
@@ -32,6 +33,14 @@ const (
 	LabelManaged = v1.Group + "/managed"
 	// AnnotationMemo is what the pipeline called this thing.
 	AnnotationMemo = v1.Group + "/memo"
+
+	// AnnotationTrace is the trace this record was created in.
+	//
+	// It is on the record because nothing else can carry it. A machine is
+	// asked for now and arrives in eight minutes; the process that asked
+	// is long done, and the one that notices the arrival never spoke to
+	// it. The record is the only thing both of them touch.
+	AnnotationTrace = v1.Group + "/trace"
 )
 
 // Поля манифеста, которые мы собираем руками. Строками они встречаются
@@ -100,7 +109,7 @@ func (a *Applier) Apply(ctx context.Context, req agent.ApplyInput) (agent.ApplyO
 	name := agent.ObjectName(req.Owner, req.Name)
 	obj.SetName(name)
 	obj.SetNamespace(req.Owner.Namespace)
-	mark(obj, req)
+	mark(ctx, obj, req)
 
 	client := a.forResource(resource, namespaced, req.Owner.Namespace)
 
@@ -171,7 +180,7 @@ func (a *Applier) forResource(
 // reused by a later run, and a reference by name alone would hand somebody
 // else's machines to it. It is also what makes the cluster's own garbage
 // collector the safety net under teardown.
-func mark(obj *unstructured.Unstructured, req agent.ApplyInput) {
+func mark(ctx context.Context, obj *unstructured.Unstructured, req agent.ApplyInput) {
 	obj.SetOwnerReferences([]metav1.OwnerReference{{
 		APIVersion: v1.GroupVersion.String(),
 		Kind:       kindRun,
@@ -194,6 +203,13 @@ func mark(obj *unstructured.Unstructured, req agent.ApplyInput) {
 	}
 
 	annotations[AnnotationMemo] = req.Name
+
+	if carried := tracing.Carry(ctx); len(carried) > 0 {
+		if packed, err := json.Marshal(carried); err == nil {
+			annotations[AnnotationTrace] = string(packed)
+		}
+	}
+
 	obj.SetAnnotations(annotations)
 }
 

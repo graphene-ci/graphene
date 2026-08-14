@@ -33,7 +33,12 @@ type ServeRequest struct {
 	Temporal     string
 	Control      string
 	AgentAddress string
-	Out          io.Writer
+	// Traces is the OTLP receiver, and AgentTraces is the same thing as a
+	// machine can reach it. Both may be empty: then nothing is recorded
+	// and nothing is paid for it.
+	Traces      string
+	AgentTraces string
+	Out         io.Writer
 }
 
 // Serve runs the pipeline's worker HERE — on the machine of whoever typed
@@ -85,6 +90,8 @@ func Serve(ctx context.Context, req ServeRequest) error {
 		pipeline.EnvRecords+"="+req.Namespace,
 		pipeline.EnvControl+"="+req.Control,
 		pipeline.EnvAgentAddress+"="+req.AgentAddress,
+		pipeline.EnvTraces+"="+req.Traces,
+		pipeline.EnvAgentTraces+"="+req.AgentTraces,
 	)
 
 	fmt.Fprintf(req.Out, "ревизия %s, очередь %s\n", revision.Name, revision.Spec.Queue)

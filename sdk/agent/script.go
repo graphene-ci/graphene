@@ -20,6 +20,13 @@ type Install struct {
 	// from it, which is why a step can be scheduled before the machine
 	// exists.
 	Machine string
+	// Traces is where the agent sends what it saw, in OTLP.
+	//
+	// The machine is outside the cluster, so this is an address it can
+	// actually reach — the same problem as the storage's, and the same
+	// answer. Empty is a working configuration: then the agent records
+	// nothing and costs nothing for it.
+	Traces string
 	// Token proves the installation was asked for.
 	//
 	// ДЫРКА, НАЗВАННАЯ ВСЛУХ: этот токен попадает в спеку ресурса
@@ -51,6 +58,7 @@ func (i Install) Script() string {
 	env(&out, "GRAPHENE_TEMPORAL_NAMESPACE", i.Namespace)
 	env(&out, "GRAPHENE_NAMESPACE", i.Records)
 	env(&out, "GRAPHENE_MACHINE", i.Machine)
+	env(&out, "OTEL_EXPORTER_OTLP_ENDPOINT", i.Traces)
 	env(&out, "GRAPHENE_TOKEN", i.Token)
 
 	out.WriteString(body)
@@ -115,6 +123,7 @@ Environment=GRAPHENE_TEMPORAL_ADDRESS=$GRAPHENE_TEMPORAL_ADDRESS
 Environment=GRAPHENE_TEMPORAL_NAMESPACE=$GRAPHENE_TEMPORAL_NAMESPACE
 Environment=GRAPHENE_NAMESPACE=$GRAPHENE_NAMESPACE
 Environment=GRAPHENE_MACHINE=$GRAPHENE_MACHINE
+Environment=OTEL_EXPORTER_OTLP_ENDPOINT=$OTEL_EXPORTER_OTLP_ENDPOINT
 Restart=always
 RestartSec=2
 
