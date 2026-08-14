@@ -14,8 +14,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -47,8 +45,8 @@ func Exec(ctx context.Context, req agent.ExecInput) (agent.ExecOutput, error) {
 	cmd.Dir = req.Dir
 	cmd.Env = environment(req.Env)
 
-	// Своя группа процессов — первый рубеж убийства по таймауту; почему
-	// одного его мало, написано у killTree.
+	// Своя группа процессов: убить по таймауту надо именно её, иначе
+	// умрёт оболочка, а запущенное ею останется.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	code, err := run(cmd, timeoutOf(req))
@@ -93,121 +91,34 @@ func run(cmd *exec.Cmd, timeout time.Duration) (int, error) {
 	case err := <-done:
 		return exitCode(cmd, err)
 	case <-time.After(timeout):
-		killTree(cmd)
+		killGroup(cmd)
 		<-done
 
 		return 0, fmt.Errorf("не уложилось в %s: %w", timeout, context.DeadlineExceeded)
 	}
 }
 
-// killTree kills the process and everything it started.
+// killGroup kills the command and everything it started.
 //
-// The process group is not enough, and this was measured rather than
-// assumed: `sh -c 'sleep 30 &'` puts the background child into a group of
-// its own — that is what a shell does to protect background jobs from
-// terminal signals — and a kill by group leaves it running. A machine that
-// keeps such leftovers accumulates work nobody ordered and nobody will
-// find.
+// The process group is the whole mechanism, and that was measured twice —
+// the second time correctly. A first look said a background child survives
+// a group kill; it did not. The check was `kill(pid, 0)`, which succeeds
+// for a ZOMBIE — a process already dead and merely not yet reaped by init
+// after its parent died. The child was dead all along.
 //
-// So: the group first, then every descendant found through /proc. The
-// mechanism that does this properly is a cgroup per step, and it comes for
-// free once the agent runs as a systemd unit — that is the right answer and
-// it belongs with the installation work, not here.
-func killTree(cmd *exec.Cmd) {
+// What genuinely survives is a process that leaves the group on purpose:
+// setsid, a daemon detaching itself. That is what such a process is FOR,
+// and chasing it through /proc would be undoing somebody's intent rather
+// than cleaning up after them.
+func killGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
 
 	// Отрицательный pid — это группа.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-
-	for _, pid := range descendants(cmd.Process.Pid) {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		_ = cmd.Process.Kill()
 	}
-
-	_ = cmd.Process.Kill()
-}
-
-// descendants lists every process below pid.
-//
-// Reading /proc is a snapshot and a snapshot can be stale: a process may
-// have forked between the listing and the signal. The step is being killed
-// either way, so what matters is that the common cases die, not that the
-// scan is a proof.
-func descendants(pid int) []int {
-	children := childrenByParent()
-
-	var found []int
-
-	queue := []int{pid}
-	for len(queue) > 0 {
-		next := queue[0]
-		queue = queue[1:]
-
-		for _, child := range children[next] {
-			found = append(found, child)
-			queue = append(queue, child)
-		}
-	}
-
-	return found
-}
-
-// childrenByParent reads /proc once and groups processes by their parent.
-func childrenByParent() map[int][]int {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return nil
-	}
-
-	byParent := make(map[int][]int, len(entries))
-
-	for _, entry := range entries {
-		pid, err := strconv.Atoi(entry.Name())
-		if err != nil {
-			continue
-		}
-
-		parent, ok := parentOf(pid)
-		if !ok {
-			continue
-		}
-
-		byParent[parent] = append(byParent[parent], pid)
-	}
-
-	return byParent
-}
-
-// parentOf reads a process's parent from /proc/<pid>/stat.
-//
-// The fields are positional and the second one is the command name in
-// brackets, which may itself contain spaces and brackets. Everything after
-// the LAST closing bracket splits safely: parent is the second field there.
-func parentOf(pid int) (int, bool) {
-	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return 0, false
-	}
-
-	tail := strings.LastIndex(string(raw), ")")
-	if tail < 0 {
-		return 0, false
-	}
-
-	fields := strings.Fields(string(raw)[tail+1:])
-
-	const parentField = 1
-	if len(fields) <= parentField {
-		return 0, false
-	}
-
-	parent, err := strconv.Atoi(fields[parentField])
-	if err != nil {
-		return 0, false
-	}
-
-	return parent, true
 }
 
 // exitCode turns the end of a process into a number.
