@@ -18,16 +18,10 @@ import (
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
-// Куда машина ходит за агентом и за работой.
-//
-// Всё через 127.0.0.1, и контейнер запускается с сетью хоста: порты
-// окружения намеренно прибиты к петле, а машина в этой проверке живёт на
-// той же машине. С настоящей ВМ (M3) сюда встанет адрес, который до неё
-// достаёт, и это единственное, что поменяется.
-const (
-	control  = "http://127.0.0.1:18080"
-	temporal = "127.0.0.1:7233"
-)
+// Машина в этой проверке — контейнер с сетью хоста, поэтому адреса те же
+// петлевые, что и у воркера: они объявлены в m1_test.go. С настоящей ВМ
+// (M3) сюда встанет адрес, который до неё достаёт, и это единственное,
+// что поменяется.
 
 func pushExec(ctx context.Context, t *testing.T, kube client.Client) {
 	t.Helper()
@@ -53,7 +47,7 @@ func machine(ctx context.Context, t *testing.T, installation string) {
 
 	script := agent.Install{
 		Control:   control,
-		Address:   temporal,
+		Address:   temporalHost,
 		Namespace: "graphene",
 		Records:   namespace,
 		Machine:   installation,
@@ -95,6 +89,8 @@ func TestStepReachesTheMachine(t *testing.T) {
 
 	kube := connect(t)
 	pushExec(ctx, t, kube)
+
+	serve(ctx, t, kube, "exec", "../../examples/exec")
 
 	run, err := cli.Start(ctx, cli.StartRequest{
 		Kube:      kube,
