@@ -57,6 +57,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&Run{}, &RunList{},
 		&Probe{}, &ProbeList{},
 		&Machine{}, &MachineList{},
+		&MachineIntent{}, &MachineIntentList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 

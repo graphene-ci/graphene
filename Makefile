@@ -68,8 +68,8 @@ configure: ## Поставить инструменты в bin/ прибитых
 
 .PHONY: generate
 generate: ## Породить deepcopy и манифесты CRD из типов в api/
-	$(BIN)/controller-gen object paths=./api/...
-	$(BIN)/controller-gen crd paths=./api/... output:crd:dir=deploy/crd
+	$(BIN)/controller-gen object paths=./sdk/api/...
+	$(BIN)/controller-gen crd paths=./sdk/api/... output:crd:dir=deploy/crd
 
 .PHONY: up
 up: ## Поднять локальное окружение: k3s, Temporal, Crossplane
