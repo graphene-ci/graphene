@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 // Builder turns a directory of Go code into an image and reports it BY

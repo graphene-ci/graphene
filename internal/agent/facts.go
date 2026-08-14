@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // probes are the things worth asking a fresh machine about. Each is a

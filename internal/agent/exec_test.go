@@ -9,7 +9,7 @@ import (
 	"time"
 
 	internalagent "github.com/graphene-ci/graphene/internal/agent"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Ненулевой код возврата — это ОТВЕТ, а не отказ. Команда выполнилась и

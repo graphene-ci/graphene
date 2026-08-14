@@ -7,7 +7,7 @@ import (
 
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Where a MACHINE reaches us. The operator sets both on the pipeline's

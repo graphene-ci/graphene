@@ -33,7 +33,7 @@ jobs:
       # configure может тронуть go.mod или go.sum. Если тронул — значит
       # они не соответствуют коду, и это ошибка, а не мелочь.
       - name: go.mod и go.sum не поехали
-        run: git diff --exit-code go.mod go.sum
+        run: git diff --exit-code go.mod go.sum sdk/go.mod sdk/go.sum
 
       - name: lint
         run: make lint

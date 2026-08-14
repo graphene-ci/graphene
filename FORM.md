@@ -35,8 +35,8 @@
 
 ```go
 import (
-	"github.com/graphene-ci/graphene/pkg/pipeline"      // наш SDK
-	graphenev1 "github.com/graphene-ci/graphene/api/v1" // наши виды: Machine, Stand, Artifact
+	"github.com/graphene-ci/graphene/sdk/pipeline"      // наш SDK
+	graphenev1 "github.com/graphene-ci/graphene/sdk/api/v1" // наши виды: Machine, Stand, Artifact
 	yandexv1  "github.com/crossplane-contrib/provider-yandex/apis/compute/v1beta1"
 	"acme/perf"                                         // код пользователя
 )

@@ -18,7 +18,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/worker"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Where this binary is told to find things. Everything comes from the

@@ -8,7 +8,7 @@ import (
 
 // sdk is the package the user's pipeline imports. Everything it drags in,
 // the user's binary carries.
-const sdk = "github.com/graphene-ci/graphene/pkg/pipeline"
+const sdk = "github.com/graphene-ci/graphene/sdk/pipeline"
 
 // Модули, которые пользовательскому пайплайну положено нести.
 //
@@ -21,9 +21,10 @@ const sdk = "github.com/graphene-ci/graphene/pkg/pipeline"
 // k8s.io/client-go и любые облачные SDK. Пользователь их не заказывал.
 func allowedModules() map[string]bool {
 	return map[string]bool{
-		// Наш собственный модуль: какие ИМЕННО пакеты из него сюда
-		// доезжают, проверяет отдельный тест ниже.
-		"github.com/graphene-ci/graphene": true,
+		// Наш собственный модуль — SDK и только он. Модуля продукта здесь
+		// нет и быть не может: он живёт своей жизнью со своим
+		// controller-runtime, и ровно ради этого их разделили.
+		"github.com/graphene-ci/graphene/sdk": true,
 
 		// Ход дела.
 		"go.temporal.io/sdk": true,
@@ -128,9 +129,9 @@ func TestSdkSeesOnlyKindsAndContract(t *testing.T) {
 	t.Parallel()
 
 	allowed := map[string]bool{
-		sdk:                                      true,
-		"github.com/graphene-ci/graphene/api/v1": true,
-		"github.com/graphene-ci/graphene/pkg/agent": true,
+		sdk: true,
+		"github.com/graphene-ci/graphene/sdk/api/v1": true,
+		"github.com/graphene-ci/graphene/sdk/agent":  true,
 	}
 
 	for _, pkg := range packagesOf(t, sdk) {

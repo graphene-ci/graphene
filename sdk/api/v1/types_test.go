@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 func TestAddToSchemeRegistersEveryKind(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // ErrNothingToRun means the request said neither argv nor script.
