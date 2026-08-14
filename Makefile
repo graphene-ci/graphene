@@ -35,6 +35,7 @@ TUNNEL_PUBLIC_HOST     ?=
 TUNNEL_TEMPORAL_PORT   ?= 7233
 TUNNEL_DIST_PORT       ?= 18080
 CONTROL_HOST           := $(if $(TUNNEL_PUBLIC_HOST),$(TUNNEL_PUBLIC_HOST),127.0.0.1)
+STORAGE_PUBLIC         := $(CONTROL_HOST):9000
 CONTROL_URL            := http://$(CONTROL_HOST):$(TUNNEL_DIST_PORT)
 TEMPORAL_URL           := $(CONTROL_HOST):$(TUNNEL_TEMPORAL_PORT)
 
@@ -77,6 +78,7 @@ up: ## Поднять локальное окружение: k3s, Temporal, Cros
 		$(K3D) cluster create --config deploy/local/k3d.yaml
 	$(K3D) kubeconfig get $(CLUSTER) > $(KUBECONFIG)
 	$(KUBECTL) apply -f deploy/local/temporal.yaml
+	$(KUBECTL) apply -f deploy/local/storage.yaml
 	$(HELM) upgrade --install crossplane \
 		https://charts.crossplane.io/stable/crossplane-$(CROSSPLANE_VERSION).tgz \
 		--namespace crossplane-system --create-namespace --wait
@@ -95,6 +97,8 @@ install: generate ## Поставить наш управляющий слой �
 		./cmd/graphene-agent
 	$(KUBECTL) apply -f deploy/crd/
 	$(KUBECTL) apply -f deploy/graphene/rbac.yaml
+	# Секрет хранилища виден и управляющему слою: ссылки подписывает он.
+	$(KUBECTL) get secret storage -n storage -o yaml | 		sed -e 's/namespace: storage/namespace: graphene-system/' -e '/resourceVersion/d' -e '/uid:/d' | 		$(KUBECTL) apply -f -
 	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \
 		./cmd/graphene-operator > .operator-image
 	KO_DOCKER_REPO=$(REGISTRY) $(BIN)/ko build --bare \
@@ -103,6 +107,7 @@ install: generate ## Поставить наш управляющий слой �
 		-e "s|__WORKER_IMAGE__|$$(cat .worker-image)|" \
 		-e "s|__CONTROL_URL__|$(CONTROL_URL)|" \
 		-e "s|__AGENT_TEMPORAL__|$(TEMPORAL_URL)|" \
+		-e "s|__STORAGE_PUBLIC__|$(STORAGE_PUBLIC)|" \
 		deploy/graphene/control.yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-operator --timeout=120s
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-worker --timeout=120s
@@ -127,6 +132,7 @@ tunnel: ## Открыть туннель до публичной машины (�
 	# будет только её петля и ВМ не достучится.
 	ssh -N -R 0.0.0.0:$(TUNNEL_TEMPORAL_PORT):127.0.0.1:7233 \
 		-R 0.0.0.0:$(TUNNEL_DIST_PORT):127.0.0.1:18080 \
+		-R 0.0.0.0:9000:127.0.0.1:9000 \
 		$(if $(TUNNEL_SSH_KEY),-i $(TUNNEL_SSH_KEY),) \
 		-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
 		$(TUNNEL_SSH)

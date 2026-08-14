@@ -181,9 +181,9 @@ func (a *Applier) take(
 
 	now := metav1.Now()
 	claim := map[string]any{
-		fieldKind: "Run",
+		fieldKind: kindRun,
 		fieldName: req.Owner.Name,
-		"uid":     req.Owner.UID,
+		fieldUID:  req.Owner.UID,
 		"since":   now.UTC().Format(metav1.RFC3339Micro),
 	}
 

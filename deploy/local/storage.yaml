@@ -1,0 +1,94 @@
+# Хранилище артефактов для разработки.
+#
+# S3-совместимое, потому что этот протокол умеют все и потому что в нём
+# есть предподписанные ссылки — механизм, ради которого хранилище тут и
+# стоит: байты идут от агента в хранилище напрямую, минуя нас.
+#
+# В поставке — для разработки и для тех, у кого своего нет. Снаружи — по
+# выбору, адресом в настройке; наш код не знает, какое из двух перед ним.
+#
+# Данные в emptyDir: `make down && make up` обязан давать чистое
+# состояние. Продовая раскладка — вопрос эксплуатации, не разработки.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: storage
+  namespace: storage
+type: Opaque
+stringData:
+  # Учётка для разработки. В настоящей установке это секрет, который
+  # заводит тот, кто ставит систему.
+  accessKey: graphene
+  secretKey: graphene-local-dev
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage
+  namespace: storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storage
+  template:
+    metadata:
+      labels:
+        app: storage
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef: {name: storage, key: accessKey}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: storage, key: secretKey}
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            initialDelaySeconds: 3
+            periodSeconds: 2
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage
+  namespace: storage
+spec:
+  type: NodePort
+  selector:
+    app: storage
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      nodePort: 30900
+    - name: console
+      port: 9001
+      targetPort: console
+      nodePort: 30901
