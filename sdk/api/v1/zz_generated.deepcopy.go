@@ -529,6 +529,11 @@ func (in *PipelineSpec) DeepCopyInto(out *PipelineSpec) {
 		*out = new(metav1.Duration)
 		**out = **in
 	}
+	if in.ArtifactRetention != nil {
+		in, out := &in.ArtifactRetention, &out.ArtifactRetention
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.Schedules != nil {
 		in, out := &in.Schedules, &out.Schedules
 		*out = make([]Schedule, len(*in))

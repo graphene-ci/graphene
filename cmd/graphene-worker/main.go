@@ -17,6 +17,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/graphene-ci/graphene/internal/kube"
+	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/sdk/agent"
 )
@@ -60,7 +61,7 @@ func serve() error {
 		return err
 	}
 
-	applier := worker.NewApplier(dynamic, resolve).WithStorage(worker.StorageFrom(os.Getenv))
+	applier := worker.NewApplier(dynamic, resolve).WithStorage(storage.FromEnv(os.Getenv))
 
 	temporal, err := client.Dial(client.Options{
 		HostPort:  os.Getenv(envAddress),

@@ -39,6 +39,26 @@ spec:
               value: __CONTROL_URL__
             - name: GRAPHENE_AGENT_TEMPORAL
               value: __AGENT_TEMPORAL__
+            # Куда едут артефакты. Endpoint — как до хранилища достаём мы,
+            # PUBLIC — как до него достаёт МАШИНА: имя службы кластера ей
+            # не значит ничего, и это не исключение, а обычный случай.
+            - name: GRAPHENE_STORAGE_ENDPOINT
+              value: storage.storage.svc:9000
+            - name: GRAPHENE_STORAGE_PUBLIC
+              value: __STORAGE_PUBLIC__
+            - name: GRAPHENE_STORAGE_BUCKET
+              value: graphene
+            # Верх цепочки наследования сроков: что хранит УСТАНОВКА,
+            # когда ни пайплайн, ни артефакт не сказали. Конечен, потому
+            # что хранилище, которое только растёт, однажды встаёт.
+            - name: GRAPHENE_ARTIFACT_RETENTION
+              value: 168h
+            - name: GRAPHENE_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: storage, key: accessKey}
+            - name: GRAPHENE_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: storage, key: secretKey}
           ports:
             - name: dist
               containerPort: 8080
@@ -82,6 +102,11 @@ spec:
               value: __STORAGE_PUBLIC__
             - name: GRAPHENE_STORAGE_BUCKET
               value: graphene
+            # Верх цепочки наследования сроков: что хранит УСТАНОВКА,
+            # когда ни пайплайн, ни артефакт не сказали. Конечен, потому
+            # что хранилище, которое только растёт, однажды встаёт.
+            - name: GRAPHENE_ARTIFACT_RETENTION
+              value: 168h
             - name: GRAPHENE_STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef: {name: storage, key: accessKey}

@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/graphene-ci/graphene/internal/kube"
+	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/sdk/agent"
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
@@ -58,7 +59,7 @@ var ErrNoKind = errors.New("в манифесте нет apiVersion или kind"
 type Applier struct {
 	client  dynamic.Interface
 	resolve kube.Resolver
-	storage Storage
+	storage storage.Storage
 }
 
 // NewApplier builds one.
@@ -67,8 +68,8 @@ func NewApplier(client dynamic.Interface, resolve kube.Resolver) *Applier {
 }
 
 // WithStorage tells the applier where artifacts go.
-func (a *Applier) WithStorage(storage Storage) *Applier {
-	a.storage = storage
+func (a *Applier) WithStorage(where storage.Storage) *Applier {
+	a.storage = where
 
 	return a
 }

@@ -51,6 +51,14 @@ spec:
               PipelineSpec is what a person decides about a pipeline as a whole,
               separately from any one version of its code.
             properties:
+              artifactRetention:
+                description: |-
+                  ArtifactRetention is how long the bytes runs of this pipeline left
+                  behind are kept. Separate from Retention because they are separate
+                  costs: a run record is bytes in etcd, a report is megabytes in a
+                  bucket, and the pipeline that wants its history for a year rarely
+                  wants a year of dumps.
+                type: string
               retention:
                 description: |-
                   Retention is how long finished runs of this pipeline are kept.

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"go.temporal.io/sdk/client"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,17 +21,21 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/operator"
+	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/sdk/agent"
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 const (
-	envAddress      = "GRAPHENE_TEMPORAL_ADDRESS"
-	envNamespace    = "GRAPHENE_TEMPORAL_NAMESPACE"
-	envMetrics      = "GRAPHENE_METRICS_ADDRESS"
-	envDist         = "GRAPHENE_DIST_ADDRESS"
-	envControl      = "GRAPHENE_CONTROL"
-	envAgentAddress = "GRAPHENE_AGENT_TEMPORAL"
+	envAddress   = "GRAPHENE_TEMPORAL_ADDRESS"
+	envNamespace = "GRAPHENE_TEMPORAL_NAMESPACE"
+	envMetrics   = "GRAPHENE_METRICS_ADDRESS"
+	envDist      = "GRAPHENE_DIST_ADDRESS"
+	// envArtifactRetention is the top of the inheritance chain: what an
+	// installation keeps when neither the pipeline nor the artifact said.
+	envArtifactRetention = "GRAPHENE_ARTIFACT_RETENTION"
+	envControl           = "GRAPHENE_CONTROL"
+	envAgentAddress      = "GRAPHENE_AGENT_TEMPORAL"
 )
 
 // distAddress is where the agent binary is served from.
@@ -147,6 +152,7 @@ func wire(
 		operator.NewMachineReconciler(records).SetupWithManager,
 		operator.NewStandReconciler(records).SetupWithManager,
 		operator.NewMachineIntentReconciler(records, operator.SSH).SetupWithManager,
+		operator.NewArtifactReconciler(records, storage.FromEnv(os.Getenv), artifactRetention()).SetupWithManager,
 	}
 
 	for _, setup := range setups {
@@ -156,4 +162,19 @@ func wire(
 	}
 
 	return nil
+}
+
+// artifactRetention is what the installation says, if it says anything.
+func artifactRetention() time.Duration {
+	value := os.Getenv(envArtifactRetention)
+	if value == "" {
+		return 0
+	}
+
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0
+	}
+
+	return parsed
 }
