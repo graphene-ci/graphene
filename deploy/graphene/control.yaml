@@ -1,8 +1,9 @@
 # Управляющий слой: оператор сшивает записи с Temporal, системный воркер
 # выполняет то, что заказывают пайплайны.
 #
-# Образы подставляются при установке (`make install`): она собирает их
-# из этого же репозитория и заносит в локальный кластер.
+# Значения в __ДВОЙНЫХ_ПОДЧЁРКИВАНИЯХ__ подставляет `make install`.
+# Подчёркивания не для красоты: голое AGENT_TEMPORAL — подстрока имени
+# GRAPHENE_AGENT_TEMPORAL, и sed однажды переименовал саму переменную.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,7 +24,7 @@ spec:
       serviceAccountName: graphene
       containers:
         - name: operator
-          image: OPERATOR_IMAGE
+          image: __OPERATOR_IMAGE__
           env:
             - name: GRAPHENE_TEMPORAL_ADDRESS
               value: temporal.temporal.svc:7233
@@ -35,9 +36,9 @@ spec:
             # имя ей не годится: она снаружи. Пока идёт разработка это
             # туннель, а без него — петля, чего хватает контейнеру-машине.
             - name: GRAPHENE_CONTROL
-              value: CONTROL_URL
+              value: __CONTROL_URL__
             - name: GRAPHENE_AGENT_TEMPORAL
-              value: AGENT_TEMPORAL
+              value: __AGENT_TEMPORAL__
           ports:
             - name: dist
               containerPort: 8080
@@ -66,7 +67,7 @@ spec:
       serviceAccountName: graphene
       containers:
         - name: worker
-          image: WORKER_IMAGE
+          image: __WORKER_IMAGE__
           env:
             - name: GRAPHENE_TEMPORAL_ADDRESS
               value: temporal.temporal.svc:7233

@@ -9,4 +9,4 @@ kind: Provider
 metadata:
   name: provider-yc
 spec:
-  package: cr.yandex/yc/crossplane-provider-yc:YC_PROVIDER_VERSION
+  package: xpkg.upbound.io/yandexcloud/crossplane-provider-yc:__YC_PROVIDER_VERSION__

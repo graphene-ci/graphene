@@ -1,14 +1,17 @@
 # Учётка, которой провайдер ходит в облако.
 #
 # Ключ лежит секретом кластера и в манифест не попадает: значение
-# разрешает тот, кто им пользуется, и обратно не возвращает.
+# разрешает тот, кто им пользуется, и обратно не возвращает. Облако и
+# каталог — не секрет, они здесь, чтобы ресурсам не приходилось называть
+# их каждый раз.
 apiVersion: yandex-cloud.jet.crossplane.io/v1beta1
 kind: ProviderConfig
 metadata:
   name: default
 spec:
-  folder_id: YC_FOLDER_ID
   credentials:
+    cloudId: __YC_CLOUD_ID__
+    folderId: __YC_FOLDER_ID__
     source: Secret
     secretRef:
       namespace: crossplane-system
