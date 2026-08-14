@@ -36,6 +36,9 @@ TUNNEL_TEMPORAL_PORT   ?= 7233
 TUNNEL_DIST_PORT       ?= 18080
 CONTROL_HOST           := $(if $(TUNNEL_PUBLIC_HOST),$(TUNNEL_PUBLIC_HOST),127.0.0.1)
 STORAGE_PUBLIC         := $(CONTROL_HOST):9000
+# Приёмник трасс. Пусто — трассировка выключена. Чем он будет и как
+# ставится — отдельная стадия вместе со всей поставкой.
+OTLP                   ?=
 CONTROL_URL            := http://$(CONTROL_HOST):$(TUNNEL_DIST_PORT)
 TEMPORAL_URL           := $(CONTROL_HOST):$(TUNNEL_TEMPORAL_PORT)
 
@@ -108,6 +111,7 @@ install: generate ## Поставить наш управляющий слой �
 		-e "s|__CONTROL_URL__|$(CONTROL_URL)|" \
 		-e "s|__AGENT_TEMPORAL__|$(TEMPORAL_URL)|" \
 		-e "s|__STORAGE_PUBLIC__|$(STORAGE_PUBLIC)|" \
+		-e "s|__OTLP__|$(OTLP)|" \
 		deploy/graphene/control.yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-operator --timeout=120s
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-worker --timeout=120s

@@ -154,12 +154,14 @@ func newRun() *cobra.Command {
 // like where our credentials live".
 func newServe() *cobra.Command {
 	var (
-		name     string
-		revision string
-		temporal string
-		control  string
-		agent    string
-		space    string
+		name        string
+		revision    string
+		temporal    string
+		control     string
+		agent       string
+		space       string
+		traces      string
+		agentTraces string
 	)
 
 	cmd := &cobra.Command{
@@ -197,6 +199,8 @@ func newServe() *cobra.Command {
 				Temporal:     temporal,
 				Control:      control,
 				AgentAddress: agent,
+				Traces:       traces,
+				AgentTraces:  agentTraces,
 				Out:          cmd.OutOrStdout(),
 			})
 		},
@@ -208,6 +212,10 @@ func newServe() *cobra.Command {
 	cmd.Flags().StringVar(&space, "temporal-namespace", "graphene", "пространство имён Temporal")
 	cmd.Flags().StringVar(&control, "control", "http://127.0.0.1:18080", "откуда машины берут агента")
 	cmd.Flags().StringVar(&agent, "agent-temporal", "", "адрес Temporal, каким его видит машина; пусто — как здесь")
+	cmd.Flags().StringVar(&traces, "otlp", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		"приёмник трасс OTLP; пусто — не записывать")
+	cmd.Flags().StringVar(&agentTraces, "agent-otlp", "",
+		"приёмник трасс, каким его видит машина; пусто — как здесь")
 
 	return cmd
 }

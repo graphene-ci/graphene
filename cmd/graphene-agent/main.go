@@ -22,6 +22,7 @@ import (
 
 	internalagent "github.com/graphene-ci/graphene/internal/agent"
 	"github.com/graphene-ci/graphene/sdk/agent"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 // What the install script sets. Everything comes from the environment
@@ -58,9 +59,17 @@ func serve() error {
 		return fmt.Errorf("%w: %s", errNoName, envMachine)
 	}
 
+	flush, err := tracing.Setup(context.Background(), "graphene-agent")
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = flush(context.Background()) }()
+
 	temporal, err := client.Dial(client.Options{
-		HostPort:  os.Getenv(envAddress),
-		Namespace: os.Getenv(envNamespace),
+		HostPort:     os.Getenv(envAddress),
+		Namespace:    os.Getenv(envNamespace),
+		Interceptors: tracing.Interceptors(),
 	})
 	if err != nil {
 		return fmt.Errorf("не подключиться к Temporal: %w", err)

@@ -20,6 +20,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/sdk/agent"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 // Where this binary is told to find things. Everything comes from the
@@ -63,9 +64,17 @@ func serve() error {
 
 	applier := worker.NewApplier(dynamic, resolve).WithStorage(storage.FromEnv(os.Getenv))
 
+	flush, err := tracing.Setup(context.Background(), "graphene-worker")
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = flush(context.Background()) }()
+
 	temporal, err := client.Dial(client.Options{
-		HostPort:  os.Getenv(envAddress),
-		Namespace: os.Getenv(envNamespace),
+		HostPort:     os.Getenv(envAddress),
+		Namespace:    os.Getenv(envNamespace),
+		Interceptors: tracing.Interceptors(),
 	})
 	if err != nil {
 		return fmt.Errorf("не подключиться к Temporal: %w", err)

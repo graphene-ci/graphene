@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/graphene-ci/graphene/sdk/agent"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 // WorkflowName is what every pipeline's workflow is called in Temporal.
@@ -119,9 +120,20 @@ func Serve(fn any, opts ...Option) error {
 		return err
 	}
 
+	// Трасса заводится и здесь, на машине пользователя. Прогон один, и
+	// смотреть на него надо целиком: то, что половина его шагов идёт у
+	// нас, а половина — тут, не должно быть видно в трассе.
+	flush, err := tracing.Setup(context.Background(), "graphene-pipeline")
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = flush(context.Background()) }()
+
 	temporal, err := client.Dial(client.Options{
-		HostPort:  options.Address,
-		Namespace: options.Namespace,
+		HostPort:     options.Address,
+		Namespace:    options.Namespace,
+		Interceptors: tracing.Interceptors(),
 	})
 	if err != nil {
 		return fmt.Errorf("не подключиться к Temporal: %w", err)

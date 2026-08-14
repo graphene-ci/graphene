@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -24,6 +25,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/storage"
 	"github.com/graphene-ci/graphene/sdk/agent"
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/tracing"
 )
 
 const (
@@ -75,6 +77,13 @@ func serve() error {
 		}
 	}
 
+	stop, err := traces()
+	if err != nil {
+		return err
+	}
+
+	defer stop()
+
 	cfg := ctrl.GetConfigOrDie()
 
 	serves, err := kube.Serves(cfg)
@@ -90,12 +99,9 @@ func serve() error {
 		return fmt.Errorf("менеджер не собрался: %w", err)
 	}
 
-	address := os.Getenv(envAddress)
-	namespace := os.Getenv(envNamespace)
-
-	temporal, err := client.Dial(client.Options{HostPort: address, Namespace: namespace})
+	temporal, err := dial()
 	if err != nil {
-		return fmt.Errorf("не подключиться к Temporal: %w", err)
+		return err
 	}
 	defer temporal.Close()
 
@@ -103,26 +109,7 @@ func serve() error {
 		return serves(ctx, schema.GroupVersionKind{Group: kind.Group, Version: kind.Version, Kind: kind.Kind})
 	}
 
-	source, err := kube.Dynamic(cfg)
-	if err != nil {
-		return err
-	}
-
-	resolve, err := kube.Resolve(cfg)
-	if err != nil {
-		return err
-	}
-
-	bridge := operator.NewClient(temporal)
-	readiness := operator.NewReadiness(mgr.GetClient(), source, resolve, bridge)
-
-	if err := mgr.Add(readiness); err != nil {
-		return fmt.Errorf("наблюдение за готовностью не встало: %w", err)
-	}
-
-	sweeper := operator.NewSweeper(source, resolve)
-
-	if err := wire(mgr, bridge, known, readiness, sweeper); err != nil {
+	if err := controllers(mgr, cfg, temporal, known); err != nil {
 		return err
 	}
 
@@ -177,4 +164,50 @@ func artifactRetention() time.Duration {
 	}
 
 	return parsed
+}
+
+// traces starts sending them and returns how to stop.
+func traces() (func(), error) {
+	flush, err := tracing.Setup(context.Background(), "graphene-operator")
+	if err != nil {
+		return nil, err
+	}
+
+	return func() { _ = flush(context.Background()) }, nil
+}
+
+// dial connects to the half of the world this operator does not own.
+func dial() (client.Client, error) {
+	temporal, err := client.Dial(client.Options{
+		HostPort:     os.Getenv(envAddress),
+		Namespace:    os.Getenv(envNamespace),
+		Interceptors: tracing.Interceptors(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("не подключиться к Temporal: %w", err)
+	}
+
+	return temporal, nil
+}
+
+// controllers wires everything that answers to a record.
+func controllers(mgr ctrl.Manager, cfg *rest.Config, temporal client.Client, known operator.Known) error {
+	source, err := kube.Dynamic(cfg)
+	if err != nil {
+		return err
+	}
+
+	resolve, err := kube.Resolve(cfg)
+	if err != nil {
+		return err
+	}
+
+	bridge := operator.NewClient(temporal)
+	readiness := operator.NewReadiness(mgr.GetClient(), source, resolve, bridge)
+
+	if err := mgr.Add(readiness); err != nil {
+		return fmt.Errorf("наблюдение за готовностью не встало: %w", err)
+	}
+
+	return wire(mgr, bridge, known, readiness, operator.NewSweeper(source, resolve))
 }

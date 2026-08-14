@@ -22,6 +22,13 @@ const (
 	EnvControl = "GRAPHENE_CONTROL"
 	// EnvAgentAddress is the Temporal frontend as a machine can reach it.
 	EnvAgentAddress = "GRAPHENE_AGENT_TEMPORAL"
+	// EnvAgentTraces is the OTLP receiver as a machine can reach it. The
+	// trace is one per run, so what happened on the machine has to land
+	// in the same place as everything else that run did.
+	EnvAgentTraces = "GRAPHENE_AGENT_OTLP"
+	// EnvTraces is the OTLP receiver as this worker reaches it, and what
+	// a machine falls back to when nobody said otherwise.
+	EnvTraces = "OTEL_EXPORTER_OTLP_ENDPOINT"
 )
 
 // Target is a machine this run will have an agent on.
@@ -62,9 +69,20 @@ func Install(run Run, name string) Target {
 			Namespace: os.Getenv(EnvNamespace),
 			Records:   run.s.owner.Namespace,
 			Machine:   installation,
+			Traces:    agentTraces(),
 			Token:     token(run, installation),
 		},
 	}
+}
+
+// agentTraces is the receiver as a machine sees it, falling back to how
+// this worker sees it — right when both are the same host.
+func agentTraces() string {
+	if value := os.Getenv(EnvAgentTraces); value != "" {
+		return value
+	}
+
+	return os.Getenv(EnvTraces)
 }
 
 // agentAddress is Temporal as a machine sees it, falling back to how this
