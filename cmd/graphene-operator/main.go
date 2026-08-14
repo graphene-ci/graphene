@@ -140,6 +140,7 @@ func wire(mgr ctrl.Manager, bridge *operator.Client, known operator.Known, watch
 		operator.NewRunReconciler(records, bridge, known, watch).SetupWithManager,
 		operator.NewProbeReconciler(records).SetupWithManager,
 		operator.NewMachineReconciler(records).SetupWithManager,
+		operator.NewMachineIntentReconciler(records, operator.SSH).SetupWithManager,
 	}
 
 	for _, setup := range setups {
