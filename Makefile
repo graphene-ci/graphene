@@ -1,5 +1,11 @@
 .DEFAULT_GOAL := help
 BIN := $(CURDIR)/bin
+
+# Параметры окружения одним файлом. Образец — .env.example; заполненный
+# .env в git не попадает. Минус означает «нет файла — не беда»: локальное
+# окружение и `make e2e` работают без него, он нужен только облачной части.
+-include .env
+export
 export PATH := $(BIN):$(PATH)
 
 # Ничего не пишем в ~/.kube/config: окружение репозитория живёт в самом
@@ -20,6 +26,17 @@ K3D_VERSION            := v5.9.0
 HELM_VERSION           := v3.21.3
 KUBECTL_VERSION        := v1.36.3
 CROSSPLANE_VERSION     := 2.3.4
+YC_PROVIDER_VERSION    := v0.14.0
+
+# Куда машины ходят за агентом и за работой. По умолчанию петля — это
+# верно для контейнера-машины; настоящей ВМ нужен адрес туннеля, и он
+# приходит из .env.
+TUNNEL_PUBLIC_HOST     ?=
+TUNNEL_TEMPORAL_PORT   ?= 7233
+TUNNEL_DIST_PORT       ?= 18080
+CONTROL_HOST           := $(if $(TUNNEL_PUBLIC_HOST),$(TUNNEL_PUBLIC_HOST),127.0.0.1)
+CONTROL_URL            := http://$(CONTROL_HOST):$(TUNNEL_DIST_PORT)
+TEMPORAL_URL           := $(CONTROL_HOST):$(TUNNEL_TEMPORAL_PORT)
 
 CLUSTER  := graphene
 REGISTRY := localhost:5555/graphene
@@ -84,9 +101,34 @@ install: generate ## Поставить наш управляющий слой �
 		./cmd/graphene-worker > .worker-image
 	sed -e "s|OPERATOR_IMAGE|$$(cat .operator-image)|" \
 		-e "s|WORKER_IMAGE|$$(cat .worker-image)|" \
+		-e "s|CONTROL_URL|$(CONTROL_URL)|" \
+		-e "s|AGENT_TEMPORAL|$(TEMPORAL_URL)|" \
 		deploy/graphene/control.yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-operator --timeout=120s
 	$(KUBECTL) -n graphene-system rollout status deployment/graphene-worker --timeout=120s
+
+.PHONY: cloud
+cloud: ## Поставить провайдер Yandex и учётку из .env
+	@test -n "$(YC_KEY_FILE)" || { echo "нет YC_KEY_FILE — заполни .env"; exit 1; }
+	@test -n "$(YC_FOLDER_ID)" || { echo "нет YC_FOLDER_ID — заполни .env"; exit 1; }
+	sed -e "s|YC_PROVIDER_VERSION|$(YC_PROVIDER_VERSION)|" deploy/local/yandex.yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) -n crossplane-system create secret generic yandex-key \
+		--from-file=credentials=$(YC_KEY_FILE) \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) wait --for=condition=Healthy provider/provider-yc --timeout=300s
+	sed -e "s|YC_FOLDER_ID|$(YC_FOLDER_ID)|" deploy/local/yandex-config.yaml | $(KUBECTL) apply -f -
+
+.PHONY: tunnel
+tunnel: ## Открыть туннель до публичной машины (нужен .env)
+	@test -n "$(TUNNEL_SSH)" || { echo "нет TUNNEL_SSH — заполни .env"; exit 1; }
+	# Обратный проброс: публичная машина слушает у себя и отдаёт сюда.
+	# GatewayPorts на той стороне должен быть включён, иначе слушать
+	# будет только её петля и ВМ не достучится.
+	ssh -N -R 0.0.0.0:$(TUNNEL_TEMPORAL_PORT):127.0.0.1:7233 \
+		-R 0.0.0.0:$(TUNNEL_DIST_PORT):127.0.0.1:18080 \
+		$(if $(TUNNEL_SSH_KEY),-i $(TUNNEL_SSH_KEY),) \
+		-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+		$(TUNNEL_SSH)
 
 .PHONY: down
 down: ## Снести локальное окружение целиком

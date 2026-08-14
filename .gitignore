@@ -8,6 +8,10 @@
 /graphene-worker
 /graphene-agent
 
+# Параметры окружения: ключи облака и адреса. Образец — в .env.example,
+# и он в git есть; заполненный .env не должен там оказаться никогда.
+/.env
+
 # Локальное состояние окружения.
 /.kubeconfig
 /.operator-image

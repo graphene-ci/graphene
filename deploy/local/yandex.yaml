@@ -1,0 +1,12 @@
+# Провайдер Yandex Cloud для Crossplane.
+#
+# Официальный и upjet-овый: у него есть сгенерированные Go-типы, поэтому
+# пайплайн пишется программой, а не строкой с HCL. Ставится отдельной
+# целью (`make cloud`), а не вместе с окружением: он нужен только тогда,
+# когда работают с настоящим облаком.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-yc
+spec:
+  package: cr.yandex/yc/crossplane-provider-yc:YC_PROVIDER_VERSION

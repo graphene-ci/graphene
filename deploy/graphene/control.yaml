@@ -31,6 +31,13 @@ spec:
               value: graphene
             - name: GRAPHENE_METRICS_ADDRESS
               value: "0"
+            # Адреса, по которым до нас достучится МАШИНА. Внутрикластерное
+            # имя ей не годится: она снаружи. Пока идёт разработка это
+            # туннель, а без него — петля, чего хватает контейнеру-машине.
+            - name: GRAPHENE_CONTROL
+              value: CONTROL_URL
+            - name: GRAPHENE_AGENT_TEMPORAL
+              value: AGENT_TEMPORAL
           ports:
             - name: dist
               containerPort: 8080
