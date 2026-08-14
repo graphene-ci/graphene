@@ -10,10 +10,19 @@ import (
 	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
-// EnvControl is where a machine fetches the agent binary from. The
-// operator sets it on the pipeline's worker; the worker passes it into
-// every install script it produces.
-const EnvControl = "GRAPHENE_CONTROL"
+// Where a MACHINE reaches us. The operator sets both on the pipeline's
+// worker, and the worker puts them into every install script it produces.
+//
+// They are separate from EnvAddress on purpose. A pipeline's worker runs
+// inside the cluster and talks to Temporal by its service name; an agent
+// runs on a machine somewhere else, and a service name means nothing to
+// it. One address for two sides would be wrong for one of them.
+const (
+	// EnvControl is where a machine fetches the agent binary from.
+	EnvControl = "GRAPHENE_CONTROL"
+	// EnvAgentAddress is the Temporal frontend as a machine can reach it.
+	EnvAgentAddress = "GRAPHENE_AGENT_TEMPORAL"
+)
 
 // Target is a machine this run will have an agent on.
 //
@@ -49,13 +58,24 @@ func Install(run Run, name string) Target {
 		installation: installation,
 		install: agent.Install{
 			Control:   os.Getenv(EnvControl),
-			Address:   os.Getenv(EnvAddress),
+			Address:   agentAddress(),
 			Namespace: os.Getenv(EnvNamespace),
 			Records:   run.s.owner.Namespace,
 			Machine:   installation,
 			Token:     token(run, installation),
 		},
 	}
+}
+
+// agentAddress is Temporal as a machine sees it, falling back to how this
+// worker sees it — which is right when both are the same host, and that is
+// exactly the case of a machine running beside the cluster.
+func agentAddress() string {
+	if value := os.Getenv(EnvAgentAddress); value != "" {
+		return value
+	}
+
+	return os.Getenv(EnvAddress)
 }
 
 // token proves an installation was asked for.

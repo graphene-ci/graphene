@@ -25,11 +25,12 @@ import (
 )
 
 const (
-	envAddress   = "GRAPHENE_TEMPORAL_ADDRESS"
-	envNamespace = "GRAPHENE_TEMPORAL_NAMESPACE"
-	envMetrics   = "GRAPHENE_METRICS_ADDRESS"
-	envDist      = "GRAPHENE_DIST_ADDRESS"
-	envControl   = "GRAPHENE_CONTROL"
+	envAddress      = "GRAPHENE_TEMPORAL_ADDRESS"
+	envNamespace    = "GRAPHENE_TEMPORAL_NAMESPACE"
+	envMetrics      = "GRAPHENE_METRICS_ADDRESS"
+	envDist         = "GRAPHENE_DIST_ADDRESS"
+	envControl      = "GRAPHENE_CONTROL"
+	envAgentAddress = "GRAPHENE_AGENT_TEMPORAL"
 )
 
 // distAddress is where the agent binary is served from.
@@ -138,10 +139,13 @@ func wire(
 ) error {
 	records := mgr.GetClient()
 
+	revisions := operator.NewRevisionReconciler(
+		records, address, namespace, os.Getenv(envControl), os.Getenv(envAgentAddress))
+
 	setups := []func(ctrl.Manager) error{
 		operator.NewRunReconciler(records, bridge, known, watch).SetupWithManager,
 		operator.NewProbeReconciler(records).SetupWithManager,
-		operator.NewRevisionReconciler(records, address, namespace, os.Getenv(envControl)).SetupWithManager,
+		revisions.SetupWithManager,
 		operator.NewMachineReconciler(records).SetupWithManager,
 	}
 
