@@ -111,6 +111,13 @@ func register(w temporalworker.Worker, applier *worker.Applier) {
 	)
 
 	w.RegisterActivityWithOptions(
+		func(ctx context.Context, in agent.ClaimInput) (agent.ClaimOutput, error) {
+			return applier.Claim(ctx, in)
+		},
+		activity.RegisterOptions{Name: agent.ActivityClaim},
+	)
+
+	w.RegisterActivityWithOptions(
 		func(ctx context.Context, in agent.KeepInput) (agent.KeepOutput, error) {
 			return applier.Keep(ctx, in)
 		},
