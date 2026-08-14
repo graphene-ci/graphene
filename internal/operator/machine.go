@@ -98,6 +98,10 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	if err := r.free(ctx, &machine); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if !meta.SetStatusCondition(&machine.Status.Conditions, condition) {
 		return ctrl.Result{RequeueAfter: requeueFor(left)}, nil
 	}
@@ -107,6 +111,61 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	return ctrl.Result{RequeueAfter: requeueFor(left)}, nil
+}
+
+// free lets go of a machine whose holder is gone.
+//
+// A claim points at a run or a stand together with its UID, so this is not
+// a guess: the holder either exists with that identity or it does not. A
+// name alone would not do — a later run can be called the same thing, and
+// it would inherit machines it never asked for.
+//
+// This is why claiming needed no timer and no reaper of its own. The claim
+// ends when its holder ends, which is the same rule everything else here
+// follows.
+func (r *MachineReconciler) free(ctx context.Context, machine *v1.Machine) error {
+	claim := machine.Status.Claim
+	if claim == nil {
+		return nil
+	}
+
+	if r.alive(ctx, machine.Namespace, claim) {
+		return nil
+	}
+
+	machine.Status.Claim = nil
+
+	if err := r.kube.Status().Update(ctx, machine); err != nil {
+		return fmt.Errorf("машина %s не освободилась: %w", machine.Name, err)
+	}
+
+	return nil
+}
+
+// alive answers whether the thing holding this machine is still there.
+func (r *MachineReconciler) alive(ctx context.Context, namespace string, claim *v1.ClaimRef) bool {
+	key := types.NamespacedName{Namespace: namespace, Name: claim.Name}
+
+	switch claim.Kind {
+	case "Run":
+		var run v1.Run
+		if err := r.kube.Get(ctx, key, &run); err != nil {
+			return false
+		}
+
+		return claim.UID == "" || string(run.UID) == claim.UID
+	case "Stand":
+		var stand v1.Stand
+		if err := r.kube.Get(ctx, key, &stand); err != nil {
+			return false
+		}
+
+		return claim.UID == "" || string(stand.UID) == claim.UID
+	default:
+		// Держатель неизвестного вида — держатель, за которого никто не
+		// отвечает. Освобождаем.
+		return false
+	}
 }
 
 // project copies the machine's facts into labels, so that a pipeline can

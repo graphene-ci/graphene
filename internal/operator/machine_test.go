@@ -241,3 +241,70 @@ func TestLostFactLosesItsLabel(t *testing.T) {
 		t.Fatal("докер сняли с машины, а метка осталась")
 	}
 }
+
+// Держатель исчез — машина свободна. Ради этого захвату и не нужен ни
+// таймер, ни собственный уборщик: он кончается вместе с тем, кто держал.
+func TestMachineIsFreedWhenItsHolderIsGone(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	held := machine()
+	held.Status.Claim = &v1.ClaimRef{Kind: "Run", Name: "perf-42", UID: "uid-42"}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(held, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	if loadMachine(t, kube).Status.Claim != nil {
+		t.Fatal("прогона нет, а машина всё занята")
+	}
+}
+
+// Держатель жив — машину не трогают.
+func TestLiveHolderKeepsItsMachine(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	held := machine()
+	held.Status.Claim = &v1.ClaimRef{Kind: "Run", Name: "perf-42", UID: "uid-42"}
+
+	holder := &v1.Run{
+		ObjectMeta: metav1.ObjectMeta{Name: "perf-42", Namespace: "default", UID: "uid-42"},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(held, holder, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	if loadMachine(t, kube).Status.Claim == nil {
+		t.Fatal("держатель жив, а машину отобрали")
+	}
+}
+
+// Имя переиспользуется, а UID — нет. Прогон с тем же именем не должен
+// унаследовать машины, которых не просил.
+func TestReusedNameDoesNotInheritMachines(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	held := machine()
+	held.Status.Claim = &v1.ClaimRef{Kind: "Run", Name: "perf-42", UID: "uid-старый"}
+
+	newcomer := &v1.Run{
+		ObjectMeta: metav1.ObjectMeta{Name: "perf-42", Namespace: "default", UID: "uid-новый"},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(held, newcomer, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	if loadMachine(t, kube).Status.Claim != nil {
+		t.Fatal("тёзка унаследовал чужую машину")
+	}
+}
