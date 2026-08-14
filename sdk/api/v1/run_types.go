@@ -39,6 +39,20 @@ type RunSpec struct {
 	// Params for this run, shaped by the revision's parameter schema.
 	// +optional
 	Params *apiextensionsv1.JSON `json:"params,omitempty"`
+
+	// Cancel asks the run to stop.
+	//
+	// It lives in the spec rather than being a command because stopping a
+	// run is a decision about the world, and decisions about the world are
+	// records: a person, a UI and kubectl all say it the same way, and the
+	// wish survives whoever expressed it going away.
+	//
+	// Asking to cancel is not the same as killing. A cancelled pipeline is
+	// told to stop and gets to run its own teardown — that is what
+	// run.Teardown on a disconnected context exists for. Killing is what
+	// happens when the RECORD is deleted, and then we clean up ourselves.
+	// +optional
+	Cancel bool `json:"cancel,omitempty"`
 }
 
 // RunStatus is what became of the ask.

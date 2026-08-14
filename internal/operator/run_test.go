@@ -22,10 +22,11 @@ import (
 
 // started records what the reconciler asked Temporal to do.
 type started struct {
-	calls   []operator.StartRequest
-	fail    error
-	phase   v1.RunPhase
-	stopped int
+	calls    []operator.StartRequest
+	fail     error
+	phase    v1.RunPhase
+	stopped  int
+	canceled int
 }
 
 func (s *started) Start(_ context.Context, req operator.StartRequest) (string, error) {
@@ -36,6 +37,12 @@ func (s *started) Start(_ context.Context, req operator.StartRequest) (string, e
 	s.calls = append(s.calls, req)
 
 	return "temporal-run-1", nil
+}
+
+func (s *started) Cancel(_ context.Context, _ string) error {
+	s.canceled++
+
+	return nil
 }
 
 func (s *started) Stop(_ context.Context, _ string) error {
@@ -398,5 +405,51 @@ func TestRunLetsGoWhenNothingIsLeft(t *testing.T) {
 	err := kube.Get(t.Context(), types.NamespacedName{Namespace: "default", Name: "perf-42"}, &gone)
 	if err == nil && len(gone.Finalizers) > 0 {
 		t.Fatal("убирать нечего, а финализатор держит запись")
+	}
+}
+
+// Просьба об отмене доходит до воркфлоу — и это ОТМЕНА, а не убийство:
+// отменённый пайплайн получает возможность прибрать за собой, ради чего
+// Teardown и написан на отвязанном контексте.
+func TestCancelReachesTheWorkflow(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Spec.Cancel = true
+	run.Status.Phase = v1.RunRunning
+	run.Status.WorkflowID = "perf-42"
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{phase: v1.RunRunning}
+	reconcile(t, kube, temporal, nil)
+
+	if temporal.canceled != 1 {
+		t.Fatalf("отмена отправлена %d раз", temporal.canceled)
+	}
+
+	if temporal.stopped != 0 {
+		t.Fatal("вместо отмены воркфлоу убили: пайплайн не успеет прибрать за собой")
+	}
+}
+
+// Завершённый прогон отменять нечего.
+func TestCancelDoesNotTouchAFinishedRun(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Spec.Cancel = true
+	run.Status.Phase = v1.RunSucceeded
+	run.Status.WorkflowID = "perf-42"
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{}
+	reconcile(t, kube, temporal, nil)
+
+	if temporal.canceled != 0 {
+		t.Fatal("отменяли то, что уже кончилось")
 	}
 }

@@ -212,6 +212,46 @@ func newServe() *cobra.Command {
 	return cmd
 }
 
+// newCancel builds `graphene cancel`.
+//
+// It writes a wish onto the record rather than reaching for Temporal
+// itself: stopping a run is a decision about the world, and decisions
+// about the world are records. A person, a UI and kubectl all say it the
+// same way, and the wish outlives whoever expressed it.
+func newCancel() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cancel <прогон>",
+		Short: "Остановить прогон",
+		Long: `Просит прогон остановиться. Это отмена, а не убийство:
+пайплайн получает возможность прибрать за собой, и снос выполняется.
+
+Убить всё вместе с записью — это kubectl delete run, и тогда убирает
+управляющий слой.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kubeClient, err := kubeClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			namespace, err := cmd.Flags().GetString("namespace")
+			if err != nil {
+				return err
+			}
+
+			if err := cli.Cancel(cmd.Context(), kubeClient, namespace, args[0]); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: отмена запрошена\n", args[0])
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func newWatch() *cobra.Command {
 	var every time.Duration
 

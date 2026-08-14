@@ -30,6 +30,8 @@ var (
 	ErrNoRevision = errors.New("у пайплайна нет ни одной ревизии: сначала graphene push")
 	// ErrNotDigest means the builder handed back something moveable.
 	ErrNotDigest = errors.New("сборка вернула не дайджест")
+	// ErrAlreadyOver means the run has already finished.
+	ErrAlreadyOver = errors.New("прогон уже завершён")
 )
 
 // revisionSuffix is how much of the digest goes into the revision's name.
