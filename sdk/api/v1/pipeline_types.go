@@ -13,6 +13,14 @@ type PipelineSpec struct {
 	// +optional
 	Retention *metav1.Duration `json:"retention,omitempty"`
 
+	// ArtifactRetention is how long the bytes runs of this pipeline left
+	// behind are kept. Separate from Retention because they are separate
+	// costs: a run record is bytes in etcd, a report is megabytes in a
+	// bucket, and the pipeline that wants its history for a year rarely
+	// wants a year of dumps.
+	// +optional
+	ArtifactRetention *metav1.Duration `json:"artifactRetention,omitempty"`
+
 	// Schedules start runs without anyone asking.
 	// +optional
 	// +listType=map
