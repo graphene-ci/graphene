@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/graphene-ci/graphene/sdk/agent"
@@ -41,7 +42,22 @@ type Temporal interface {
 	Start(ctx context.Context, req StartRequest) (string, error)
 	// Phase reports how far a workflow got.
 	Phase(ctx context.Context, workflowID string) (v1.RunPhase, string, error)
+	// Stop ends a workflow. Stopping one that already ended is not an
+	// error: that is the normal answer when a record is deleted after
+	// its run finished.
+	Stop(ctx context.Context, workflowID string) error
 }
+
+// teardownFinalizer keeps a Run record alive until what it owns is gone.
+//
+// Without it, deleting a run would delete the RECORD and leave the machines:
+// the cluster's own collector removes children of a deleted owner, but it
+// answers to nobody about whether the cloud caught up. With it, `kubectl
+// delete run` means what a person reading it thinks it means.
+const teardownFinalizer = v1.Group + "/teardown"
+
+// sweepEvery is how often to look again while the cloud is still deleting.
+const sweepEvery = 10 * time.Second
 
 // followEvery is how often a running workflow is asked how far it got.
 //
@@ -82,11 +98,15 @@ type RunReconciler struct {
 	// nobody applies is never watched, and a kind somebody applies is
 	// watched before the first record of it exists.
 	Watch Watcher
+	// Sweep removes what the run owns when the record is deleted.
+	Sweep Sweeper
 }
 
 // NewRunReconciler builds one.
-func NewRunReconciler(kube client.Client, temporal Temporal, known Known, watch Watcher) *RunReconciler {
-	return &RunReconciler{kube: kube, temporal: temporal, Known: known, Watch: watch}
+func NewRunReconciler(
+	kube client.Client, temporal Temporal, known Known, watch Watcher, sweep Sweeper,
+) *RunReconciler {
+	return &RunReconciler{kube: kube, temporal: temporal, Known: known, Watch: watch, Sweep: sweep}
 }
 
 // Reconcile brings one run to where it should be.
@@ -99,6 +119,14 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	var run v1.Run
 	if err := r.kube.Get(ctx, req.NamespacedName, &run); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !run.DeletionTimestamp.IsZero() {
+		return r.teardown(ctx, &run)
+	}
+
+	if err := r.hold(ctx, &run); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if run.Status.Phase.Terminal() {
@@ -118,6 +146,79 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	return ctrl.Result{RequeueAfter: followEvery}, r.start(ctx, &run)
+}
+
+// hold puts the finalizer on the record, once. It is what turns "the record
+// is gone" into "the machines are gone".
+func (r *RunReconciler) hold(ctx context.Context, run *v1.Run) error {
+	if r.Sweep == nil || controllerutil.ContainsFinalizer(run, teardownFinalizer) {
+		return nil
+	}
+
+	controllerutil.AddFinalizer(run, teardownFinalizer)
+
+	if err := r.kube.Update(ctx, run); err != nil {
+		return fmt.Errorf("финализатор не поставился: %w", err)
+	}
+
+	return nil
+}
+
+// teardown removes what the run owns and only then lets the record go.
+//
+// The workflow is stopped first: a running pipeline creates things, and
+// sweeping under one would be a race we would lose — it can ask for a
+// machine after we counted.
+func (r *RunReconciler) teardown(ctx context.Context, run *v1.Run) (ctrl.Result, error) {
+	if r.Sweep == nil || !controllerutil.ContainsFinalizer(run, teardownFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	if run.Status.WorkflowID != "" && !run.Status.Phase.Terminal() {
+		if err := r.temporal.Stop(ctx, run.Status.WorkflowID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("воркфлоу не остановился: %w", err)
+		}
+	}
+
+	left, err := r.Sweep.Sweep(ctx, ownerOf(run), r.kinds(ctx, run))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if left > 0 {
+		// Облако удаляет в своём темпе. Пока записи есть, прогон не
+		// исчезает — иначе «удалил прогон» означало бы «перестал видеть
+		// счёт», а не «ничего не осталось».
+		return ctrl.Result{RequeueAfter: sweepEvery}, nil
+	}
+
+	controllerutil.RemoveFinalizer(run, teardownFinalizer)
+
+	if err := r.kube.Update(ctx, run); err != nil {
+		return ctrl.Result{}, fmt.Errorf("финализатор не снялся: %w", err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// kinds is what this run could have created — the revision's requirements
+// once more, now as the list of places to look for leftovers.
+func (r *RunReconciler) kinds(ctx context.Context, run *v1.Run) []agent.Kind {
+	var revision v1.PipelineRevision
+
+	key := types.NamespacedName{Namespace: run.Namespace, Name: run.Spec.RevisionRef.Name}
+	if err := r.kube.Get(ctx, key, &revision); err != nil {
+		return nil
+	}
+
+	kinds := make([]agent.Kind, 0, len(revision.Status.Requires))
+	for _, required := range revision.Status.Requires {
+		kinds = append(kinds, agent.Kind{
+			Group: required.Group, Version: required.Version, Kind: required.Kind,
+		})
+	}
+
+	return kinds
 }
 
 // start puts the run in motion, or records why it cannot be.

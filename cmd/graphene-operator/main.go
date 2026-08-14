@@ -115,7 +115,9 @@ func serve() error {
 		return fmt.Errorf("наблюдение за готовностью не встало: %w", err)
 	}
 
-	if err := wire(mgr, bridge, known, readiness); err != nil {
+	sweeper := operator.NewSweeper(source, resolve)
+
+	if err := wire(mgr, bridge, known, readiness, sweeper); err != nil {
 		return err
 	}
 
@@ -133,11 +135,14 @@ func serve() error {
 }
 
 // wire attaches every controller this binary carries.
-func wire(mgr ctrl.Manager, bridge *operator.Client, known operator.Known, watch operator.Watcher) error {
+func wire(
+	mgr ctrl.Manager, bridge *operator.Client,
+	known operator.Known, watch operator.Watcher, sweep operator.Sweeper,
+) error {
 	records := mgr.GetClient()
 
 	setups := []func(ctrl.Manager) error{
-		operator.NewRunReconciler(records, bridge, known, watch).SetupWithManager,
+		operator.NewRunReconciler(records, bridge, known, watch, sweep).SetupWithManager,
 		operator.NewProbeReconciler(records).SetupWithManager,
 		operator.NewMachineReconciler(records).SetupWithManager,
 		operator.NewMachineIntentReconciler(records, operator.SSH).SetupWithManager,
