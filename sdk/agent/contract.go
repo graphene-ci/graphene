@@ -28,6 +28,8 @@ const (
 	ActivityTeardown = "graphene.Teardown"
 	// ActivityKeep hands what the run owns to a stand that outlives it.
 	ActivityKeep = "graphene.Keep"
+	// ActivityClaim takes machines out of the pool for a run.
+	ActivityClaim = "graphene.Claim"
 )
 
 // SystemQueue is where our activities run.
@@ -111,6 +113,42 @@ type TeardownInput struct {
 	// by hand still takes its things with it. This is the eager path;
 	// that is the safety net.
 	Refs []ObjectRef `json:"refs,omitempty"`
+}
+
+// Match describes the machines a pipeline wants.
+//
+// The selector is kubernetes' own: we do not invent a language for saying
+// "linux with docker" when every person who will use this already knows
+// one, and every tool they have already speaks it.
+type Match struct {
+	// Labels every machine must have. Facts appear here through the
+	// projection the operator makes.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// Tolerate lists the taints this work can live with, as key=value.
+	// A machine with a taint nobody tolerates is out of the pool without
+	// being out of the system — which is how a person takes a machine
+	// back without deleting it.
+	// +optional
+	Tolerate []string `json:"tolerate,omitempty"`
+}
+
+// ClaimInput asks for machines.
+type ClaimInput struct {
+	Owner OwnerRef `json:"owner"`
+	// Memo names this claim inside the run, so asking twice means the
+	// same machines rather than twice as many.
+	Memo string `json:"memo"`
+	// Count is how many are needed. All of them or none.
+	Count int   `json:"count"`
+	Match Match `json:"match"`
+}
+
+// ClaimOutput names what was taken.
+type ClaimOutput struct {
+	// Machines is empty when there were not enough: the run waits and
+	// asks again rather than holding half a pool it cannot use.
+	Machines []string `json:"machines,omitempty"`
 }
 
 // KeepInput asks for what the run made to outlive it.

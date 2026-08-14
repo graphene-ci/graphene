@@ -58,10 +58,37 @@ type MachineStatus struct {
 	// +optional
 	Facts map[string]string `json:"facts,omitempty"`
 
+	// Claim says who holds this machine right now.
+	//
+	// Holding is ownership with an end, written the way all ownership here
+	// is written: it names a record, and that record has an owner and dies.
+	// A run ends, its claim goes with it, and the machine is free — no
+	// timer, no reaper, no special case.
+	// +optional
+	Claim *ClaimRef `json:"claim,omitempty"`
+
 	// +optional
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ClaimRef names what holds a machine.
+//
+// The UID is what makes it real: a run's name can be reused by a later
+// run, and a claim by name alone would hand somebody else's machine to it.
+type ClaimRef struct {
+	// Kind is Run or Stand — the two things that can hold a machine.
+	// +kubebuilder:validation:Enum=Run;Stand
+	Kind string `json:"kind"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +optional
+	UID string `json:"uid,omitempty"`
+	// Since is when it was taken, for a person wondering how long this
+	// has been going on.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
 }
 
 // Machine is something that connected.

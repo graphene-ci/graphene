@@ -96,6 +96,37 @@ spec:
             description: MachineStatus is what the agent reports about the machine
               it runs on.
             properties:
+              claim:
+                description: |-
+                  Claim says who holds this machine right now.
+
+                  Holding is ownership with an end, written the way all ownership here
+                  is written: it names a record, and that record has an owner and dies.
+                  A run ends, its claim goes with it, and the machine is free — no
+                  timer, no reaper, no special case.
+                properties:
+                  kind:
+                    description: Kind is Run or Stand — the two things that can hold
+                      a machine.
+                    enum:
+                    - Run
+                    - Stand
+                    type: string
+                  name:
+                    minLength: 1
+                    type: string
+                  since:
+                    description: |-
+                      Since is when it was taken, for a person wondering how long this
+                      has been going on.
+                    format: date-time
+                    type: string
+                  uid:
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
