@@ -86,6 +86,10 @@ func (r *RevisionReconciler) shape(revision *v1.PipelineRevision, deployment *ap
 			// Откуда машина возьмёт агента. Пайплайн кладёт этот адрес
 			// в скрипт установки, который сам же и порождает.
 			{Name: pipeline.EnvControl, Value: r.Control},
+			// Чтобы воркер знал, чью ревизию он обслуживает, и мог
+			// сообщить, какие виды ей нужны.
+			{Name: pipeline.EnvRevision, Value: revision.Name},
+			{Name: pipeline.EnvRecords, Value: revision.Namespace},
 		},
 	}}
 }

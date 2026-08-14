@@ -1,15 +1,19 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"reflect"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -29,6 +33,8 @@ const (
 	EnvAddress   = "GRAPHENE_TEMPORAL_ADDRESS"
 	EnvNamespace = "GRAPHENE_TEMPORAL_NAMESPACE"
 	EnvQueue     = "GRAPHENE_QUEUE"
+	EnvRevision  = "GRAPHENE_REVISION"
+	EnvRecords   = "GRAPHENE_NAMESPACE"
 )
 
 // activityTimeout bounds one activity attempt. Ours are writes to the
@@ -53,6 +59,12 @@ type Options struct {
 	Namespace string
 	Queue     string
 	Scheme    *runtime.Scheme
+	// Revision is the record this worker belongs to. The operator sets it
+	// when it starts the worker; empty means nobody is listening and the
+	// worker simply does not announce itself.
+	Revision string
+	// Records is the cluster namespace the revision's record lives in.
+	Records string
 }
 
 // Option changes how Serve behaves.
@@ -115,6 +127,10 @@ func Serve(fn any, opts ...Option) error {
 	}
 	defer temporal.Close()
 
+	if err := announce(context.Background(), temporal, options); err != nil {
+		return err
+	}
+
 	w := worker.New(temporal, options.Queue, worker.Options{})
 	w.RegisterWorkflowWithOptions(run, workflow.RegisterOptions{Name: WorkflowName})
 
@@ -143,7 +159,96 @@ func fromEnvironment() Options {
 		Address:   os.Getenv(EnvAddress),
 		Namespace: os.Getenv(EnvNamespace),
 		Queue:     os.Getenv(EnvQueue),
+		Revision:  os.Getenv(EnvRevision),
+		Records:   os.Getenv(EnvRecords),
 	}
+}
+
+// Requirements lists every kind a scheme knows, which is every kind this
+// pipeline could apply.
+//
+// It reports what the pipeline COULD do rather than what it will: which
+// kinds a run actually applies depends on its parameters, and refusing
+// early is only possible on the wider answer. A requirement the run never
+// reaches is a provider somebody installed for nothing — cheap. A missing
+// one found halfway is a half-built stand — not cheap.
+func Requirements(scheme *runtime.Scheme) []agent.Kind {
+	if scheme == nil {
+		return nil
+	}
+
+	seen := make(map[agent.Kind]bool)
+	kinds := make([]agent.Kind, 0)
+
+	for gvk := range scheme.AllKnownTypes() {
+		// Не то, что применяют: списки, безгруппные виды и внутренние
+		// виды самой machinery. Последние приходят из
+		// metav1.AddToGroupVersion, который каждая схема зовёт за собой,
+		// и живут в версии __internal — вида с таким именем в кластере
+		// нет и требовать его значит отказывать всем подряд.
+		if strings.HasSuffix(gvk.Kind, "List") || gvk.Group == "" || gvk.Version == runtime.APIVersionInternal {
+			continue
+		}
+
+		one := agent.Kind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind}
+		if seen[one] {
+			continue
+		}
+
+		seen[one] = true
+
+		kinds = append(kinds, one)
+	}
+
+	// Полный порядок, а не по имени: схема отдаёт виды в случайном
+	// порядке, а требования сравнивают и пишут в запись — список,
+	// который переставляется сам по себе, давал бы ложную разницу при
+	// каждой сверке.
+	sort.Slice(kinds, func(i, j int) bool {
+		if kinds[i].Group != kinds[j].Group {
+			return kinds[i].Group < kinds[j].Group
+		}
+
+		if kinds[i].Version != kinds[j].Version {
+			return kinds[i].Version < kinds[j].Version
+		}
+
+		return kinds[i].Kind < kinds[j].Kind
+	})
+
+	return kinds
+}
+
+// announce tells the cluster what this revision needs. A worker that cannot
+// announce still serves: the requirement check is a courtesy to whoever
+// starts a run, not a condition of running.
+func announce(ctx context.Context, temporal client.Client, options Options) error {
+	if options.Revision == "" {
+		return nil
+	}
+
+	start := client.StartWorkflowOptions{
+		ID:                    "revision-" + options.Revision,
+		TaskQueue:             agent.SystemQueue,
+		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+	}
+
+	input := agent.RegisterRevisionInput{
+		Revision:  options.Revision,
+		Namespace: options.Records,
+		Requires:  Requirements(options.Scheme),
+	}
+
+	handle, err := temporal.ExecuteWorkflow(ctx, start, agent.WorkflowRegisterRevision, input)
+	if err != nil {
+		return fmt.Errorf("ревизия не представилась: %w", err)
+	}
+
+	if err := handle.Get(ctx, nil); err != nil {
+		return fmt.Errorf("требования не записались: %w", err)
+	}
+
+	return nil
 }
 
 // Workflow turns an ordinary function into the workflow Temporal will
