@@ -308,3 +308,29 @@ func TestReusedNameDoesNotInheritMachines(t *testing.T) {
 		t.Fatal("тёзка унаследовал чужую машину")
 	}
 }
+
+// Завершённый прогон машину не держит. Его запись живёт свой срок
+// хранения — неделю по умолчанию, — и держать машину всё это время
+// значило бы занять её до следующего понедельника.
+func TestFinishedRunReleasesItsMachine(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	held := machine()
+	held.Status.Claim = &v1.ClaimRef{Kind: "Run", Name: "perf-42", UID: "uid-42"}
+
+	finished := &v1.Run{
+		ObjectMeta: metav1.ObjectMeta{Name: "perf-42", Namespace: "default", UID: "uid-42"},
+		Status:     v1.RunStatus{Phase: v1.RunSucceeded},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(held, finished, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	if loadMachine(t, kube).Status.Claim != nil {
+		t.Fatal("прогон кончился, а машина занята им до конца срока хранения")
+	}
+}
