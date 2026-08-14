@@ -48,8 +48,9 @@ type state struct {
 	// it made, and we promised not to know every kind it might have used.
 	created []agent.ObjectRef
 
-	keep time.Duration
-	torn bool
+	keep       time.Duration
+	keepReason string
+	torn       bool
 }
 
 // StepError is what a step raises when it cannot go on. It travels by panic
@@ -86,15 +87,23 @@ func (r Run) Sleep(d time.Duration) {
 	}
 }
 
-// Keep delays teardown by d. What the run owns stays that long after the
-// pipeline finishes — long enough for a person to log in and look at the
-// machine that failed the test.
+// Keep hands what the run made to a stand that outlives it by d.
 //
-// It delays teardown; it does not cancel it. Ownership without an end is
-// how a cloud account fills up with things nobody remembers creating.
-func (r Run) Keep(d time.Duration) {
+// Not a delayed teardown. A delay still ends in a teardown, and the person
+// who comes in the morning to look at the machine that failed the test
+// finds nothing. Keeping means the machines outlive the run — which means
+// somebody else answers for them, and that somebody is a record with an
+// end of its own.
+//
+// The end is not optional: ownership without one is how a cloud account
+// fills with things nobody remembers creating.
+func (r Run) Keep(d time.Duration, reason ...string) {
 	if d > r.s.keep {
 		r.s.keep = d
+	}
+
+	if len(reason) > 0 && reason[0] != "" {
+		r.s.keepReason = reason[0]
 	}
 }
 
@@ -113,9 +122,9 @@ func (r Run) Teardown() {
 	defer cancel()
 
 	if r.s.keep > 0 {
-		if err := workflow.Sleep(ctx, r.s.keep); err != nil {
-			return
-		}
+		r.handOver(ctx)
+
+		return
 	}
 
 	in := agent.TeardownInput{Owner: r.s.owner, Refs: r.s.created}
@@ -123,6 +132,26 @@ func (r Run) Teardown() {
 	var out agent.TeardownOutput
 	if err := workflow.ExecuteActivity(ctx, agent.ActivityTeardown, in).Get(ctx, &out); err != nil {
 		workflow.GetLogger(ctx).Error("снос не прошёл", "ошибка", err)
+	}
+}
+
+// handOver gives what the run made to a stand.
+//
+// The stand's end is computed from the workflow's own clock, not from the
+// wall: a workflow replayed tomorrow must arrive at the same moment it did
+// today, or the same run would keep the stand for a different length of
+// time every time it recovered.
+func (r Run) handOver(ctx workflow.Context) {
+	in := agent.KeepInput{
+		Owner:  r.s.owner,
+		Until:  workflow.Now(ctx).Add(r.s.keep),
+		Reason: r.s.keepReason,
+		Refs:   r.s.created,
+	}
+
+	var out agent.KeepOutput
+	if err := workflow.ExecuteActivity(ctx, agent.ActivityKeep, in).Get(ctx, &out); err != nil {
+		workflow.GetLogger(ctx).Error("стенд не оставлен", "ошибка", err)
 	}
 }
 

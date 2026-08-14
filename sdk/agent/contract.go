@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Activity names. They are strings rather than function references because
@@ -25,6 +26,8 @@ const (
 	ActivityApply = "graphene.Apply"
 	// ActivityTeardown deletes everything the run still owns.
 	ActivityTeardown = "graphene.Teardown"
+	// ActivityKeep hands what the run owns to a stand that outlives it.
+	ActivityKeep = "graphene.Keep"
 )
 
 // SystemQueue is where our activities run.
@@ -108,6 +111,27 @@ type TeardownInput struct {
 	// by hand still takes its things with it. This is the eager path;
 	// that is the safety net.
 	Refs []ObjectRef `json:"refs,omitempty"`
+}
+
+// KeepInput asks for what the run made to outlive it.
+//
+// Not a delayed teardown: a delay still ends in a teardown, and whoever
+// comes in the morning to look at the machine that failed finds nothing.
+// The records change owner, and the new owner has an end of its own.
+type KeepInput struct {
+	Owner OwnerRef `json:"owner"`
+	// Until is when the stand stops standing. There is no "never".
+	Until time.Time `json:"until"`
+	// Reason is why it was kept, for whoever finds it.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// +optional
+	Refs []ObjectRef `json:"refs,omitempty"`
+}
+
+// KeepOutput names the stand that now answers for them.
+type KeepOutput struct {
+	Stand string `json:"stand"`
 }
 
 // TeardownOutput reports what was removed.

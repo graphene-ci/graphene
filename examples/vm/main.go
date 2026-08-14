@@ -51,6 +51,11 @@ func main() {
 
 // VM builds a machine in the cloud and runs one command on it.
 func VM(run pipeline.Run, params Params) error {
+	// Снос при любом исходе — и это не вежливость, а обещание продукта.
+	// На отвязанном контексте внутри, потому что случай, ради которого
+	// он есть, — это ровно тот, где обычный контекст уже мёртв: отмена.
+	defer run.Teardown()
+
 	node := pipeline.Install(run, "node-0")
 
 	pipeline.Apply(run, "node-0", instance(node, params))

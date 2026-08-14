@@ -145,6 +145,7 @@ func wire(
 		operator.NewRunReconciler(records, bridge, known, watch, sweep).SetupWithManager,
 		operator.NewProbeReconciler(records).SetupWithManager,
 		operator.NewMachineReconciler(records).SetupWithManager,
+		operator.NewStandReconciler(records).SetupWithManager,
 		operator.NewMachineIntentReconciler(records, operator.SSH).SetupWithManager,
 	}
 

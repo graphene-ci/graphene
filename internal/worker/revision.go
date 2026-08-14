@@ -33,7 +33,7 @@ func (a *Applier) RecordRequirements(ctx context.Context, req agent.RegisterRevi
 	requires := make([]any, 0, len(req.Requires))
 	for _, kind := range req.Requires {
 		requires = append(requires, map[string]any{
-			"group": kind.Group, "version": kind.Version, "kind": kind.Kind,
+			"group": kind.Group, "version": kind.Version, fieldKind: kind.Kind,
 		})
 	}
 

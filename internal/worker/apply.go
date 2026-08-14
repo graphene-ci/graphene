@@ -33,6 +33,13 @@ const (
 	AnnotationMemo = v1.Group + "/memo"
 )
 
+// Поля манифеста, которые мы собираем руками. Строками они встречаются
+// в трёх местах, и линтер прав: одно написание вместо трёх.
+const (
+	fieldKind = "kind"
+	fieldName = "name"
+)
+
 // ErrNoKind means the manifest did not say what it is.
 var ErrNoKind = errors.New("в манифесте нет apiVersion или kind")
 

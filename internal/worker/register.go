@@ -60,8 +60,8 @@ func (a *Applier) upsertMachine(ctx context.Context, req agent.RegisterInput) er
 
 	fresh := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": v1.GroupVersion.String(),
-		"kind":       "Machine",
-		"metadata":   map[string]any{"name": req.Machine},
+		fieldKind:    "Machine",
+		"metadata":   map[string]any{fieldName: req.Machine},
 		"status":     status,
 	}}
 
