@@ -3,6 +3,8 @@ package operator
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -20,6 +22,21 @@ import (
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
+// FactPrefix is where a machine's facts appear as labels.
+//
+// Facts live in the status because a fact is whatever the machine turned
+// out to have, and that is not ours to constrain. Labels live in metadata
+// because that is what selectors read — and choosing a machine by what it
+// has is the whole point of having facts at all.
+//
+// The projection goes ONE way: facts are the truth, labels are their
+// shadow. One writer per field, or the two drift and nobody can say which
+// lied.
+const FactPrefix = v1.Group + "/fact-"
+
+// labelLimit is what kubernetes accepts for a label's value.
+const labelLimit = 63
+
 // LeaseSeconds is how long an agent's mark is good for — the agent's own
 // number, because both sides must mean the same thing by silence.
 //
@@ -27,6 +44,9 @@ import (
 // short enough that a dead machine is noticed while somebody still cares,
 // long enough that an ordinary network hiccup is not news.
 const LeaseSeconds = agent.LeaseSeconds
+
+// validLabelValue is the shape kubernetes requires of a label value.
+var validLabelValue = regexp.MustCompile(`^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
 
 // MachineReconciler decides whether a machine can be given new work.
 //
@@ -74,6 +94,10 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		condition.Message = fmt.Sprintf("агент молчит дольше %d с", LeaseSeconds)
 	}
 
+	if err := r.project(ctx, &machine); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if !meta.SetStatusCondition(&machine.Status.Conditions, condition) {
 		return ctrl.Result{RequeueAfter: requeueFor(left)}, nil
 	}
@@ -83,6 +107,78 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	return ctrl.Result{RequeueAfter: requeueFor(left)}, nil
+}
+
+// project copies the machine's facts into labels, so that a pipeline can
+// ask for a machine by what it has.
+//
+// Only what fits: a label value is at most 63 characters from a limited
+// alphabet, and a fact is an arbitrary string. What does not fit stays a
+// fact and simply cannot be selected on — losing the truth to make the
+// selection prettier would be the wrong trade.
+//
+// Labels a PERSON put on the machine are never touched. Only our own
+// prefix is ours to manage, and a projection that removed somebody's
+// "team=perf" would be a projection nobody could trust.
+func (r *MachineReconciler) project(ctx context.Context, machine *v1.Machine) error {
+	labels := machine.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+
+	changed := false
+
+	// Факт исчез — метка обязана исчезнуть: иначе машина продолжит
+	// выбираться по докеру, которого на ней больше нет.
+	for name := range labels {
+		if !strings.HasPrefix(name, FactPrefix) {
+			continue
+		}
+
+		fact := strings.TrimPrefix(name, FactPrefix)
+		if value, found := machine.Status.Facts[fact]; !found || !labelValue(value) {
+			delete(labels, name)
+
+			changed = true
+		}
+	}
+
+	for fact, value := range machine.Status.Facts {
+		if !labelName(fact) || !labelValue(value) {
+			continue
+		}
+
+		if labels[FactPrefix+fact] != value {
+			labels[FactPrefix+fact] = value
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	machine.SetLabels(labels)
+
+	if err := r.kube.Update(ctx, machine); err != nil {
+		return fmt.Errorf("факты не спроецировались в метки: %w", err)
+	}
+
+	return nil
+}
+
+// labelValue answers whether kubernetes would accept this as a label value.
+func labelValue(value string) bool {
+	if value == "" || len(value) > labelLimit {
+		return false
+	}
+
+	return validLabelValue.MatchString(value)
+}
+
+// labelName answers whether the fact's name can be part of a label's name.
+func labelName(name string) bool {
+	return name != "" && len(name) <= labelLimit && validLabelValue.MatchString(name)
 }
 
 // leaseLeft reports how long the machine's mark is still good for. A

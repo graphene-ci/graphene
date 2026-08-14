@@ -171,3 +171,73 @@ func TestLosingReadinessTouchesNothingElse(t *testing.T) {
 		t.Fatalf("факты тронули: %v", after.Status.Facts)
 	}
 }
+
+// Факты становятся метками, потому что выбирают машины по меткам —
+// селектор в статус не смотрит.
+func TestFactsBecomeLabels(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	subject := machine()
+	subject.Labels = map[string]string{"team": "perf"}
+	subject.Status.Facts = map[string]string{
+		"os":     "linux",
+		"docker": "27.3.1",
+		// Ядро с точками и дефисами — допустимое значение метки.
+		"kernel": "6.8.0-137-generic",
+		// А это в метку не влезет: пробелы и длина.
+		"cpu": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz с очень длинным именем",
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(subject, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	after := loadMachine(t, kube)
+
+	if after.Labels[operator.FactPrefix+"docker"] != "27.3.1" {
+		t.Fatalf("докер не спроецировался: %v", after.Labels)
+	}
+
+	if after.Labels[operator.FactPrefix+"kernel"] != "6.8.0-137-generic" {
+		t.Fatalf("ядро не спроецировалось: %v", after.Labels)
+	}
+
+	// Не влезло в метку — осталось фактом. Терять правду ради удобства
+	// выборки нельзя.
+	if _, projected := after.Labels[operator.FactPrefix+"cpu"]; projected {
+		t.Fatalf("непригодное значение попало в метку: %v", after.Labels)
+	}
+
+	if after.Status.Facts["cpu"] == "" {
+		t.Fatal("факт потерян, хотя меткой стать не мог")
+	}
+
+	// Метки человека — не наши.
+	if after.Labels["team"] != "perf" {
+		t.Fatalf("метку человека тронули: %v", after.Labels)
+	}
+}
+
+// Факт исчез — метка обязана исчезнуть, иначе машина продолжит
+// выбираться по докеру, которого на ней больше нет.
+func TestLostFactLosesItsLabel(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	subject := machine()
+	subject.Labels = map[string]string{operator.FactPrefix + "docker": "27.3.1"}
+	subject.Status.Facts = map[string]string{"os": "linux"}
+
+	kube := fake.NewClientBuilder().WithScheme(machineScheme(t)).
+		WithObjects(subject, lease(now.Add(-2*time.Second))).
+		WithStatusSubresource(&v1.Machine{}).Build()
+
+	reconcileMachine(t, kube, now)
+
+	if _, left := loadMachine(t, kube).Labels[operator.FactPrefix+"docker"]; left {
+		t.Fatal("докер сняли с машины, а метка осталась")
+	}
+}
