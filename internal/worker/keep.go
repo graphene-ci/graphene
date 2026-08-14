@@ -46,7 +46,7 @@ func (a *Applier) stand(ctx context.Context, req agent.KeepInput) (*unstructured
 	client := a.client.Resource(resource).Namespace(req.Owner.Namespace)
 
 	fresh := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": v1.GroupVersion.String(),
+		fieldVersion: v1.GroupVersion.String(),
 		fieldKind:    "Stand",
 		"metadata":   map[string]any{fieldName: req.Owner.Name},
 		"spec": map[string]any{
