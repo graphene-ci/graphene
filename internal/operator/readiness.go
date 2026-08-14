@@ -5,139 +5,187 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"sync"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
+	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
-// ErrNotARecord means the prototype handed to this watcher is not a
-// kubernetes record the manager knows.
-var ErrNotARecord = errors.New("вид не зарегистрирован в схеме")
+// ErrNotWatchable means the cluster does not serve the kind we were asked
+// to watch.
+var ErrNotWatchable = errors.New("вид не обслуживается кластером")
 
 // Signaller wakes a workflow that is waiting for a record.
 type Signaller interface {
 	Signal(ctx context.Context, workflowID, name string, payload agent.ReadySignal) error
 }
 
-// ReadinessReconciler watches the records runs create and tells the waiting
-// workflow when one becomes ready.
+// Watcher is asked to follow a kind. What it is asked about is a run's
+// requirements, which is the second use of a list that already existed.
+type Watcher interface {
+	Watch(ctx context.Context, kind agent.Kind) error
+}
+
+// Readiness tells a waiting workflow when a record it created has arrived.
 //
 // This is the other half of Await. The workflow does not poll and holds no
-// worker slot while a machine boots: it sleeps in its history until this
-// sends the signal.
+// worker slot while a machine boots for three minutes: it sleeps in its
+// history until this sends the signal.
 //
-// Scope, stated plainly: it watches ONE kind, and in M1 that kind is Probe.
-// Watching whatever a pipeline happens to apply means dynamic informers over
-// a set of kinds discovered at runtime, and the set has to come from
-// somewhere — the run would have to record which kinds it used. That is real
-// work with real failure modes, and M3 is where the first foreign kind
-// actually appears. Written down rather than half-built.
-type ReadinessReconciler struct {
-	kube     client.Client
-	signal   Signaller
-	resource client.Object
+// It follows whatever kinds it is told to, and it is told by the runs that
+// start: a revision declares what it applies, the operator refuses early if
+// the cluster does not serve that, and the same list says what to watch.
+// One list, two uses — a kind nobody applies is never watched, and a kind
+// somebody applies is watched before the first record of it exists.
+//
+// The informers are dynamic because the kinds are not knowable when this is
+// compiled — that is the whole point of the system. Each is filtered to
+// records we made: somebody's own Instance in the same cluster is none of
+// our business, and following every record of a kind would put the entire
+// cloud inventory into our cache.
+type Readiness struct {
+	kube    client.Client
+	signal  Signaller
+	resolve kube.Resolver
+
+	mu      sync.Mutex
+	factory dynamicinformer.DynamicSharedInformerFactory
+	started map[schema.GroupVersionResource]bool
+	stop    chan struct{}
+	running bool
 }
 
-// NewReadinessReconciler builds a watcher over one kind.
-func NewReadinessReconciler(kube client.Client, signal Signaller, resource client.Object) *ReadinessReconciler {
-	return &ReadinessReconciler{kube: kube, signal: signal, resource: resource}
+// NewReadiness builds one.
+func NewReadiness(
+	records client.Client, source dynamic.Interface, resolve kube.Resolver, signal Signaller,
+) *Readiness {
+	ours := func(options *metav1.ListOptions) {
+		options.LabelSelector = worker.LabelManaged + "=true"
+	}
+
+	return &Readiness{
+		kube:    records,
+		signal:  signal,
+		resolve: resolve,
+		factory: dynamicinformer.NewFilteredDynamicSharedInformerFactory(source, 0, "", ours),
+		started: map[schema.GroupVersionResource]bool{},
+		stop:    make(chan struct{}),
+	}
 }
 
-// Reconcile reports one record's readiness to whoever is waiting for it.
+// Watch starts following a kind, once. Being asked twice is the normal
+// case: every run of every revision asks for its own requirements.
+func (r *Readiness) Watch(ctx context.Context, kind agent.Kind) error {
+	gvk := schema.GroupVersionKind{Group: kind.Group, Version: kind.Version, Kind: kind.Kind}
+
+	resource, _, err := r.resolve(ctx, gvk)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrNotWatchable, gvk, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.started[resource] {
+		return nil
+	}
+
+	informer := r.factory.ForResource(resource).Informer()
+
+	handler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj any) { r.report(ctx, obj) },
+		UpdateFunc: func(_, obj any) { r.report(ctx, obj) },
+	}
+
+	if _, err := informer.AddEventHandler(handler); err != nil {
+		return fmt.Errorf("наблюдение за %s не встало: %w", gvk, err)
+	}
+
+	r.started[resource] = true
+
+	// Start запускает только то, что ещё не запущено, поэтому звать её на
+	// каждый новый вид — правильно, а не расточительно.
+	if r.running {
+		r.factory.Start(r.stop)
+	}
+
+	return nil
+}
+
+// Start runs until the context is done. It satisfies manager.Runnable, so
+// the manager starts and stops this with everything else.
+func (r *Readiness) Start(ctx context.Context) error {
+	r.mu.Lock()
+	r.running = true
+	r.factory.Start(r.stop)
+	r.mu.Unlock()
+
+	<-ctx.Done()
+	close(r.stop)
+
+	return nil
+}
+
+// report tells whoever waits for this record that it has arrived.
 //
-// Signals are delivered more than once when this runs more than once, and
-// that is fine: the workflow keeps readiness by memo, and hearing the same
-// thing twice does not change what it knows.
-func (r *ReadinessReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// A copy of the prototype rather than an unstructured object: a
-	// generated type carries no apiVersion of its own, so an unstructured
-	// Get would have to be told the kind, and there is nowhere to learn it
-	// from here that the typed object does not already know.
-	obj, ok := r.resource.DeepCopyObject().(client.Object)
+// Being called more than once for the same record is normal and harmless:
+// the workflow keeps readiness by memo, and hearing the same thing twice
+// does not change what it knows.
+func (r *Readiness) report(ctx context.Context, obj any) {
+	record, ok := obj.(*unstructured.Unstructured)
 	if !ok {
-		return ctrl.Result{}, ErrNotARecord
+		return
 	}
 
-	if err := r.kube.Get(ctx, req.NamespacedName, obj); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	memo := obj.GetAnnotations()[worker.AnnotationMemo]
-	runName := obj.GetLabels()[worker.LabelRun]
+	memo := record.GetAnnotations()[worker.AnnotationMemo]
+	runName := record.GetLabels()[worker.LabelRun]
 
 	if memo == "" || runName == "" {
-		// Not ours: somebody created a record of this kind by hand.
-		return ctrl.Result{}, nil
+		return
 	}
 
-	fields, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("запись не разобралась: %w", err)
-	}
-
-	ready, reason := readiness(fields)
+	ready, reason := readiness(record.Object)
 	if !ready {
-		return ctrl.Result{}, nil
+		return
 	}
 
 	var run v1.Run
 
-	key := types.NamespacedName{Namespace: obj.GetNamespace(), Name: runName}
+	key := client.ObjectKey{Namespace: record.GetNamespace(), Name: runName}
 	if err := r.kube.Get(ctx, key, &run); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return
 	}
 
 	if run.Status.WorkflowID == "" || run.Status.Phase.Terminal() {
-		return ctrl.Result{}, nil
+		return
 	}
 
 	payload := agent.ReadySignal{
 		Name:   memo,
 		Ready:  true,
 		Reason: reason,
-		Status: statusOf(fields),
+		Status: statusOf(record.Object),
 	}
 
 	if err := r.signal.Signal(ctx, run.Status.WorkflowID, agent.SignalReady, payload); err != nil {
-		return ctrl.Result{}, fmt.Errorf("сигнал готовности не дошёл: %w", err)
+		log.FromContext(ctx).Error(err, "сигнал готовности не дошёл",
+			"прогон", runName, "памятка", memo)
 	}
-
-	return ctrl.Result{}, nil
 }
 
-// SetupWithManager wires the watcher to its kind.
-//
-// The name is explicit because controller-runtime derives one from the kind
-// otherwise, and this watcher shares its kind with whoever else answers for
-// it — a Probe has both its own controller and this one. Two controllers
-// with one name is refused at startup, which is the right moment to find out
-// but only if the name says which is which.
-func (r *ReadinessReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	kinds, _, err := mgr.GetScheme().ObjectKinds(r.resource)
-	if err != nil || len(kinds) == 0 {
-		return fmt.Errorf("%w: %T", ErrNotARecord, r.resource)
-	}
-
-	name := "readiness-" + strings.ToLower(kinds[0].Kind)
-
-	err = ctrl.NewControllerManagedBy(mgr).Named(name).For(r.resource).Complete(r)
-	if err != nil {
-		return fmt.Errorf("контроллер готовности не собрался: %w", err)
-	}
-
-	return nil
-}
-
-// readiness reads the Ready condition, which is what every kind in this
-// ecosystem uses to say it has arrived — ours and Crossplane's alike.
+// readiness reads the Ready condition, which is what everything in this
+// ecosystem uses to say it has arrived — our kinds and Crossplane's alike.
 func readiness(fields map[string]any) (bool, string) {
 	conditions, found, err := unstructured.NestedSlice(fields, "status", "conditions")
 	if err != nil || !found {

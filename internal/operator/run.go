@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/pkg/agent"
@@ -76,11 +77,16 @@ type RunReconciler struct {
 	// checked, which is what a test that does not care about
 	// requirements wants.
 	Known Known
+	// Watch is told what to follow. The same requirements that decide
+	// whether a run may start decide what readiness watches — a kind
+	// nobody applies is never watched, and a kind somebody applies is
+	// watched before the first record of it exists.
+	Watch Watcher
 }
 
 // NewRunReconciler builds one.
-func NewRunReconciler(kube client.Client, temporal Temporal, known Known) *RunReconciler {
-	return &RunReconciler{kube: kube, temporal: temporal, Known: known}
+func NewRunReconciler(kube client.Client, temporal Temporal, known Known, watch Watcher) *RunReconciler {
+	return &RunReconciler{kube: kube, temporal: temporal, Known: known, Watch: watch}
 }
 
 // Reconcile brings one run to where it should be.
@@ -99,8 +105,16 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Наблюдение заводится на КАЖДОЙ сверке, а не только при старте.
+	// Требования ревизии пишет её воркер, когда поднимется, и прогон
+	// вполне может начаться раньше — тогда при старте следить было бы не
+	// за чем. Информер при запуске перечисляет уже существующие записи,
+	// поэтому опоздавшее наблюдение всё равно увидит то, что стало
+	// готовым до него.
+	r.follow(ctx, run.Namespace, run.Spec.RevisionRef.Name)
+
 	if run.Status.WorkflowID != "" {
-		return ctrl.Result{RequeueAfter: followEvery}, r.follow(ctx, &run)
+		return ctrl.Result{RequeueAfter: followEvery}, r.track(ctx, &run)
 	}
 
 	return ctrl.Result{RequeueAfter: followEvery}, r.start(ctx, &run)
@@ -187,8 +201,31 @@ func (r *RunReconciler) missing(ctx context.Context, revision *v1.PipelineRevisi
 	return missing
 }
 
-// follow copies how far the workflow got back into the record.
-func (r *RunReconciler) follow(ctx context.Context, run *v1.Run) error {
+// follow starts watching every kind this revision applies.
+//
+// A kind that cannot be watched is not a reason to refuse: the check above
+// already said the cluster serves it, so a failure here is ours, and a run
+// that cannot be woken by a signal is better than a run that never starts.
+func (r *RunReconciler) follow(ctx context.Context, namespace, name string) {
+	if r.Watch == nil {
+		return
+	}
+
+	var revision v1.PipelineRevision
+	if err := r.kube.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &revision); err != nil {
+		return
+	}
+
+	for _, required := range revision.Status.Requires {
+		kind := agent.Kind{Group: required.Group, Version: required.Version, Kind: required.Kind}
+		if err := r.Watch.Watch(ctx, kind); err != nil {
+			log.FromContext(ctx).Error(err, "наблюдение за видом не встало", "вид", required.Kind)
+		}
+	}
+}
+
+// track copies how far the workflow got back into the record.
+func (r *RunReconciler) track(ctx context.Context, run *v1.Run) error {
 	phase, reason, err := r.temporal.Phase(ctx, run.Status.WorkflowID)
 	if err != nil {
 		return fmt.Errorf("состояние воркфлоу не прочиталось: %w", err)

@@ -79,7 +79,7 @@ func fixtures() (*v1.Run, *v1.PipelineRevision) {
 func reconcile(t *testing.T, kube client.Client, temporal operator.Temporal, known operator.Known) {
 	t.Helper()
 
-	reconciler := operator.NewRunReconciler(kube, temporal, known)
+	reconciler := operator.NewRunReconciler(kube, temporal, known, nil)
 
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
 	if _, err := reconciler.Reconcile(t.Context(), request); err != nil {
