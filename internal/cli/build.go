@@ -54,7 +54,11 @@ func (k Ko) build(ctx context.Context, dir string) (string, error) {
 	// «Published» и не отправить ничего — молчаливый холостой ход,
 	// который стоил часа. Тег latest, который ko поставит по умолчанию,
 	// нас не касается: ссылаемся мы дайджестом.
-	cmd := exec.CommandContext(ctx, binary, "build", "--bare", dir)
+	// Собираем ИЗ каталога пайплайна, а не из своего. У пайплайна свой
+	// модуль — так и должно быть, это программа пользователя, — и ko
+	// обязан видеть его go.mod, а не наш.
+	cmd := exec.CommandContext(ctx, binary, "build", "--bare", ".")
+	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(),
 		"KO_DOCKER_REPO="+k.Repo,

@@ -57,8 +57,11 @@ func Serve(ctx context.Context, req ServeRequest) error {
 
 	// Каталог называет тот, кто набрал команду, у себя на машине и своим
 	// же кодом. Проверять здесь нечего: это и есть работа команды.
-	//nolint:gosec // запустить названный каталог — это и есть смысл serve
-	cmd := exec.CommandContext(ctx, "go", "run", req.Dir)
+	// Запускаем ИЗ каталога пайплайна: у него свой модуль — так и должно
+	// быть, это программа пользователя, — и `go run` обязан видеть его
+	// go.mod, а не наш.
+	cmd := exec.CommandContext(ctx, "go", "run", ".")
+	cmd.Dir = req.Dir
 	cmd.Stdout = req.Out
 	cmd.Stderr = req.Out
 
