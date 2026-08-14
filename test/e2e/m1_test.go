@@ -26,6 +26,11 @@ import (
 const (
 	namespace = "default"
 	pipeline  = "probe"
+	// temporalHost and control are how a worker on this machine reaches
+	// the control plane. Both are loopback because the environment binds
+	// them there deliberately.
+	temporalHost = "127.0.0.1:7233"
+	control      = "http://127.0.0.1:18080"
 	// registry is where the built image goes. The cluster reads it under
 	// the same name — that is what deploy/local/k3d.yaml arranges.
 	registry = "localhost:5555/graphene"
@@ -73,6 +78,42 @@ func push(ctx context.Context, t *testing.T, kube client.Client) {
 	if err != nil {
 		t.Fatalf("push не прошёл: %v", err)
 	}
+}
+
+// serve runs the pipeline's worker here, the way a person would.
+//
+// The control plane no longer runs pipelines: a pipeline is arbitrary code
+// and executing it where our credentials live would turn "push a pipeline"
+// into "run anything you like inside the control plane". So the check does
+// what its author would do — serves the revision from its own machine.
+func serve(ctx context.Context, t *testing.T, kube client.Client, name, dir string) {
+	t.Helper()
+
+	ctx, stop := context.WithCancel(ctx)
+	t.Cleanup(stop)
+
+	ready := make(chan struct{})
+
+	go func() {
+		close(ready)
+
+		_ = cli.Serve(ctx, cli.ServeRequest{
+			Kube:      kube,
+			Namespace: namespace,
+			Pipeline:  name,
+			Dir:       dir,
+			Temporal:  temporalHost,
+			Address:   "graphene",
+			Control:   control,
+			Out:       os.Stderr,
+		})
+	}()
+
+	<-ready
+	// Воркеру нужно собраться и подписаться на очередь. Прогон, начатый
+	// раньше, не пропадёт — он подождёт в очереди, — но проверка ждёт
+	// целиком, и лишняя минута ожидания тут дешевле мигания.
+	time.Sleep(20 * time.Second)
 }
 
 func tool(name string) string {
@@ -135,6 +176,8 @@ func TestRunGoesThrough(t *testing.T) {
 	kube := connect(t)
 	push(ctx, t, kube)
 
+	serve(ctx, t, kube, pipeline, "../../examples/probe")
+
 	run := start(ctx, t, kube, "2s")
 
 	if phase := await(ctx, t, kube, run.Name); phase != v1.RunSucceeded {
@@ -155,6 +198,8 @@ func TestRunSurvivesOperatorDeath(t *testing.T) {
 
 	kube := connect(t)
 	push(ctx, t, kube)
+
+	serve(ctx, t, kube, pipeline, "../../examples/probe")
 
 	run := start(ctx, t, kube, "25s")
 

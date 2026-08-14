@@ -146,6 +146,72 @@ func newRun() *cobra.Command {
 	return cmd
 }
 
+// newServe builds `graphene serve` — the pipeline's worker, run HERE.
+//
+// It exists because the control plane does not run pipelines: a pipeline is
+// arbitrary code written by anybody, and executing it inside the control
+// plane would turn "put a pipeline into the system" into "run whatever you
+// like where our credentials live".
+func newServe() *cobra.Command {
+	var (
+		name     string
+		revision string
+		temporal string
+		control  string
+		agent    string
+		space    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "serve <каталог>",
+		Short: "Выполнять пайплайн здесь, на этой машине",
+		Long: `Поднимает воркер пайплайна на машине того, кто набрал команду.
+Управляющий слой чужой код не выполняет: пайплайн пишет кто угодно, и
+внутри него можно сделать что угодно.
+
+Пока ревизию никто не обслуживает, её прогоны не двигаются — история
+цела, работа продолжится, когда воркер вернётся.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kubeClient, err := kubeClient(cmd)
+			if err != nil {
+				return err
+			}
+
+			namespace, err := cmd.Flags().GetString("namespace")
+			if err != nil {
+				return err
+			}
+
+			if name == "" {
+				name = defaultName(args[0])
+			}
+
+			return cli.Serve(cmd.Context(), cli.ServeRequest{
+				Kube:         kubeClient,
+				Namespace:    namespace,
+				Pipeline:     name,
+				Revision:     revision,
+				Dir:          args[0],
+				Address:      space,
+				Temporal:     temporal,
+				Control:      control,
+				AgentAddress: agent,
+				Out:          cmd.OutOrStdout(),
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "имя пайплайна; пусто — имя каталога")
+	cmd.Flags().StringVar(&revision, "revision", "", "какую ревизию обслуживать; пусто — последнюю")
+	cmd.Flags().StringVar(&temporal, "temporal", "127.0.0.1:7233", "адрес Temporal")
+	cmd.Flags().StringVar(&space, "temporal-namespace", "graphene", "пространство имён Temporal")
+	cmd.Flags().StringVar(&control, "control", "http://127.0.0.1:18080", "откуда машины берут агента")
+	cmd.Flags().StringVar(&agent, "agent-temporal", "", "адрес Temporal, каким его видит машина; пусто — как здесь")
+
+	return cmd
+}
+
 func newWatch() *cobra.Command {
 	var every time.Duration
 

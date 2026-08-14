@@ -61,7 +61,7 @@ func Root() *cobra.Command {
 	root.PersistentFlags().StringP("namespace", "n", "default",
 		"пространство имён, в котором живут записи")
 
-	root.AddCommand(newUp(), newPush(), newRun(), newWatch())
+	root.AddCommand(newUp(), newPush(), newServe(), newRun(), newWatch())
 
 	return root
 }
