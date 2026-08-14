@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +30,8 @@ type InstallRequest struct {
 	Address string
 	User    string
 	Key     []byte
+	// HostKey is what the machine must prove it is.
+	HostKey string
 	Script  string
 }
 
@@ -71,6 +74,14 @@ func (r *MachineIntentReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	// Не зная, кто должен ответить по этому адресу, не идём вовсе.
+	// Доверие при первом подключении — это то, что делает человек за
+	// терминалом; здесь мы открываем на той стороне корневую оболочку и
+	// кормим её скриптом с токеном установки внутри.
+	if strings.TrimSpace(intent.Spec.HostKey) == "" {
+		return ctrl.Result{}, r.record(ctx, &intent, ErrNoHostKey)
+	}
+
 	key, err := r.key(ctx, &intent)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: retryInstall}, r.record(ctx, &intent, err)
@@ -80,6 +91,7 @@ func (r *MachineIntentReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Address: intent.Spec.Address,
 		User:    intent.Spec.User,
 		Key:     key,
+		HostKey: intent.Spec.HostKey,
 		Script:  intent.Spec.Script,
 	})
 	if err != nil {

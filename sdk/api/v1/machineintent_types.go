@@ -35,6 +35,18 @@ type MachineIntentSpec struct {
 	// Key names the secret holding the private key to log in with.
 	Key SecretRef `json:"key"`
 
+	// HostKey is the machine's public key, as one line of known_hosts or
+	// authorized_keys:
+	//
+	//	ssh-keyscan -t ed25519 10.0.0.7
+	//
+	// Required, and deliberately so. Trust on first use is what a person
+	// at a terminal does; this is a control plane opening a root shell and
+	// feeding it a script with an installation token in it. Whoever
+	// answers at that address without this would get both.
+	// +kubebuilder:validation:MinLength=1
+	HostKey string `json:"hostKey"`
+
 	// Script is what to run there. The pipeline gets it from the SDK —
 	// the same script a cloud machine receives through user-data, because
 	// two scripts would drift and the rarer one would be the broken one.
