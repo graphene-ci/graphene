@@ -15,6 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -140,6 +141,9 @@ func (r *MachineReconciler) free(ctx context.Context, machine *v1.Machine) error
 		return nil
 	}
 
+	log.FromContext(ctx).Info("освобождаю машину",
+		"машина", machine.Name, "держатель", claim.Kind+"/"+claim.Name)
+
 	before := machine.DeepCopy()
 	machine.Status.Claim = nil
 
@@ -161,7 +165,15 @@ func (r *MachineReconciler) alive(ctx context.Context, namespace string, claim *
 			return false
 		}
 
-		return claim.UID == "" || string(run.UID) == claim.UID
+		if claim.UID != "" && string(run.UID) != claim.UID {
+			return false
+		}
+
+		// Захват кончается вместе с ПРОГОНОМ, а не с его записью.
+		// Запись живёт свой срок хранения — неделю по умолчанию, — и
+		// держать машину всё это время значило бы, что один прогон
+		// занял её до следующего понедельника.
+		return !run.Status.Phase.Terminal()
 	case "Stand":
 		var stand v1.Stand
 		if err := r.kube.Get(ctx, key, &stand); err != nil {

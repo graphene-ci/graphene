@@ -48,8 +48,8 @@ func (a *Applier) upsertMachine(ctx context.Context, req agent.RegisterInput) er
 
 	existing, err := client.Get(ctx, req.Machine, metav1.GetOptions{})
 	if err == nil {
-		if err := unstructured.SetNestedMap(existing.Object, status, "status"); err != nil {
-			return fmt.Errorf("статус машины не собрался: %w", err)
+		if err := setOurs(existing, req); err != nil {
+			return err
 		}
 
 		if _, err := client.UpdateStatus(ctx, existing, metav1.UpdateOptions{}); err != nil {
@@ -212,6 +212,33 @@ func (a *Applier) recordOf(
 				"uid":        string(record.GetUID()),
 			}
 		}
+	}
+
+	return nil
+}
+
+// setOurs writes only what the agent knows, leaving the rest of the status
+// alone.
+//
+// Writing the whole status here was a real bug and a costly one: the agent
+// marks itself every few seconds, and each mark wiped the conditions the
+// operator wrote and the claim another run had just taken. A machine could
+// not stay claimed for longer than one heartbeat.
+//
+// The lesson is the same one the operator learned an hour earlier: when
+// two processes write one object, each writes its own fields, never the
+// whole of it.
+func setOurs(record *unstructured.Unstructured, req agent.RegisterInput) error {
+	if err := unstructured.SetNestedField(record.Object, req.Queue, "status", "queue"); err != nil {
+		return fmt.Errorf("очередь не записалась: %w", err)
+	}
+
+	if len(req.Facts) == 0 {
+		return nil
+	}
+
+	if err := unstructured.SetNestedStringMap(record.Object, req.Facts, "status", "facts"); err != nil {
+		return fmt.Errorf("факты не записались: %w", err)
 	}
 
 	return nil
