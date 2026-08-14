@@ -453,3 +453,71 @@ func TestCancelDoesNotTouchAFinishedRun(t *testing.T) {
 		t.Fatal("отменяли то, что уже кончилось")
 	}
 }
+
+// Прогон живёт свой срок и уходит. Запись — это история того, что
+// случилось, и её стоит хранить, но не бесконечно: вместе с ней уходит
+// история воркфлоу, которая и заполняет место.
+func TestFinishedRunIsKeptForItsTime(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Status.Phase = v1.RunSucceeded
+	finished := metav1.NewTime(time.Now().Add(-time.Hour))
+	run.Status.FinishedAt = &finished
+
+	pipeline := &v1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{Name: "perf", Namespace: "default"},
+		Spec:       v1.PipelineSpec{Retention: &metav1.Duration{Duration: 24 * time.Hour}},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision, pipeline).WithStatusSubresource(run).Build()
+
+	reconciler := operator.NewRunReconciler(kube, &started{}, nil, nil, nil)
+
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
+
+	result, err := reconciler.Reconcile(t.Context(), request)
+	if err != nil {
+		t.Fatalf("сверка не прошла: %v", err)
+	}
+
+	if result.RequeueAfter <= 0 {
+		t.Fatal("срок не вышел, а пересверка не назначена — истечение некому заметить")
+	}
+
+	var still v1.Run
+	if err := kube.Get(t.Context(), request.NamespacedName, &still); err != nil {
+		t.Fatalf("прогон убрали раньше срока: %v", err)
+	}
+}
+
+// Срок вышел — прогон уходит, и политика пайплайна главнее умолчания.
+func TestFinishedRunGoesWhenItsTimeIsUp(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Status.Phase = v1.RunSucceeded
+	finished := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	run.Status.FinishedAt = &finished
+
+	pipeline := &v1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{Name: "perf", Namespace: "default"},
+		Spec:       v1.PipelineSpec{Retention: &metav1.Duration{Duration: time.Hour}},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision, pipeline).WithStatusSubresource(run).Build()
+
+	reconciler := operator.NewRunReconciler(kube, &started{}, nil, nil, nil)
+
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
+	if _, err := reconciler.Reconcile(t.Context(), request); err != nil {
+		t.Fatalf("сверка не прошла: %v", err)
+	}
+
+	var gone v1.Run
+	if err := kube.Get(t.Context(), request.NamespacedName, &gone); err == nil {
+		t.Fatal("срок вышел, а прогон остался: истории копятся вечно")
+	}
+}
