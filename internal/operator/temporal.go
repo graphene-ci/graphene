@@ -90,6 +90,26 @@ func (c *Client) failure(ctx context.Context, workflowID string) string {
 	return err.Error()
 }
 
+// Cancel asks a workflow to stop.
+//
+// Cancel and not terminate: a canceled workflow is told to stop and runs
+// its own teardown, which is the whole reason run.Teardown works on a
+// disconnected context. Terminating would leave the machines standing and
+// the record saying the run is over.
+func (c *Client) Cancel(ctx context.Context, workflowID string) error {
+	err := c.temporal.CancelWorkflow(ctx, workflowID, "")
+	if err == nil {
+		return nil
+	}
+
+	var gone *serviceerror.NotFound
+	if errors.As(err, &gone) {
+		return nil
+	}
+
+	return fmt.Errorf("отмена не дошла: %w", err)
+}
+
 // Stop ends a workflow. A workflow that already ended is not an error:
 // that is the normal case when a record is deleted after its run finished.
 func (c *Client) Stop(ctx context.Context, workflowID string) error {

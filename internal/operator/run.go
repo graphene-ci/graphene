@@ -42,6 +42,8 @@ type Temporal interface {
 	Start(ctx context.Context, req StartRequest) (string, error)
 	// Phase reports how far a workflow got.
 	Phase(ctx context.Context, workflowID string) (v1.RunPhase, string, error)
+	// Cancel asks a workflow to stop and let it tidy up after itself.
+	Cancel(ctx context.Context, workflowID string) error
 	// Stop ends a workflow. Stopping one that already ended is not an
 	// error: that is the normal answer when a record is deleted after
 	// its run finished.
@@ -140,6 +142,14 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// поэтому опоздавшее наблюдение всё равно увидит то, что стало
 	// готовым до него.
 	r.follow(ctx, run.Namespace, run.Spec.RevisionRef.Name)
+
+	if run.Spec.Cancel && run.Status.WorkflowID != "" {
+		// Просить отмену повторно — нормально: Temporal доставляет её
+		// один раз, а сверка идёт много раз.
+		if err := r.temporal.Cancel(ctx, run.Status.WorkflowID); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	if run.Status.WorkflowID != "" {
 		return ctrl.Result{RequeueAfter: followEvery}, r.track(ctx, &run)
