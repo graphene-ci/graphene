@@ -90,6 +90,22 @@ func (c *Client) failure(ctx context.Context, workflowID string) string {
 	return err.Error()
 }
 
+// Stop ends a workflow. A workflow that already ended is not an error:
+// that is the normal case when a record is deleted after its run finished.
+func (c *Client) Stop(ctx context.Context, workflowID string) error {
+	err := c.temporal.TerminateWorkflow(ctx, workflowID, "", "запись прогона удалена")
+	if err == nil {
+		return nil
+	}
+
+	var gone *serviceerror.NotFound
+	if errors.As(err, &gone) {
+		return nil
+	}
+
+	return fmt.Errorf("воркфлоу не остановился: %w", err)
+}
+
 // Signal wakes a workflow waiting for a record.
 func (c *Client) Signal(ctx context.Context, workflowID, name string, payload agent.ReadySignal) error {
 	if err := c.temporal.SignalWorkflow(ctx, workflowID, "", name, payload); err != nil {

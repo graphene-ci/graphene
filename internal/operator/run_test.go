@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,9 +22,10 @@ import (
 
 // started records what the reconciler asked Temporal to do.
 type started struct {
-	calls []operator.StartRequest
-	fail  error
-	phase v1.RunPhase
+	calls   []operator.StartRequest
+	fail    error
+	phase   v1.RunPhase
+	stopped int
 }
 
 func (s *started) Start(_ context.Context, req operator.StartRequest) (string, error) {
@@ -34,6 +36,12 @@ func (s *started) Start(_ context.Context, req operator.StartRequest) (string, e
 	s.calls = append(s.calls, req)
 
 	return "temporal-run-1", nil
+}
+
+func (s *started) Stop(_ context.Context, _ string) error {
+	s.stopped++
+
+	return nil
 }
 
 func (s *started) Phase(_ context.Context, _ string) (v1.RunPhase, string, error) {
@@ -79,7 +87,7 @@ func fixtures() (*v1.Run, *v1.PipelineRevision) {
 func reconcile(t *testing.T, kube client.Client, temporal operator.Temporal, known operator.Known) {
 	t.Helper()
 
-	reconciler := operator.NewRunReconciler(kube, temporal, known, nil)
+	reconciler := operator.NewRunReconciler(kube, temporal, known, nil, nil)
 
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
 	if _, err := reconciler.Reconcile(t.Context(), request); err != nil {
@@ -285,5 +293,110 @@ func TestDiscoveryFailureDoesNotRefuseTheRun(t *testing.T) {
 
 	if len(temporal.calls) != 1 {
 		t.Fatalf("икота discovery остановила прогон: запусков %d", len(temporal.calls))
+	}
+}
+
+// swept records what the reconciler asked to be removed, and how much it
+// pretends is still there.
+type swept struct {
+	calls int
+	left  int
+	kinds []agent.Kind
+}
+
+func (s *swept) Sweep(_ context.Context, _ agent.OwnerRef, kinds []agent.Kind) (int, error) {
+	s.calls++
+	s.kinds = kinds
+
+	return s.left, nil
+}
+
+func deleting(t *testing.T, kube client.Client, temporal operator.Temporal, sweep operator.Sweeper) ctrl.Result {
+	t.Helper()
+
+	reconciler := operator.NewRunReconciler(kube, temporal, nil, nil, sweep)
+
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
+
+	result, err := reconciler.Reconcile(t.Context(), request)
+	if err != nil {
+		t.Fatalf("сверка не прошла: %v", err)
+	}
+
+	return result
+}
+
+// Финализатор ставится при старте: без него удаление записи убрало бы
+// запись, а машины оставило.
+func TestRunGetsAFinalizer(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	reconciler := operator.NewRunReconciler(kube, &started{}, nil, nil, &swept{})
+
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
+	if _, err := reconciler.Reconcile(t.Context(), request); err != nil {
+		t.Fatalf("сверка не прошла: %v", err)
+	}
+
+	if len(load(t, kube).Finalizers) == 0 {
+		t.Fatal("финализатор не поставлен")
+	}
+}
+
+// Пока в облаке что-то осталось, запись не исчезает: иначе «удалил
+// прогон» значило бы «перестал видеть счёт».
+func TestRunWaitsWhileSomethingIsLeft(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Finalizers = []string{"graphene-ci.dev/teardown"}
+	run.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	run.Status.Phase = v1.RunRunning
+	run.Status.WorkflowID = "perf-42"
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{}
+	sweeper := &swept{left: 2}
+
+	result := deleting(t, kube, temporal, sweeper)
+
+	if result.RequeueAfter <= 0 {
+		t.Fatal("осталось неубранное, а пересверка не назначена")
+	}
+
+	if temporal.stopped != 1 {
+		t.Fatalf("воркфлоу остановлен %d раз: идущий пайплайн успеет создать ещё", temporal.stopped)
+	}
+
+	if sweeper.calls == 0 {
+		t.Fatal("снос не запрошен")
+	}
+}
+
+// Когда не осталось ничего — финализатор снимается и запись уходит.
+func TestRunLetsGoWhenNothingIsLeft(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	run.Finalizers = []string{"graphene-ci.dev/teardown"}
+	run.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	run.Status.Phase = v1.RunSucceeded
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	deleting(t, kube, &started{}, &swept{left: 0})
+
+	var gone v1.Run
+
+	err := kube.Get(t.Context(), types.NamespacedName{Namespace: "default", Name: "perf-42"}, &gone)
+	if err == nil && len(gone.Finalizers) > 0 {
+		t.Fatal("убирать нечего, а финализатор держит запись")
 	}
 }
