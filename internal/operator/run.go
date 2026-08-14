@@ -58,6 +58,14 @@ type Temporal interface {
 // delete run` means what a person reading it thinks it means.
 const teardownFinalizer = v1.Group + "/teardown"
 
+// defaultRetention is how long a finished run is kept when nobody said.
+//
+// Finite on purpose, and that is the whole point of having a default at
+// all: a run kept forever keeps its Temporal history forever with it, and
+// "forever" is the setting that turns a working installation into one
+// nobody can restart.
+const defaultRetention = 7 * 24 * time.Hour
+
 // sweepEvery is how often to look again while the cloud is still deleting.
 const sweepEvery = 10 * time.Second
 
@@ -132,7 +140,7 @@ func (r *RunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	if run.Status.Phase.Terminal() {
-		return ctrl.Result{}, nil
+		return r.retire(ctx, &run)
 	}
 
 	// Наблюдение заводится на КАЖДОЙ сверке, а не только при старте.
@@ -229,6 +237,53 @@ func (r *RunReconciler) kinds(ctx context.Context, run *v1.Run) []agent.Kind {
 	}
 
 	return kinds
+}
+
+// retire removes a finished run once its keeping time has passed.
+//
+// The record is the history of what happened, and history is worth keeping
+// — but not without end. What goes with it is the workflow history in
+// Temporal, which is the part that actually fills up.
+func (r *RunReconciler) retire(ctx context.Context, run *v1.Run) (ctrl.Result, error) {
+	if run.Status.FinishedAt == nil {
+		return ctrl.Result{}, nil
+	}
+
+	kept := r.retention(ctx, run)
+
+	if left := time.Until(run.Status.FinishedAt.Add(kept)); left > 0 {
+		return ctrl.Result{RequeueAfter: left}, nil
+	}
+
+	if err := r.kube.Delete(ctx, run); err != nil {
+		return ctrl.Result{}, fmt.Errorf("прогон %s не убрался: %w", run.Name, err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// retention is how long to keep this run: what the pipeline says, and
+// otherwise what the installation says.
+func (r *RunReconciler) retention(ctx context.Context, run *v1.Run) time.Duration {
+	var revision v1.PipelineRevision
+
+	key := types.NamespacedName{Namespace: run.Namespace, Name: run.Spec.RevisionRef.Name}
+	if err := r.kube.Get(ctx, key, &revision); err != nil {
+		return defaultRetention
+	}
+
+	var pipeline v1.Pipeline
+
+	key = types.NamespacedName{Namespace: run.Namespace, Name: revision.Spec.PipelineRef.Name}
+	if err := r.kube.Get(ctx, key, &pipeline); err != nil {
+		return defaultRetention
+	}
+
+	if pipeline.Spec.Retention == nil || pipeline.Spec.Retention.Duration <= 0 {
+		return defaultRetention
+	}
+
+	return pipeline.Spec.Retention.Duration
 }
 
 // start puts the run in motion, or records why it cannot be.
