@@ -8,6 +8,7 @@ package e2e_test
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -105,7 +106,10 @@ func serve(ctx context.Context, t *testing.T, kube client.Client, name, dir stri
 			Temporal:  temporalHost,
 			Address:   "graphene",
 			Control:   control,
-			Out:       os.Stderr,
+			// В io.Discard, а не в stderr теста: воркер запускает go run,
+			// тот — собранный бинарь, и любой из них, доживший до конца
+			// теста, держал бы трубу, которую go test ждёт закрытой.
+			Out: io.Discard,
 		})
 	}()
 
