@@ -223,6 +223,9 @@ linters:
         # there is nothing concrete underneath to name.
         - go.temporal.io/sdk/client
         - go.temporal.io/sdk/workflow
+        # Открытый ключ ssh — это интерфейс в x/crypto/ssh: у RSA, ed25519
+        # и ecdsa нет общего конкретного типа, и вернуть можно только его.
+        - golang.org/x/crypto/ssh
     mnd:
       # A command's arity is a number and naming it does not make it one
       # of anything: cobra.ExactArgs(2) already reads as "two arguments".

@@ -93,8 +93,13 @@ case "$ARCH" in
 esac
 
 mkdir -p /opt/graphene
-curl -fsSL "$GRAPHENE_CONTROL/agent/linux/$ARCH/graphene-agent" -o /opt/graphene/graphene-agent
-chmod +x /opt/graphene/graphene-agent
+# Скачиваем рядом и переставляем: работающий агент держит свой бинарь, и
+# запись поверх него отказывает "text file busy". Переустановка обязана
+# проходить на машине, где агент уже стоит, — иначе это установка,
+# работающая ровно один раз.
+curl -fsSL "$GRAPHENE_CONTROL/agent/linux/$ARCH/graphene-agent" -o /opt/graphene/graphene-agent.new
+chmod +x /opt/graphene/graphene-agent.new
+mv -f /opt/graphene/graphene-agent.new /opt/graphene/graphene-agent
 
 # Служба, если система умеет службы; иначе просто процесс. Второе — про
 # контейнер, на котором эта механика и проверяется.

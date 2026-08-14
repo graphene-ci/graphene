@@ -67,6 +67,15 @@ spec:
                   is 22.
                 minLength: 1
                 type: string
+              hostKey:
+                description: "HostKey is the machine's public key, as one line of
+                  known_hosts or\nauthorized_keys:\n\n\tssh-keyscan -t ed25519 10.0.0.7\n\nRequired,
+                  and deliberately so. Trust on first use is what a person\nat a terminal
+                  does; this is a control plane opening a root shell and\nfeeding
+                  it a script with an installation token in it. Whoever\nanswers at
+                  that address without this would get both."
+                minLength: 1
+                type: string
               key:
                 description: Key names the secret holding the private key to log in
                   with.
@@ -93,6 +102,7 @@ spec:
                 type: string
             required:
             - address
+            - hostKey
             - key
             - script
             - user

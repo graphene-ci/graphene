@@ -12,6 +12,31 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// ErrNoHostKey means nobody said what the machine's key should be.
+var ErrNoHostKey = errors.New("не указан ключ хоста: возьмите его через ssh-keyscan")
+
+// hostKey parses the expected key of the far side.
+func hostKey(line string) (ssh.PublicKey, error) {
+	if strings.TrimSpace(line) == "" {
+		return nil, ErrNoHostKey
+	}
+
+	// Строка known_hosts начинается с адреса, authorized_keys — сразу с
+	// типа. Принимаем обе: человек берёт её ssh-keyscan-ом и не обязан
+	// помнить, какого она вида.
+	fields := strings.Fields(line)
+	if len(fields) > 2 && !strings.HasPrefix(fields[0], "ssh-") && !strings.HasPrefix(fields[0], "ecdsa-") {
+		line = strings.Join(fields[1:], " ")
+	}
+
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line)) //nolint:dogsled // так устроена подпись в x/crypto/ssh
+	if err != nil {
+		return nil, fmt.Errorf("ключ хоста не разобрался: %w", err)
+	}
+
+	return key, nil
+}
+
 // ErrInstallTimeout means the machine answered but the script never
 // finished.
 var ErrInstallTimeout = errors.New("установка не уложилась в срок")
@@ -24,22 +49,32 @@ const (
 
 // SSH installs the agent over ssh.
 //
-// The host key is not verified, and that is a hole rather than a decision:
-// a machine named by address alone can be answered by anyone on the path.
-// Closing it needs somewhere to keep known hosts — a field on the intent
-// or a secret beside the key — and that belongs with the rest of the trust
-// work in M7, where the install token is already waiting.
+// The machine's host key is checked, and there is no way to ask it not to.
+// Trust on first use is what a person at a terminal does; this is a control
+// plane opening a root shell on the far side and feeding it a script with
+// an installation token in it. Whoever answered at that address would get
+// both.
 func SSH(ctx context.Context, req InstallRequest) error {
 	signer, err := ssh.ParsePrivateKey(req.Key)
 	if err != nil {
 		return fmt.Errorf("ключ не разобрался: %w", err)
 	}
 
+	host, err := hostKey(req.HostKey)
+	if err != nil {
+		return err
+	}
+
 	config := &ssh.ClientConfig{
 		User:            req.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // дырка названа выше, закрывается в M7
-		Timeout:         sshDial,
+		HostKeyCallback: ssh.FixedHostKey(host),
+		// Просим именно тот алгоритм, ключ которого нам дали. Иначе
+		// сервер предложит первый по своему списку, тот не совпадёт с
+		// нашим единственным, и отказ будет выглядеть как подмена, хотя
+		// это всего лишь разговор о разных ключах одной машины.
+		HostKeyAlgorithms: []string{host.Type()},
+		Timeout:           sshDial,
 	}
 
 	address := req.Address

@@ -24,6 +24,7 @@ func intent() *v1.MachineIntent {
 			Address: "10.0.0.7:22",
 			User:    "ubuntu",
 			Key:     v1.SecretRef{Name: "fleet"},
+			HostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ0ZKPTWaW2Vg1p3wJhLmC8ZQxLNRhkOZq4Xn6VTn1qE",
 			Script:  "#!/bin/sh\necho ставим\n",
 		},
 	}
@@ -147,5 +148,36 @@ func TestMissingKeyStopsBeforeTheTrip(t *testing.T) {
 	condition := meta.FindStatusCondition(loadIntent(t, kube).Status.Conditions, v1.ConditionReady)
 	if condition == nil || condition.Status != metav1.ConditionFalse {
 		t.Fatalf("нет ключа, а запись не отказала: %+v", condition)
+	}
+}
+
+// Без ключа хоста не идём вовсе.
+//
+// Доверие при первом подключении — это то, что делает человек за
+// терминалом. Здесь управляющий слой открывает на той стороне корневую
+// оболочку и кормит её скриптом с токеном установки внутри: тот, кто
+// ответил бы по этому адресу, получил бы и то, и другое.
+func TestMissingHostKeyStopsBeforeTheTrip(t *testing.T) {
+	t.Parallel()
+
+	without := intent()
+	without.Spec.HostKey = ""
+
+	kube := intentClient(t, without, keySecret())
+
+	trips := 0
+
+	reconcileIntent(t, kube, func(_ context.Context, req operator.InstallRequest) error {
+		trips++
+
+		if req.HostKey == "" {
+			return errors.New("пошли без ключа хоста")
+		}
+
+		return nil
+	})
+
+	if trips != 0 {
+		t.Fatal("пошли на машину, не зная, кто там должен ответить")
 	}
 }
