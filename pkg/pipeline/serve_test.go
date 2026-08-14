@@ -31,10 +31,20 @@ func TestRequirementsAreEveryKindTheSchemeKnows(t *testing.T) {
 		}
 	}
 
-	for _, want := range []string{"Machine", "Probe", "Run", "Pipeline", "PipelineRevision"} {
+	ours := []string{"Machine", "Probe", "Run", "Pipeline", "PipelineRevision"}
+	for _, want := range ours {
 		if !found[want] {
 			t.Errorf("вид %s не попал в требования", want)
 		}
+	}
+
+	// Ровно наши виды и ничего больше. metav1.AddToGroupVersion — а его
+	// зовёт каждая схема — кладёт в ТУ ЖЕ группу и версию свои
+	// CreateOptions, ListOptions, PatchOptions и WatchEvent. По имени и
+	// группе они неотличимы от наших, и требование такого вида делало
+	// отказ на каждом прогоне.
+	if len(kinds) != len(ours) {
+		t.Fatalf("требований %d вместо %d: %+v", len(kinds), len(ours), kinds)
 	}
 
 	// Списки не применяют, и внутренние виды machinery — тоже.

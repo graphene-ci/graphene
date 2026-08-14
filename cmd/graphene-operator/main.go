@@ -5,19 +5,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"go.temporal.io/sdk/client"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1 "github.com/graphene-ci/graphene/api/v1"
+	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/operator"
+	"github.com/graphene-ci/graphene/pkg/agent"
 )
 
 const (
@@ -65,7 +69,14 @@ func serve() error {
 		}
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+
+	serves, err := kube.Serves(cfg)
+	if err != nil {
+		return err
+	}
+
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:  scheme,
 		Metrics: metricsserver.Options{BindAddress: os.Getenv(envMetrics)},
 	})
@@ -82,7 +93,11 @@ func serve() error {
 	}
 	defer temporal.Close()
 
-	if err := wire(mgr, operator.NewClient(temporal), address, namespace); err != nil {
+	known := func(ctx context.Context, kind agent.Kind) (bool, error) {
+		return serves(ctx, schema.GroupVersionKind{Group: kind.Group, Version: kind.Version, Kind: kind.Kind})
+	}
+
+	if err := wire(mgr, operator.NewClient(temporal), address, namespace, known); err != nil {
 		return err
 	}
 
@@ -100,15 +115,15 @@ func serve() error {
 }
 
 // wire attaches every controller this binary carries.
-func wire(mgr ctrl.Manager, bridge *operator.Client, address, namespace string) error {
-	kube := mgr.GetClient()
+func wire(mgr ctrl.Manager, bridge *operator.Client, address, namespace string, known operator.Known) error {
+	records := mgr.GetClient()
 
 	setups := []func(ctrl.Manager) error{
-		operator.NewRunReconciler(kube, bridge).SetupWithManager,
-		operator.NewProbeReconciler(kube).SetupWithManager,
-		operator.NewReadinessReconciler(kube, bridge, &v1.Probe{}).SetupWithManager,
-		operator.NewRevisionReconciler(kube, address, namespace, os.Getenv(envControl)).SetupWithManager,
-		operator.NewMachineReconciler(kube).SetupWithManager,
+		operator.NewRunReconciler(records, bridge, known).SetupWithManager,
+		operator.NewProbeReconciler(records).SetupWithManager,
+		operator.NewReadinessReconciler(records, bridge, &v1.Probe{}).SetupWithManager,
+		operator.NewRevisionReconciler(records, address, namespace, os.Getenv(envControl)).SetupWithManager,
+		operator.NewMachineReconciler(records).SetupWithManager,
 	}
 
 	for _, setup := range setups {

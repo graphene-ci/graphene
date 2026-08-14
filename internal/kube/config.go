@@ -5,6 +5,7 @@ package kube
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -80,5 +81,31 @@ func Resolve(cfg *rest.Config) (Resolver, error) {
 		}
 
 		return mapping.Resource, mapping.Scope.Name() == meta.RESTScopeNameNamespace, nil
+	}, nil
+}
+
+// Serves reports whether the cluster serves a kind.
+//
+// Built on the same cached discovery as Resolve and dropping the cache on a
+// miss for the same reason: providers are installed while we are running,
+// and "I have never heard of this kind" is very often "I last looked before
+// it existed". Answering the old way would refuse a run for a provider the
+// person installed a minute ago.
+func Serves(cfg *rest.Config) (func(context.Context, schema.GroupVersionKind) (bool, error), error) {
+	resolve, err := Resolve(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(ctx context.Context, gvk schema.GroupVersionKind) (bool, error) {
+		if _, _, err := resolve(ctx, gvk); err != nil {
+			if meta.IsNoMatchError(err) || errors.Is(err, &meta.NoKindMatchError{}) {
+				return false, nil
+			}
+
+			return false, err
+		}
+
+		return true, nil
 	}, nil
 }

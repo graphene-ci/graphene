@@ -3,6 +3,7 @@ package operator_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -75,10 +76,10 @@ func fixtures() (*v1.Run, *v1.PipelineRevision) {
 	return run, revision
 }
 
-func reconcile(t *testing.T, kube client.Client, temporal operator.Temporal) {
+func reconcile(t *testing.T, kube client.Client, temporal operator.Temporal, known operator.Known) {
 	t.Helper()
 
-	reconciler := operator.NewRunReconciler(kube, temporal)
+	reconciler := operator.NewRunReconciler(kube, temporal, known)
 
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default", Name: "perf-42"}}
 	if _, err := reconciler.Reconcile(t.Context(), request); err != nil {
@@ -108,7 +109,7 @@ func TestRunStartsWorkflow(t *testing.T) {
 		WithObjects(run, revision).WithStatusSubresource(run).Build()
 
 	temporal := &started{}
-	reconcile(t, kube, temporal)
+	reconcile(t, kube, temporal, nil)
 
 	if len(temporal.calls) != 1 {
 		t.Fatalf("воркфлоу запущен %d раз", len(temporal.calls))
@@ -153,9 +154,9 @@ func TestRunDoesNotStartTwice(t *testing.T) {
 
 	temporal := &started{}
 
-	reconcile(t, kube, temporal)
-	reconcile(t, kube, temporal)
-	reconcile(t, kube, temporal)
+	reconcile(t, kube, temporal, nil)
+	reconcile(t, kube, temporal, nil)
+	reconcile(t, kube, temporal, nil)
 
 	if len(temporal.calls) != 1 {
 		t.Fatalf("воркфлоу запущен %d раз вместо одного", len(temporal.calls))
@@ -172,7 +173,7 @@ func TestRunWithoutRevisionFails(t *testing.T) {
 		WithObjects(run).WithStatusSubresource(run).Build()
 
 	temporal := &started{}
-	reconcile(t, kube, temporal)
+	reconcile(t, kube, temporal, nil)
 
 	if len(temporal.calls) != 0 {
 		t.Fatal("воркфлоу запущен без ревизии")
@@ -201,9 +202,88 @@ func TestRunInTerminalPhaseIsLeftAlone(t *testing.T) {
 		WithObjects(run, revision).WithStatusSubresource(run).Build()
 
 	temporal := &started{fail: errors.New("сюда ходить не должны")}
-	reconcile(t, kube, temporal)
+	reconcile(t, kube, temporal, nil)
 
 	if load(t, kube).Status.Phase != v1.RunSucceeded {
 		t.Fatal("фаза завершённого прогона изменилась")
+	}
+}
+
+// everything says the cluster serves whatever is asked.
+func everything(_ context.Context, _ agent.Kind) (bool, error) { return true, nil }
+
+// nothing says the cluster serves none of it.
+func nothing(_ context.Context, _ agent.Kind) (bool, error) { return false, nil }
+
+// Отказ приходит ДО старта воркфлоу и называет вид. Половина построенного
+// стенда стоит денег и требует уборки; отказ до первого шага не стоит
+// ничего.
+func TestRunRefusesWhenAKindIsMissing(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	revision.Status.Requires = []v1.Requirement{
+		{Group: "compute.yandex.crossplane.io", Version: "v1alpha1", Kind: "Instance"},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{}
+	reconcile(t, kube, temporal, nothing)
+
+	if len(temporal.calls) != 0 {
+		t.Fatal("воркфлоу запущен, хотя вида нет")
+	}
+
+	after := load(t, kube)
+	if after.Status.Phase != v1.RunFailed {
+		t.Fatalf("фаза %q, а вида нет", after.Status.Phase)
+	}
+
+	if !strings.Contains(after.Status.Reason, "Instance") {
+		t.Fatalf("отказ не называет вид: %q", after.Status.Reason)
+	}
+}
+
+func TestRunStartsWhenEveryKindIsThere(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	revision.Status.Requires = []v1.Requirement{
+		{Group: "compute.yandex.crossplane.io", Version: "v1alpha1", Kind: "Instance"},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{}
+	reconcile(t, kube, temporal, everything)
+
+	if len(temporal.calls) != 1 {
+		t.Fatalf("воркфлоу запущен %d раз", len(temporal.calls))
+	}
+}
+
+// Икота discovery не должна останавливать работу: она сообщает о пропаже,
+// а не создаёт её.
+func TestDiscoveryFailureDoesNotRefuseTheRun(t *testing.T) {
+	t.Parallel()
+
+	run, revision := fixtures()
+	revision.Status.Requires = []v1.Requirement{
+		{Group: "compute.yandex.crossplane.io", Version: "v1alpha1", Kind: "Instance"},
+	}
+
+	kube := fake.NewClientBuilder().WithScheme(scheme(t)).
+		WithObjects(run, revision).WithStatusSubresource(run).Build()
+
+	temporal := &started{}
+	reconcile(t, kube, temporal, func(_ context.Context, _ agent.Kind) (bool, error) {
+		return false, errors.New("кэш не отвечает")
+	})
+
+	if len(temporal.calls) != 1 {
+		t.Fatalf("икота discovery остановила прогон: запусков %d", len(temporal.calls))
 	}
 }
