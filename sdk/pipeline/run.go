@@ -101,9 +101,14 @@ func (r Run) raise(op string, err error) {
 }
 
 // Unwind performs a teardown that was asked for while a failure was
-// propagating. Serve calls it after recovering; nothing else should.
+// propagating.
+//
+// Serve calls it in ordinary flow, after the recovery has FINISHED — not
+// inside the deferred function that recovered. recover() stops the panic,
+// but while that deferred function is still running Temporal considers the
+// unwinding to be in progress and refuses to let the coroutine wait.
 func (r Run) Unwind() {
-	if !r.s.wanted {
+	if r.s == nil || !r.s.wanted {
 		return
 	}
 

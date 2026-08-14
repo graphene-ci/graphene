@@ -299,40 +299,8 @@ func Workflow(fn any, opts ...Option) (any, error) {
 
 	call := reflect.ValueOf(fn)
 
-	return func(ctx workflow.Context, input agent.RunInput) (err error) {
-		run := Run{}
-
-		defer func() {
-			raised := recover()
-			if raised == nil {
-				return
-			}
-
-			err = asError(raised)
-
-			// Снос, отложенный на время разматывания: здесь паника уже
-			// поймана, и корутине снова можно ждать.
-			if run.s != nil {
-				run.Unwind()
-			}
-		}()
-
-		value := reflect.New(params)
-		if len(input.Params) > 0 {
-			if err := json.Unmarshal(input.Params, value.Interface()); err != nil {
-				return fmt.Errorf("параметры не разобрались: %w", err)
-			}
-		}
-
-		// Every activity of ours is a write to the cluster: short, and
-		// retried until it lands. A timeout is not optional in Temporal,
-		// so it is set here rather than at every call site.
-		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			TaskQueue:           agent.SystemQueue,
-			StartToCloseTimeout: activityTimeout,
-		})
-
-		run = Run{s: &state{
+	return func(ctx workflow.Context, input agent.RunInput) error {
+		run := Run{s: &state{
 			ctx:     ctx,
 			owner:   input.Owner,
 			ready:   workflow.GetSignalChannel(ctx, agent.SignalReady),
@@ -340,13 +308,52 @@ func Workflow(fn any, opts ...Option) (any, error) {
 			arrived: map[string]agent.ReadySignal{},
 		}}
 
-		out := call.Call([]reflect.Value{reflect.ValueOf(run), value.Elem()})
-		if raised, ok := out[0].Interface().(error); ok && raised != nil {
-			return raised
-		}
+		err := invoke(ctx, call, params, run, input)
 
-		return nil
+		// Снос, отложенный на время разматывания, выполняется ЗДЕСЬ —
+		// в обычном потоке, а не в отложенной функции. recover() панику
+		// останавливает, но пока сама отложенная функция выполняется,
+		// разматывание для Temporal ещё идёт, и ждать корутине нельзя.
+		run.Unwind()
+
+		return err
 	}, nil
+}
+
+// invoke calls the pipeline and turns a failure into an error.
+//
+// It exists as its own function so that the recovery finishes — the
+// deferred function returns — before anything blocks again.
+func invoke(
+	ctx workflow.Context, call reflect.Value, params reflect.Type, run Run, input agent.RunInput,
+) (err error) {
+	defer func() {
+		if raised := recover(); raised != nil {
+			err = asError(raised)
+		}
+	}()
+
+	// Every activity of ours is a write to the cluster: short, and
+	// retried until it lands. A timeout is not optional in Temporal,
+	// so it is set here rather than at every call site.
+	run.s.ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:           agent.SystemQueue,
+		StartToCloseTimeout: activityTimeout,
+	})
+
+	value := reflect.New(params)
+	if len(input.Params) > 0 {
+		if err := json.Unmarshal(input.Params, value.Interface()); err != nil {
+			return fmt.Errorf("параметры не разобрались: %w", err)
+		}
+	}
+
+	out := call.Call([]reflect.Value{reflect.ValueOf(run), value.Elem()})
+	if raised, ok := out[0].Interface().(error); ok && raised != nil {
+		return raised
+	}
+
+	return nil
 }
 
 // paramsTypeOf checks the shape of a pipeline and reports its parameter
