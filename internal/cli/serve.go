@@ -6,12 +6,18 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
+
+// stopGrace is how long a stopped worker may take to let go of its output
+// before it is abandoned.
+const stopGrace = 5 * time.Second
 
 // ServeRequest is one pipeline worker, run where the person is.
 type ServeRequest struct {
@@ -55,6 +61,19 @@ func Serve(ctx context.Context, req ServeRequest) error {
 	cmd := exec.CommandContext(ctx, "go", "run", req.Dir)
 	cmd.Stdout = req.Out
 	cmd.Stderr = req.Out
+
+	// `go run` собирает бинарь и запускает его ОТДЕЛЬНЫМ процессом.
+	// Убить только `go run` — значит оставить сам пайплайн жить дальше:
+	// он переживёт Ctrl+C, продолжит брать работу из очереди и будет
+	// держать трубы вывода. Поэтому своя группа процессов и убийство
+	// группы, а WaitDelay — предохранитель на случай, если кто-то в ней
+	// закрывать трубы не торопится.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = stopGrace
+
 	cmd.Env = append(os.Environ(),
 		pipeline.EnvAddress+"="+req.Temporal,
 		pipeline.EnvNamespace+"="+req.Address,
