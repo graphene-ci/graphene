@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -58,10 +59,15 @@ func (a *Applier) upsertMachine(ctx context.Context, req agent.RegisterInput) er
 		return nil
 	}
 
+	metadata := map[string]any{fieldName: req.Machine}
+	if owner := a.ironOf(ctx, req); owner != nil {
+		metadata["ownerReferences"] = []any{owner}
+	}
+
 	fresh := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": v1.GroupVersion.String(),
+		fieldVersion: v1.GroupVersion.String(),
 		fieldKind:    "Machine",
-		"metadata":   map[string]any{fieldName: req.Machine},
+		"metadata":   metadata,
 		"status":     status,
 	}}
 
@@ -78,6 +84,134 @@ func (a *Applier) upsertMachine(ctx context.Context, req agent.RegisterInput) er
 
 	if _, err := client.UpdateStatus(ctx, created, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("статус машины %s не записался: %w", req.Machine, err)
+	}
+
+	return nil
+}
+
+// ironOf finds the record that brought this machine's iron into being, if
+// anything did.
+//
+// This narrows a decision from M2 that turned out too wide. "A Machine has
+// no owner, because the iron outlives the run that used it" is true of a
+// machine somebody else built and lent us. It is false of a cloud VM the
+// run itself created: that iron dies with the run, and a record outliving
+// its iron is a record about nothing.
+//
+// So: the owner is whatever made the iron, when we can see it. An agent
+// that came up on somebody's laptop belongs to nobody and is never
+// collected — losing the labels and taints a person put there would be
+// worse than keeping a row that says "not ready".
+//
+// The link is the installation's name: a pipeline calls the machine and
+// the record it applies by the same memo, so `<run>-<memo>` names both. A
+// run name has dashes of its own, so the split is not guessed — each
+// candidate is checked against a Run that actually exists.
+func (a *Applier) ironOf(ctx context.Context, req agent.RegisterInput) map[string]any {
+	for run, memo := range splits(req.Machine) {
+		kinds := a.kindsOf(ctx, req.Namespace, run)
+		if len(kinds) == 0 {
+			continue
+		}
+
+		if owner := a.recordOf(ctx, req.Namespace, run, memo, kinds); owner != nil {
+			return owner
+		}
+	}
+
+	return nil
+}
+
+// splits yields every way the installation's name could divide into a run
+// and a memo, shortest run first.
+func splits(installation string) map[string]string {
+	ways := map[string]string{}
+	parts := strings.Split(installation, "-")
+
+	for i := 1; i < len(parts); i++ {
+		ways[strings.Join(parts[:i], "-")] = strings.Join(parts[i:], "-")
+	}
+
+	return ways
+}
+
+// kindsOf is what that run could have created — the revision's
+// requirements once more, now as the list of places to look for the iron.
+func (a *Applier) kindsOf(ctx context.Context, namespace, run string) []schema.GroupVersionResource {
+	runs := schema.GroupVersionResource{Group: v1.Group, Version: v1.Version, Resource: "runs"}
+
+	record, err := a.client.Resource(runs).Namespace(namespace).Get(ctx, run, metav1.GetOptions{})
+	if err != nil {
+		return nil
+	}
+
+	revisionName, found, err := unstructured.NestedString(record.Object, "spec", "revisionRef", fieldName)
+	if err != nil || !found {
+		return nil
+	}
+
+	revisions := schema.GroupVersionResource{Group: v1.Group, Version: v1.Version, Resource: "pipelinerevisions"}
+
+	revision, err := a.client.Resource(revisions).Namespace(namespace).Get(ctx, revisionName, metav1.GetOptions{})
+	if err != nil {
+		return nil
+	}
+
+	required, found, err := unstructured.NestedSlice(revision.Object, "status", "requires")
+	if err != nil || !found {
+		return nil
+	}
+
+	resources := make([]schema.GroupVersionResource, 0, len(required))
+
+	for _, one := range required {
+		kind, ok := one.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		gvk := schema.GroupVersionKind{
+			Group:   fmt.Sprint(kind["group"]),
+			Version: fmt.Sprint(kind["version"]),
+			Kind:    fmt.Sprint(kind[fieldKind]),
+		}
+
+		resource, _, err := a.resolve(ctx, gvk)
+		if err != nil {
+			continue
+		}
+
+		resources = append(resources, resource)
+	}
+
+	return resources
+}
+
+// recordOf looks for the record this run made under this memo.
+func (a *Applier) recordOf(
+	ctx context.Context, namespace, run, memo string, kinds []schema.GroupVersionResource,
+) map[string]any {
+	ours := metav1.ListOptions{LabelSelector: LabelRun + "=" + run}
+
+	for _, resource := range kinds {
+		list, err := a.client.Resource(resource).Namespace(namespace).List(ctx, ours)
+		if err != nil {
+			continue
+		}
+
+		for i := range list.Items {
+			record := &list.Items[i]
+			if record.GetAnnotations()[AnnotationMemo] != memo {
+				continue
+			}
+
+			return map[string]any{
+				fieldVersion: record.GetAPIVersion(),
+				fieldKind:    record.GetKind(),
+				fieldName:    record.GetName(),
+				"uid":        string(record.GetUID()),
+			}
+		}
 	}
 
 	return nil

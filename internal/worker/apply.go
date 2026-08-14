@@ -36,8 +36,9 @@ const (
 // Поля манифеста, которые мы собираем руками. Строками они встречаются
 // в трёх местах, и линтер прав: одно написание вместо трёх.
 const (
-	fieldKind = "kind"
-	fieldName = "name"
+	fieldKind    = "kind"
+	fieldName    = "name"
+	fieldVersion = "apiVersion"
 )
 
 // ErrNoKind means the manifest did not say what it is.
