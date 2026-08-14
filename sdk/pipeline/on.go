@@ -113,7 +113,7 @@ func (s Step) Command(memo string, req agent.ExecInput) agent.ExecOutput {
 
 	var out agent.ExecOutput
 	if err := workflow.ExecuteActivity(ctx, agent.ActivityExec, req).Get(ctx, &out); err != nil {
-		fail("шаг "+memo, err)
+		s.run.raise("шаг "+memo, err)
 	}
 
 	return out
@@ -129,7 +129,7 @@ func (s Step) Facts() map[string]string {
 
 	var out agent.FactsOutput
 	if err := workflow.ExecuteActivity(ctx, agent.ActivityFacts).Get(ctx, &out); err != nil {
-		fail("факты "+s.target.installation, err)
+		s.run.raise("факты "+s.target.installation, err)
 	}
 
 	return out.Facts

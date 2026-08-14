@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -51,6 +52,22 @@ type state struct {
 	keep       time.Duration
 	keepReason string
 	torn       bool
+
+	// unwinding says a failure is propagating right now, and wanted says
+	// teardown was asked for while it was.
+	//
+	// Temporal runs workflow code as a coroutine that yields whenever it
+	// waits, and it REFUSES to yield while a panic is unwinding. Since a
+	// step failure travels by panic and teardown waits on an activity,
+	// `defer run.Teardown()` — the shape the whole design is written
+	// around — would kill the workflow with "yield during panic
+	// unwinding" instead of cleaning up.
+	//
+	// So teardown asked for during unwinding is not performed there. It
+	// is remembered, and Serve performs it after recovering, when the
+	// coroutine may block again.
+	unwinding bool
+	wanted    bool
 }
 
 // StepError is what a step raises when it cannot go on. It travels by panic
@@ -76,15 +93,47 @@ func fail(op string, err error) {
 	panic(&StepError{Op: op, Err: err})
 }
 
+// raise stops the pipeline, remembering that the failure is in flight.
+func (r Run) raise(op string, err error) {
+	r.s.unwinding = true
+
+	fail(op, err)
+}
+
+// Unwind performs a teardown that was asked for while a failure was
+// propagating. Serve calls it after recovering; nothing else should.
+func (r Run) Unwind() {
+	if !r.s.wanted {
+		return
+	}
+
+	r.s.unwinding = false
+	r.s.wanted = false
+
+	r.Teardown()
+}
+
 // Owner reports the run that owns everything this pipeline creates.
 func (r Run) Owner() agent.OwnerRef { return r.s.owner }
 
 // Sleep waits, durably. A pipeline that sleeps for a day costs nothing
 // while it sleeps and survives every restart underneath it.
 func (r Run) Sleep(d time.Duration) {
-	if err := workflow.Sleep(r.s.ctx, d); err != nil {
-		fail("sleep", err)
+	err := workflow.Sleep(r.s.ctx, d)
+	if err == nil {
+		return
 	}
+
+	// Отмена — не отказ шага. Пайплайн, которому сказали остановиться,
+	// остановился; если завернуть это в свою ошибку, прогон запишется
+	// упавшим, и человек будет искать поломку там, где её нет.
+	if temporal.IsCanceledError(err) {
+		r.s.unwinding = true
+
+		panic(err)
+	}
+
+	r.raise("sleep", err)
 }
 
 // Keep hands what the run made to a stand that outlives it by d.
@@ -113,6 +162,14 @@ func (r Run) Keep(d time.Duration, reason ...string) {
 // where the ordinary context is already dead.
 func (r Run) Teardown() {
 	if r.s.torn {
+		return
+	}
+
+	// Отказ ещё разматывается — блокироваться нельзя. Запомним; Serve
+	// снесёт, когда паника поймана и корутине снова можно ждать.
+	if r.s.unwinding {
+		r.s.wanted = true
+
 		return
 	}
 

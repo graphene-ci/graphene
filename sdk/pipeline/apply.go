@@ -39,19 +39,19 @@ func (r Ref[T]) Name() string { return r.ref.Name }
 func Apply[T runtime.Object](run Run, memo string, obj T) Ref[T] {
 	apiVersion, kind, err := run.gvkOf(obj)
 	if err != nil {
-		fail("apply "+memo, err)
+		run.raise("apply "+memo, err)
 	}
 
 	manifest, err := marshalWithKind(obj, apiVersion, kind)
 	if err != nil {
-		fail("apply "+memo, err)
+		run.raise("apply "+memo, err)
 	}
 
 	in := agent.ApplyInput{Name: memo, Manifest: manifest, Owner: run.s.owner}
 
 	var out agent.ApplyOutput
 	if err := workflow.ExecuteActivity(run.s.ctx, agent.ActivityApply, in).Get(run.s.ctx, &out); err != nil {
-		fail("apply "+memo, err)
+		run.raise("apply "+memo, err)
 	}
 
 	run.s.created = append(run.s.created, out.Ref)
@@ -70,7 +70,7 @@ func Await[T runtime.Object](run Run, ref Ref[T]) T {
 			delete(run.s.arrived, ref.memo)
 
 			if err := applyStatus(ref.obj, sig.Status); err != nil {
-				fail("await "+ref.memo, err)
+				run.raise("await "+ref.memo, err)
 			}
 
 			return ref.obj

@@ -300,9 +300,20 @@ func Workflow(fn any, opts ...Option) (any, error) {
 	call := reflect.ValueOf(fn)
 
 	return func(ctx workflow.Context, input agent.RunInput) (err error) {
+		run := Run{}
+
 		defer func() {
-			if raised := recover(); raised != nil {
-				err = asError(raised)
+			raised := recover()
+			if raised == nil {
+				return
+			}
+
+			err = asError(raised)
+
+			// Снос, отложенный на время разматывания: здесь паника уже
+			// поймана, и корутине снова можно ждать.
+			if run.s != nil {
+				run.Unwind()
 			}
 		}()
 
@@ -321,7 +332,7 @@ func Workflow(fn any, opts ...Option) (any, error) {
 			StartToCloseTimeout: activityTimeout,
 		})
 
-		run := Run{s: &state{
+		run = Run{s: &state{
 			ctx:     ctx,
 			owner:   input.Owner,
 			ready:   workflow.GetSignalChannel(ctx, agent.SignalReady),
@@ -363,7 +374,10 @@ func paramsTypeOf(fn any) (reflect.Type, error) {
 	return typ.In(1), nil
 }
 
-// asError turns whatever was panicked with into the workflow's failure.
+// asError turns whatever was panicked with into the workflow's outcome.
+//
+// A cancellation travels unchanged: Temporal records it as cancelled rather
+// than failed, and a pipeline told to stop did not break.
 func asError(raised any) error {
 	if err, ok := raised.(error); ok {
 		return err
