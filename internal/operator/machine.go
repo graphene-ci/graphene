@@ -102,11 +102,18 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	before := machine.DeepCopy()
+
 	if !meta.SetStatusCondition(&machine.Status.Conditions, condition) {
 		return ctrl.Result{RequeueAfter: requeueFor(left)}, nil
 	}
 
-	if err := r.kube.Status().Update(ctx, &machine); err != nil {
+	// Заплатка, а не запись целиком, и это не оптимизация. У статуса
+	// машины ДВА писателя: этот контроллер пишет готовность, а захват
+	// пишет системный воркер из другого процесса. Update посылает статус
+	// целиком, поэтому слегка устаревшая копия здесь стирала бы чужой
+	// захват — что и случилось на первой же сквозной проверке.
+	if err := r.kube.Status().Patch(ctx, &machine, client.MergeFrom(before)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("готовность машины не записалась: %w", err)
 	}
 
@@ -133,9 +140,10 @@ func (r *MachineReconciler) free(ctx context.Context, machine *v1.Machine) error
 		return nil
 	}
 
+	before := machine.DeepCopy()
 	machine.Status.Claim = nil
 
-	if err := r.kube.Status().Update(ctx, machine); err != nil {
+	if err := r.kube.Status().Patch(ctx, machine, client.MergeFrom(before)); err != nil {
 		return fmt.Errorf("машина %s не освободилась: %w", machine.Name, err)
 	}
 
@@ -180,9 +188,13 @@ func (r *MachineReconciler) alive(ctx context.Context, namespace string, claim *
 // prefix is ours to manage, and a projection that removed somebody's
 // "team=perf" would be a projection nobody could trust.
 func (r *MachineReconciler) project(ctx context.Context, machine *v1.Machine) error {
-	labels := machine.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
+	// Снимок ДО правки: GetLabels отдаёт ту же карту, что лежит в
+	// объекте, и правка на месте сделала бы заплатку пустой.
+	before := machine.DeepCopy()
+
+	labels := map[string]string{}
+	for name, value := range machine.GetLabels() {
+		labels[name] = value
 	}
 
 	changed := false
@@ -219,7 +231,7 @@ func (r *MachineReconciler) project(ctx context.Context, machine *v1.Machine) er
 
 	machine.SetLabels(labels)
 
-	if err := r.kube.Update(ctx, machine); err != nil {
+	if err := r.kube.Patch(ctx, machine, client.MergeFrom(before)); err != nil {
 		return fmt.Errorf("факты не спроецировались в метки: %w", err)
 	}
 
