@@ -122,7 +122,11 @@ RestartSec=2
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable --now graphene-agent
+  systemctl enable graphene-agent
+  # restart, а не enable --now: для уже работающей службы --now ничего не
+  # делает, и переустановка молча не вступала бы в силу — новый бинарь
+  # лежит, а работает старый процесс со старым окружением.
+  systemctl restart graphene-agent
 else
   /opt/graphene/graphene-agent
 fi
