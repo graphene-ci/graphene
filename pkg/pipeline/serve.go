@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/graphene-ci/graphene/pkg/agent"
 )
@@ -180,13 +181,8 @@ func Requirements(scheme *runtime.Scheme) []agent.Kind {
 	seen := make(map[agent.Kind]bool)
 	kinds := make([]agent.Kind, 0)
 
-	for gvk := range scheme.AllKnownTypes() {
-		// Не то, что применяют: списки, безгруппные виды и внутренние
-		// виды самой machinery. Последние приходят из
-		// metav1.AddToGroupVersion, который каждая схема зовёт за собой,
-		// и живут в версии __internal — вида с таким именем в кластере
-		// нет и требовать его значит отказывать всем подряд.
-		if strings.HasSuffix(gvk.Kind, "List") || gvk.Group == "" || gvk.Version == runtime.APIVersionInternal {
+	for gvk, typ := range scheme.AllKnownTypes() {
+		if !applicable(gvk, typ) {
 			continue
 		}
 
@@ -217,6 +213,33 @@ func Requirements(scheme *runtime.Scheme) []agent.Kind {
 	})
 
 	return kinds
+}
+
+// machineryTypes is where kubernetes keeps the types every scheme carries
+// whether it wants them or not.
+const machineryTypes = "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+// applicable answers whether a kind is one a pipeline could actually apply.
+//
+// The filter is by the Go type's package, not by name, and that was learned
+// the hard way: metav1.AddToGroupVersion — which every scheme calls, ours
+// included — registers CreateOptions, ListOptions, PatchOptions and
+// WatchEvent INTO THE CALLER'S OWN GROUP AND VERSION. By name and group
+// they are indistinguishable from our kinds; by package they are obviously
+// not ours. Requiring them made every run refuse itself.
+func applicable(gvk schema.GroupVersionKind, typ reflect.Type) bool {
+	switch {
+	case gvk.Group == "":
+		return false
+	case gvk.Version == runtime.APIVersionInternal:
+		return false
+	case strings.HasSuffix(gvk.Kind, "List"):
+		return false
+	case typ != nil && typ.PkgPath() == machineryTypes:
+		return false
+	default:
+		return true
+	}
 }
 
 // announce tells the cluster what this revision needs. A worker that cannot

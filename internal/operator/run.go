@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,19 +51,36 @@ type Temporal interface {
 // still have to exist as the safety net. One mechanism, not two.
 const followEvery = 5 * time.Second
 
-// ErrNoRevision means the run points at a revision that is not there.
-var ErrNoRevision = errors.New("ревизия не найдена")
+// Refusals a run can meet before it starts.
+var (
+	// ErrNoRevision means the run points at a revision that is not there.
+	ErrNoRevision = errors.New("ревизия не найдена")
+	// ErrKindMissing means the cluster does not serve a kind the pipeline
+	// needs.
+	ErrKindMissing = errors.New("в кластере нет вида, который нужен пайплайну")
+)
+
+// Known answers whether the cluster serves a kind.
+//
+// A function rather than a discovery client so that the reconciler can be
+// checked without a cluster, and so that the cache — with its own failure
+// modes — stays at the edge.
+type Known func(ctx context.Context, kind agent.Kind) (bool, error)
 
 // RunReconciler turns a Run record into a running workflow, and a running
 // workflow back into the record's phase.
 type RunReconciler struct {
 	kube     client.Client
 	temporal Temporal
+	// Known is consulted before a run starts. Nil means nothing is
+	// checked, which is what a test that does not care about
+	// requirements wants.
+	Known Known
 }
 
 // NewRunReconciler builds one.
-func NewRunReconciler(kube client.Client, temporal Temporal) *RunReconciler {
-	return &RunReconciler{kube: kube, temporal: temporal}
+func NewRunReconciler(kube client.Client, temporal Temporal, known Known) *RunReconciler {
+	return &RunReconciler{kube: kube, temporal: temporal, Known: known}
 }
 
 // Reconcile brings one run to where it should be.
@@ -105,6 +123,14 @@ func (r *RunReconciler) start(ctx context.Context, run *v1.Run) error {
 		return r.refuse(ctx, run, err)
 	}
 
+	// Отказ ДО старта, а не на середине. Половина построенного стенда
+	// стоит денег и требует уборки; отказ до первого шага не стоит
+	// ничего и говорит, что именно поставить.
+	if missing := r.missing(ctx, &revision); len(missing) > 0 {
+		return r.refuse(ctx, run, fmt.Errorf("%w: %s — поставьте провайдер, который их обслуживает",
+			ErrKindMissing, strings.Join(missing, ", ")))
+	}
+
 	temporalRunID, err := r.temporal.Start(ctx, StartRequest{
 		WorkflowID: run.Name,
 		Queue:      revision.Spec.Queue,
@@ -128,6 +154,37 @@ func (r *RunReconciler) start(ctx context.Context, run *v1.Run) error {
 	}
 
 	return nil
+}
+
+// missing lists the kinds the revision needs and the cluster does not
+// serve.
+//
+// Whether the provider serving them is HEALTHY is not checked, and that is
+// deliberate: without an installed provider the refusal is already clear,
+// and "the provider is alive" has no single answer — a provider can be up
+// and unable to reach its cloud, or down and about to come back.
+func (r *RunReconciler) missing(ctx context.Context, revision *v1.PipelineRevision) []string {
+	if r.Known == nil {
+		return nil
+	}
+
+	var missing []string
+
+	for _, required := range revision.Status.Requires {
+		kind := agent.Kind{Group: required.Group, Version: required.Version, Kind: required.Kind}
+
+		known, err := r.Known(ctx, kind)
+		if err != nil || known {
+			// Ошибка discovery — не повод отказать прогону: тогда
+			// икота кэша останавливала бы работу, а не сообщала о
+			// пропаже.
+			continue
+		}
+
+		missing = append(missing, required.Kind+"."+required.Group)
+	}
+
+	return missing
 }
 
 // follow copies how far the workflow got back into the record.
