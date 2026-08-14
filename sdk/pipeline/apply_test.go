@@ -10,9 +10,9 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
-	"github.com/graphene-ci/graphene/pkg/agent"
-	"github.com/graphene-ci/graphene/pkg/pipeline"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
 
 type params struct {

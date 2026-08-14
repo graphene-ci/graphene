@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 // LeaseSeconds is how long an agent's mark is good for — the agent's own

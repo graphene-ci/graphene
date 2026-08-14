@@ -9,9 +9,9 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 
-	graphenev1 "github.com/graphene-ci/graphene/api/v1"
-	"github.com/graphene-ci/graphene/pkg/agent"
-	"github.com/graphene-ci/graphene/pkg/pipeline"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	graphenev1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
 
 // Client is the operator's side of Temporal: start a workflow, ask how far

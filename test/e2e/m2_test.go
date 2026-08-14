@@ -13,9 +13,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/internal/cli"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 // Куда машина ходит за агентом и за работой.

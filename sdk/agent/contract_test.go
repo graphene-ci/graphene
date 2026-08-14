@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Аргументы activity ездят через JSON: их пишет SDK внутри воркфлоу, а

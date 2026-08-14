@@ -8,8 +8,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/internal/cli"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 const digest = "registry.example.com/perf@sha256:" +

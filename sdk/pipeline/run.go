@@ -22,7 +22,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Run is the handle a pipeline holds on its own execution. It is passed by

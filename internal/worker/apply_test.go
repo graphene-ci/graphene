@@ -11,9 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/internal/worker"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 func probeGVR() schema.GroupVersionResource {

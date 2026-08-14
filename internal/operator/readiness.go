@@ -16,10 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
 	"github.com/graphene-ci/graphene/internal/kube"
 	"github.com/graphene-ci/graphene/internal/worker"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
 )
 
 // ErrNotWatchable means the cluster does not serve the kind we were asked

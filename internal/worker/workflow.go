@@ -6,7 +6,7 @@ import (
 
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // registerTimeout bounds one write of a machine's record. It is a couple of

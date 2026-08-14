@@ -7,7 +7,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // Ref is what Apply hands back: a record that has been asked for, not

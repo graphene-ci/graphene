@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
-	"github.com/graphene-ci/graphene/pkg/agent"
-	"github.com/graphene-ci/graphene/pkg/pipeline"
+	"github.com/graphene-ci/graphene/sdk/agent"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
 
 // Params is what this pipeline takes.

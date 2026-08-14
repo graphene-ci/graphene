@@ -18,8 +18,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1 "github.com/graphene-ci/graphene/api/v1"
-	"github.com/graphene-ci/graphene/pkg/pipeline"
+	v1 "github.com/graphene-ci/graphene/sdk/api/v1"
+	"github.com/graphene-ci/graphene/sdk/pipeline"
 )
 
 // Params is what this pipeline takes.

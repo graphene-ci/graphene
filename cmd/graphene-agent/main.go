@@ -21,7 +21,7 @@ import (
 	temporalworker "go.temporal.io/sdk/worker"
 
 	internalagent "github.com/graphene-ci/graphene/internal/agent"
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 // What the install script sets. Everything comes from the environment

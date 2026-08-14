@@ -64,7 +64,7 @@ configure: ## Поставить инструменты в bin/ прибитых
 	echo "$$(cat $(KUBECTL).sha256)  $(KUBECTL)" | sha256sum --check --status
 	rm -f $(KUBECTL).sha256
 	chmod +x $(KUBECTL)
-	go mod tidy
+	@for m in $(MODULES); do (cd $$m && go mod tidy) || exit 1; done
 
 .PHONY: generate
 generate: ## Породить deepcopy и манифесты CRD из типов в api/

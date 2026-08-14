@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/graphene-ci/graphene/pkg/agent"
+	"github.com/graphene-ci/graphene/sdk/agent"
 )
 
 func install() agent.Install {
