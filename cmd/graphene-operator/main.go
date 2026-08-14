@@ -97,7 +97,24 @@ func serve() error {
 		return serves(ctx, schema.GroupVersionKind{Group: kind.Group, Version: kind.Version, Kind: kind.Kind})
 	}
 
-	if err := wire(mgr, operator.NewClient(temporal), address, namespace, known); err != nil {
+	source, err := kube.Dynamic(cfg)
+	if err != nil {
+		return err
+	}
+
+	resolve, err := kube.Resolve(cfg)
+	if err != nil {
+		return err
+	}
+
+	bridge := operator.NewClient(temporal)
+	readiness := operator.NewReadiness(mgr.GetClient(), source, resolve, bridge)
+
+	if err := mgr.Add(readiness); err != nil {
+		return fmt.Errorf("наблюдение за готовностью не встало: %w", err)
+	}
+
+	if err := wire(mgr, bridge, address, namespace, known, readiness); err != nil {
 		return err
 	}
 
@@ -115,13 +132,15 @@ func serve() error {
 }
 
 // wire attaches every controller this binary carries.
-func wire(mgr ctrl.Manager, bridge *operator.Client, address, namespace string, known operator.Known) error {
+func wire(
+	mgr ctrl.Manager, bridge *operator.Client, address, namespace string,
+	known operator.Known, watch operator.Watcher,
+) error {
 	records := mgr.GetClient()
 
 	setups := []func(ctrl.Manager) error{
-		operator.NewRunReconciler(records, bridge, known).SetupWithManager,
+		operator.NewRunReconciler(records, bridge, known, watch).SetupWithManager,
 		operator.NewProbeReconciler(records).SetupWithManager,
-		operator.NewReadinessReconciler(records, bridge, &v1.Probe{}).SetupWithManager,
 		operator.NewRevisionReconciler(records, address, namespace, os.Getenv(envControl)).SetupWithManager,
 		operator.NewMachineReconciler(records).SetupWithManager,
 	}
