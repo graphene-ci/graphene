@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -123,12 +124,41 @@ func TestTimeoutKillsTheChildrenToo(t *testing.T) {
 		t.Fatalf("не удалось узнать pid ребёнка из %q: %v", out.Stdout, convErr)
 	}
 
-	// Сигнал 0 ничего не делает, но отвечает, жив ли процесс.
-	if err := syscall.Kill(pid, 0); err == nil {
+	// Сигнал 0 здесь не годится: он успешен и для ЗОМБИ — процесса уже
+	// мёртвого, но ещё не подобранного init после смерти родителя. Именно
+	// на этом первая версия проверки соврала и заставила чинить то, что
+	// не было сломано. Спрашиваем состояние.
+	if alive(t, pid) {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 
 		t.Fatalf("ребёнок %d пережил таймаут", pid)
 	}
+}
+
+// alive says whether the process is still running, as opposed to gone or
+// dead-and-unreaped.
+func alive(t *testing.T, pid int) bool {
+	t.Helper()
+
+	// Небольшая отсрочка: смерть по сигналу не мгновенна, а зомби
+	// подбирается init не сразу.
+	for range 50 {
+		raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+		if err != nil {
+			return false
+		}
+
+		tail := strings.LastIndex(string(raw), ")")
+		if tail > 0 {
+			if fields := strings.Fields(string(raw)[tail+1:]); len(fields) > 0 && fields[0] == "Z" {
+				return false
+			}
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	return true
 }
 
 func TestNothingToRunIsRefused(t *testing.T) {
