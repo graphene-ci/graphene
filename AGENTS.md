@@ -1,37 +1,40 @@
 # AGENTS.md — graphene
 
-Реализация видения v3 (`../GRAPHENE.MD`). Прежняя раскладка (k3s/CRD,
-операторы) снята и живёт в ветках; правила ниже описывают текущую.
+Implementation of vision v3 (`../GRAPHENE.MD`). The previous layout
+(k3s/CRD, operators) is retired and lives in branches; the rules below
+describe the current one.
 
-## Перед изменениями
+## Before making changes
 
-1. Прочитать `../GRAPHENE.MD` — решения видения. Решение, противоречащее
-   ему, сначала правит видение, потом код.
-2. `make lint` и `make test` зелёные перед push.
+1. Read `../GRAPHENE.MD` — the vision's decisions. A change that
+   contradicts it updates the vision first, then the code.
+2. `make lint` and `make test` must be green before push.
 
-## Правила кода
+## Code rules
 
-- Язык — Go; код, имена и комментарии — английский. Документы и коммиты —
-  русский. Коммиты — Conventional Commits, без `Co-Authored-By`.
-- Идентификаторы — типы `pkg/id`, суффикс `Id` (исключение var-naming
-  записано в `.golangci.yaml`).
-- Workflow-код детерминирован; весь внешний I/O — activities за
-  интерфейсами `Ops`, реализации в сервере, все методы идемпотентны.
-- Секрет и большие данные не попадают в спеки, логи и историю Temporal —
-  только ссылки (`pkg/ref`).
-- Системные Entity строятся на `temporal-entity`; своей entity-механики
-  здесь нет.
-- Тест сначала описывает требуемое поведение, затем пишется реализация.
+- Implementation language is Go; code, names, and comments are English.
+  Commits are Conventional Commits, no `Co-Authored-By`.
+- Identifiers are the `pkg/id` types, suffix `Id` (the var-naming
+  exception is recorded in `.golangci.yaml` with its reason).
+- Workflow code is deterministic; all external I/O is activities behind
+  `Ops` interfaces, implemented in the server, every method idempotent.
+- Secrets and large data never enter specs, logs, or Temporal history —
+  references only (`pkg/ref`).
+- System entities are built on `temporal-entity`; there is no home-grown
+  entity machinery here.
+- A test describes the required behavior first; the implementation
+  follows.
 
-## Границы пакетов
+## Package boundaries
 
-- `pkg/id`, `pkg/ref` — словарь; не импортируют ничего из репозитория.
-- `pkg/wire` — соглашения между компонентами (очереди, search
-  attributes); только чистые функции.
-- `pkg/entity/*` — системные Entity: definition + типы + `Ops`-интерфейс;
-  реализация `Ops` — в сервере, не здесь.
-- `pkg/pipeline` — пользовательская библиотека; не импортирует
-  `pkg/entity/*` и серверные пакеты (проверяется ревью; позже — тестом на
-  граф импортов).
-- `internal/` (появится) — сервер: реализация `Ops`, API, managed-контур.
-- `cmd/` (появится) — только сборка бинарей.
+- `pkg/id`, `pkg/ref` — vocabulary; import nothing from this repository.
+- `pkg/wire` — cross-component conventions (queues, search attributes);
+  pure functions only.
+- `pkg/entity/*` — system entities: definition + types + `Ops`
+  interface; `Ops` implementations live in the server, not here.
+- `pkg/pipeline` — the user-facing library; imports neither
+  `pkg/entity/*` nor server packages (enforced by review; later by an
+  import-graph test).
+- `internal/` (to come) — the server: `Ops` implementations, API, the
+  managed execution path.
+- `cmd/` (to come) — binary assembly only.

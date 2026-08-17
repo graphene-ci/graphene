@@ -1,39 +1,39 @@
 # graphene
 
-Control plane для инфраструктуры и прогонов поверх Temporal как
-единственного durable-ядра. Видение целиком — `../GRAPHENE.MD` (корень
-организации); этот репозиторий — его реализация.
+Control plane for infrastructure and runs on top of Temporal as the
+single durable core. The full vision lives in `../GRAPHENE.MD` (org
+root); this repository is its implementation.
 
-Прогон — обычный Temporal workflow, написанный пользователем. Система
-добавляет то, чего нет ни в CI, ни в Terraform, ни в голом Temporal:
-владение временем жизни ресурсов, гарантированный снос, работу с чужим и
-«одноразовое не более одного раза».
+A run is an ordinary Temporal workflow written by the user. The system
+adds what neither CI, nor Terraform, nor bare Temporal has: ownership of
+resource lifetimes, guaranteed teardown, working with things it did not
+create, and "one-shot means at most once".
 
-## Состав
+## Layout
 
-| Пакет | Что это |
+| Package | What it is |
 |---|---|
-| `pkg/id` | Словарь идентификаторов (суффикс `Id`); литералы кастом, внешний ввод через `Parse*` |
-| `pkg/ref` | Ссылки: `SecretRef`, `BlobRef`, `OwnerRef` — по проводу ходит ссылка, не значение |
-| `pkg/wire` | Соглашения между компонентами: имена очередей, search attributes |
-| `pkg/entity/machine` | Системная Entity «машина»: создана в облаке (владеем, сносим) или опознана по ssh (не владеем, снести нечем); готовность = агент подключился |
-| `pkg/entity/artifact` | Системная Entity «артефакт»: запись о том, где лежат байты; снос записи сносит байты |
-| `pkg/pipeline` | Библиотека автора пайплайна: `OnAgent` (сходящееся, на машине), `Action` (одноразовое: MaximumAttempts=1, недостоверный исход — `ErrUnknown`), ссылки |
+| `pkg/id` | Identifier dictionary (suffix `Id`); literals by cast, external input through `Parse*` |
+| `pkg/ref` | References: `SecretRef`, `BlobRef`, `OwnerRef` — a reference travels, never the value |
+| `pkg/wire` | Cross-component conventions: queue names, search attributes |
+| `pkg/entity/machine` | Machine system entity: created in a cloud (owned, destroyable) or recognized over ssh (not owned, nothing to destroy with); ready = agent connected |
+| `pkg/entity/artifact` | Artifact system entity: a record about where bytes live; deleting the record deletes the bytes |
+| `pkg/pipeline` | Pipeline author's library: `OnAgent` (converging, on a machine), `Action` (one-shot: MaximumAttempts=1, undeterminable outcome = `ErrUnknown`), references |
 
-Системные Entity построены на
-[temporal-entity](https://github.com/graphene-ci/temporal-entity): один
-долгоживущий workflow на ресурс, команды-updates, reconcile-тик,
-deletion с гарантированным finalize. Их workflows исполняет воркер
-сервера; side effects заведены за интерфейсы `Ops`, реализации — в
-сервере.
+System entities are built on
+[temporal-entity](https://github.com/graphene-ci/temporal-entity): one
+long-running workflow per resource — commands as updates, reconcile
+ticks, deletion with a guaranteed finalizer. Their workflows execute on
+the server's worker; side effects sit behind `Ops` interfaces implemented
+by the server.
 
-Сервер, CLI и managed-контур появляются в этом репозитории по мере
-строительства (порядок — в видении: сначала сущности и библиотека).
+The server, CLI, and the managed execution path land in this repository
+as they are built (order per the vision: entities and the library first).
 
-## Сборка и проверка
+## Build and check
 
 ```bash
-make configure   # инструменты прибитых версий в bin/, ничего в систему
+make configure   # pinned tools into bin/, nothing global
 make lint        # golangci-lint, 0 issues
 make test
 ```
