@@ -21,8 +21,8 @@ lint: ## Run Go linters
 	$(BIN)/golangci-lint run ./...
 
 .PHONY: build
-build: ## Build all packages
-	go build ./...
+build: ## Build the server binary
+	go build ./cmd/graphene-server
 
 .PHONY: help
 help: ## Show available targets

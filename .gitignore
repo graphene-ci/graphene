@@ -1,3 +1,4 @@
 /bin/
+/graphene-server
 *.out
 .env
