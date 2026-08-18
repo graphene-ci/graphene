@@ -1,0 +1,12 @@
+# graphene.yaml — how THIS pipeline talks to an installation. Committed
+# next to the code; secrets never live here, only names and addresses.
+pipeline: {{.Name}}
+
+server:
+  # The single door of the installation.
+  grpc: {{.ServerGRPC}}
+  http: {{.ServerHTTP}}
+
+# The worker image of this pipeline: its version is the version of every
+# run started from it.
+image: {{.Image}}

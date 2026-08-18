@@ -1,0 +1,13 @@
+# The worker image of the pipeline: one binary, every role — the run
+# worker and the per-(agent × run) container on machines run the same
+# image the server and the agents pull.
+FROM golang:{{.GoVersion}} AS build
+WORKDIR /src
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/pipeline .
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /out/pipeline /pipeline
+ENTRYPOINT ["/pipeline"]

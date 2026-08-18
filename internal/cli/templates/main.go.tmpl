@@ -1,0 +1,50 @@
+// Command {{.Name}} is a graphene pipeline: ordinary code over the
+// pipeline library — Resources with owned lifetimes, Activities on
+// execution sites, plain control flow. One main == one pipeline.
+package main
+
+import (
+	"context"
+	"os/exec"
+
+	pipelineactivity "github.com/graphene-ci/pipeline/pkg/activity"
+	"github.com/graphene-ci/pipeline/pkg/pipeline"
+)
+
+// Params is the typed input of a run: the UI form and submit validation
+// derive from this type.
+type Params struct {
+	Work string `json:"work"`
+}
+
+// Result is the run's output. Small values only — big data goes through
+// artifacts.
+type Result struct {
+	Report string `json:"report"`
+}
+
+func main() {
+	pipeline.Main("{{.Name}}", func(ctx pipeline.Context, params Params) (Result, error) {
+		// An Agent is our record on a machine; the machine itself comes
+		// from whatever you choose — a cloud resource with
+		// agent.CloudInit() in its user-data, an ssh install, a person.
+		agent := pipeline.NewAgent(ctx, "{{.Name}}-agent")
+
+		// Code on the machine: an inline activity, discovered and
+		// registered by Main — no lists. Arguments travel only through
+		// the binding.
+		report, err := pipelineactivity.Activity(ctx, agent,
+			pipelineactivity.ActivityFn("run-work",
+				func(ctx context.Context, work string) (string, error) {
+					out, err := exec.CommandContext(ctx, "sh", "-c", work).CombinedOutput()
+					return string(out), err
+				},
+				params.Work,
+			),
+		)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Report: report}, nil
+	})
+}

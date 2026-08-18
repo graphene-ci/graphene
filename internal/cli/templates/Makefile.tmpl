@@ -1,0 +1,24 @@
+.DEFAULT_GOAL := help
+
+IMAGE := {{.Image}}
+
+.PHONY: tidy
+tidy: ## Resolve module dependencies
+	go mod tidy
+
+.PHONY: build
+build: ## Build the pipeline binary
+	go build -o bin/{{.Name}} .
+
+.PHONY: image
+image: ## Build the worker image
+	docker build -t $(IMAGE) .
+
+.PHONY: push
+push: image ## Push the worker image to the registry
+	docker push $(IMAGE)
+
+.PHONY: help
+help: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "%-12s %s\n", $$1, $$2}'
