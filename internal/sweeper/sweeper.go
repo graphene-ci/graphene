@@ -7,7 +7,7 @@ package sweeper
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"github.com/gopherex/xlog"
 	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -26,11 +26,11 @@ type Cascader interface {
 type Sweeper struct {
 	temporal client.Client
 	cascader Cascader
-	log      *slog.Logger
+	log      *xlog.Logger
 }
 
 // New builds the sweeper.
-func New(temporal client.Client, cascader Cascader, log *slog.Logger) *Sweeper {
+func New(temporal client.Client, cascader Cascader, log *xlog.Logger) *Sweeper {
 	return &Sweeper{temporal: temporal, cascader: cascader, log: log}
 }
 
@@ -53,19 +53,19 @@ func (s *Sweeper) sweep(ctx context.Context) {
 		time.Now().UTC().Format(time.RFC3339))
 	resp, err := s.temporal.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{Query: query})
 	if err != nil {
-		s.log.Error("sweep: list expired", "error", err)
+		s.log.Error("sweep: list expired", xlog.Err(err))
 		return
 	}
 	for _, e := range resp.GetExecutions() {
 		workflowId := e.GetExecution().GetWorkflowId()
-		s.log.Info("stand TTL expired, deleting", "resource", workflowId)
+		s.log.Info("stand TTL expired, deleting", xlog.String("resource", workflowId))
 		// Subtree first, then the resource itself.
 		if err := s.cascader.CascadeDelete(ctx, ref.OwnerRef(workflowId)); err != nil {
-			s.log.Error("sweep cascade", "resource", workflowId, "error", err)
+			s.log.Error("sweep cascade", xlog.String("resource", workflowId), xlog.Err(err))
 			continue
 		}
 		if err := s.cascader.DeleteOne(ctx, workflowId); err != nil {
-			s.log.Error("sweep delete", "resource", workflowId, "error", err)
+			s.log.Error("sweep delete", xlog.String("resource", workflowId), xlog.Err(err))
 		}
 	}
 }

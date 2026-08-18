@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/gopherex/xlog"
 	"strings"
 	"time"
 
@@ -45,7 +45,7 @@ type Deps struct {
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
-	Log      *slog.Logger
+	Log      *xlog.Logger
 }
 
 // Worker is the assembled server worker.

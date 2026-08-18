@@ -12,8 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gopherex/xlog"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -110,7 +110,7 @@ func TestFullContour(t *testing.T) {
 	}
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- server.Run(serverCtx, cfg, slog.New(slog.NewTextHandler(serverLog, nil)))
+		serverDone <- server.Run(serverCtx, cfg, xlog.NewConsole(xlog.WithSink(serverLog)))
 	}()
 	waitHTTP(t, "http://"+httpAddr+"/healthz")
 

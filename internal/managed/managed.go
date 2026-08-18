@@ -8,8 +8,8 @@ package managed
 import (
 	"context"
 	"fmt"
+	"github.com/gopherex/xlog"
 	"io"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -20,6 +20,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 
+	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
@@ -28,7 +29,7 @@ import (
 type Runner struct {
 	docker   *dockerclient.Client
 	temporal client.Client
-	log      *slog.Logger
+	log      *xlog.Logger
 
 	// wiring handed to every run container.
 	externalGRPC string
@@ -41,10 +42,10 @@ type Runner struct {
 
 // New builds the runner over the host's docker daemon; an installation
 // without docker serves inplace runs only (Start returns the error).
-func New(temporal client.Client, externalGRPC, externalHTTP, runToken string, log *slog.Logger) *Runner {
+func New(temporal client.Client, externalGRPC, externalHTTP, runToken string, log *xlog.Logger) *Runner {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
-		log.Warn("managed contour disabled: no docker", "error", err)
+		log.Warn("managed contour disabled: no docker", xlog.Err(err))
 		docker = nil
 	}
 	return &Runner{
@@ -56,6 +57,16 @@ func New(temporal client.Client, externalGRPC, externalHTTP, runToken string, lo
 		runToken:     runToken,
 		runs:         map[id.RunId]string{},
 	}
+}
+
+// Ping reports the docker daemon's reachability for the health probes;
+// probes.ErrDisabled when the managed contour is off.
+func (r *Runner) Ping(ctx context.Context) error {
+	if r.docker == nil {
+		return probes.ErrDisabled
+	}
+	_, err := r.docker.Ping(ctx)
+	return err
 }
 
 // Start launches the run worker container for a run.
@@ -98,7 +109,7 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	r.mu.Lock()
 	r.runs[runId] = created.ID
 	r.mu.Unlock()
-	r.log.Info("managed run container started", "run", runId, "image", imageRef)
+	r.log.Info("managed run container started", xlog.Any("run", runId), xlog.String("image", imageRef))
 	return nil
 }
 
@@ -117,13 +128,13 @@ func (r *Runner) Reap(ctx context.Context) {
 			continue
 		}
 		if err := r.docker.ContainerRemove(ctx, containerId, container.RemoveOptions{Force: true}); err != nil {
-			r.log.Error("reap run container", "run", runId, "error", err)
+			r.log.Error("reap run container", xlog.Any("run", runId), xlog.Err(err))
 			continue
 		}
 		r.mu.Lock()
 		delete(r.runs, runId)
 		r.mu.Unlock()
-		r.log.Info("managed run container reaped", "run", runId)
+		r.log.Info("managed run container reaped", xlog.Any("run", runId))
 	}
 }
 

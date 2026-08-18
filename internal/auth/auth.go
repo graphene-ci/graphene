@@ -78,10 +78,17 @@ func BearerFromMD(md metadata.MD) string {
 	return ""
 }
 
+// healthService is served without a token: Kubernetes and load
+// balancers probe it; it exposes nothing but up/down.
+const healthService = "/grpc.health.v1.Health/"
+
 // StreamInterceptor authenticates every stream, including the unknown
 // services forwarded to the Temporal proxy.
 func (a *Authenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if strings.HasPrefix(info.FullMethod, healthService) {
+			return handler(srv, ss)
+		}
 		md, _ := metadata.FromIncomingContext(ss.Context())
 		p, ok := a.Check(BearerFromMD(md))
 		if !ok {
@@ -93,7 +100,10 @@ func (a *Authenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 
 // UnaryInterceptor authenticates unary calls.
 func (a *Authenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if strings.HasPrefix(info.FullMethod, healthService) {
+			return handler(ctx, req)
+		}
 		md, _ := metadata.FromIncomingContext(ctx)
 		p, ok := a.Check(BearerFromMD(md))
 		if !ok {

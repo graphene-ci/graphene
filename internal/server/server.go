@@ -1,28 +1,35 @@
 // Package server is the composition root of the graphene control plane:
-// one gRPC door (agent sessions + Temporal proxy), one HTTP door (runs
-// API + registry proxy), and the server worker with the system entity
-// flows. Every goroutine of the server starts in Run.
+// one gRPC door (agent sessions + grpc.health.v1 + Temporal proxy), one
+// HTTP door (runs API + probes + registry proxy), the server worker with
+// the system entity flows, the stand sweeper, the managed-run reaper,
+// and the infra health runners. Every goroutine starts here, under one
+// xshutdown manager that drains and cleans up in order.
 package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"time"
 
+	"github.com/gopherex/xlog"
+	grpcprobe "github.com/gopherex/xprobe/pkg/transport/grpc"
+	"github.com/gopherex/xshutdown"
 	"go.temporal.io/sdk/client"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/graphene-ci/agent/pkg/agentpb"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/httpapi"
+	"github.com/graphene-ci/graphene/internal/logging"
 	"github.com/graphene-ci/graphene/internal/managed"
 	"github.com/graphene-ci/graphene/internal/ops"
+	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/sweeper"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
@@ -31,18 +38,24 @@ import (
 )
 
 // Run assembles the server from config and serves until ctx ends.
-func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
+	stop := xshutdown.New(ctx,
+		xshutdown.WithTimeout(20*time.Second),
+		xshutdown.WithErrorHandler(func(err error) { log.Error("shutdown", xlog.Err(err)) }),
+	)
+
 	temporalClient, err := client.Dial(client.Options{
 		HostPort:  cfg.TemporalHostPort,
 		Namespace: cfg.TemporalNamespace,
+		Logger:    logging.Temporal(log),
 	})
 	if err != nil {
 		return fmt.Errorf("temporal: %w", err)
 	}
-	defer temporalClient.Close()
+	stop.RegisterFnErr(func(context.Context) error { temporalClient.Close(); return nil })
 
 	authn := auth.New(cfg.Tokens)
-	registry := agents.New(cfg.AgentHeartbeat, log)
+	registry := agents.New(cfg.AgentHeartbeat, log.With(xlog.String("component", "agents")))
 	store := secrets.Static(cfg.Secrets)
 	agentOps := ops.NewAgentOps(registry, store, userDataBuilder(cfg))
 	artifactOps := ops.NewArtifactOps(cfg.BlobDir)
@@ -51,15 +64,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("temporal proxy: %w", err)
 	}
-	defer func() { _ = closeProxy() }()
-
-	grpcServer := grpc.NewServer(
-		codecOpt,
-		unknownOpt,
-		grpc.ChainStreamInterceptor(authn.StreamInterceptor()),
-		grpc.ChainUnaryInterceptor(authn.UnaryInterceptor()),
-	)
-	agentpb.RegisterAgentAPIServer(grpcServer, registry)
+	stop.RegisterFnErr(func(context.Context) error { return closeProxy() })
 
 	serverWorker, err := worker.New(worker.Deps{
 		Client:       temporalClient,
@@ -69,14 +74,34 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		ExternalGRPC: cfg.ExternalGRPC,
 		ExternalHTTP: cfg.ExternalHTTP,
 		RunToken:     firstToken(cfg, "run"),
-		Log:          log,
+		Log:          log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {
 		return fmt.Errorf("assemble worker: %w", err)
 	}
 
-	runner := managed.New(temporalClient, cfg.ExternalGRPC, cfg.ExternalHTTP, firstToken(cfg, "run"), log)
-	sweep := sweeper.New(temporalClient, serverWorker, log)
+	runner := managed.New(temporalClient, cfg.ExternalGRPC, cfg.ExternalHTTP, firstToken(cfg, "run"),
+		log.With(xlog.String("component", "managed")))
+	sweep := sweeper.New(temporalClient, serverWorker, log.With(xlog.String("component", "sweeper")))
+
+	// Health: cached states fed by runners over the infra dependencies;
+	// grpc.health.v1 inside (no token — balancers probe it), HTTP
+	// liveness/readiness outside.
+	health := probes.New(probes.Deps{
+		Temporal:         temporalClient,
+		Docker:           runner,
+		RegistryUpstream: cfg.RegistryUpstream,
+		Log:              log.With(xlog.String("component", "probes")),
+	})
+
+	grpcServer := grpc.NewServer(
+		codecOpt,
+		unknownOpt,
+		grpc.ChainStreamInterceptor(authn.StreamInterceptor()),
+		grpc.ChainUnaryInterceptor(authn.UnaryInterceptor()),
+	)
+	agentpb.RegisterAgentAPIServer(grpcServer, registry)
+	hv1.RegisterHealthServer(grpcServer, grpcprobe.New(health.Registry))
 
 	httpServer := &http.Server{
 		Addr: cfg.ListenHTTP,
@@ -88,7 +113,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			BlobDir:          cfg.BlobDir,
 			Capabilities:     serverWorker,
 			Launcher:         runner,
-			Log:              log,
+			Health:           health.HTTPMux(),
+			Log:              log.With(xlog.String("component", "http")),
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -97,35 +123,53 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	log.Info("serving", "grpc", grpcListener.Addr(), "http", cfg.ListenHTTP)
+	log.Info("serving",
+		xlog.String("grpc", grpcListener.Addr().String()),
+		xlog.String("http", cfg.ListenHTTP))
 
-	group, gctx := errgroup.WithContext(ctx)
-	group.Go(func() error { return grpcServer.Serve(grpcListener) })
-	group.Go(func() error {
-		err := httpServer.ListenAndServe()
-		if err == http.ErrServerClosed {
-			return nil
+	fatal := make(chan error, 2)
+	stop.Go(func(context.Context) {
+		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			fatal <- fmt.Errorf("grpc door: %w", err)
 		}
-		return err
 	})
-	group.Go(func() error { return serverWorker.Run(gctx) })
-	group.Go(func() error { sweep.Tick(gctx, time.Duration(cfg.SweepSeconds)*time.Second); return gctx.Err() })
-	group.Go(func() error { runner.Tick(gctx, time.Duration(cfg.ReapSeconds)*time.Second); return gctx.Err() })
-	group.Go(func() error {
-		<-gctx.Done()
-		grpcServer.GracefulStop()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = httpServer.Shutdown(shutdownCtx)
-		return gctx.Err()
+	stop.Go(func(context.Context) {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fatal <- fmt.Errorf("http door: %w", err)
+		}
 	})
-	return group.Wait()
+	stop.Go(func(gctx context.Context) {
+		if err := serverWorker.Run(gctx); err != nil && gctx.Err() == nil {
+			fatal <- fmt.Errorf("server worker: %w", err)
+		}
+	})
+	stop.Go(func(gctx context.Context) { sweep.Tick(gctx, time.Duration(cfg.SweepSeconds)*time.Second) })
+	stop.Go(func(gctx context.Context) { runner.Tick(gctx, time.Duration(cfg.ReapSeconds)*time.Second) })
+	stop.Go(health.Run)
+
+	var cause error
+	select {
+	case <-ctx.Done():
+		cause = ctx.Err()
+	case err := <-fatal:
+		cause = err
+	}
+	// The doors must close BEFORE Stop drains: Serve/ListenAndServe are
+	// tracked goroutines that only return when their server stops.
+	grpcServer.GracefulStop()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_ = httpServer.Shutdown(shutdownCtx)
+	cancel()
+	if err := stop.Stop(); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
 // userDataBuilder renders the agent install script for a machine: ONE
 // script for both paths — a fresh VM's user-data and the ssh install —
-// because two scripts would drift. The install token is the machine's
-// agent token from the config.
+// because two scripts would drift. The install token is the agent token
+// from the config.
 func userDataBuilder(cfg config.Config) func(id.AgentId) (string, error) {
 	return func(agentId id.AgentId) (string, error) {
 		token := ""
@@ -136,7 +180,7 @@ func userDataBuilder(cfg config.Config) func(id.AgentId) (string, error) {
 			}
 		}
 		if token == "" {
-			return "", fmt.Errorf("no agent token configured for machine %q", agentId)
+			return "", fmt.Errorf("no agent token configured for agent %q", agentId)
 		}
 		// The script converges: safe to run twice (ssh install after a
 		// user-data boot, a re-run after a failure).

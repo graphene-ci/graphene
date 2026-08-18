@@ -3,8 +3,8 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"github.com/gopherex/xlog"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -98,7 +98,7 @@ func TestManagedRun(t *testing.T) {
 	defer stopServer()
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- server.Run(serverCtx, cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		serverDone <- server.Run(serverCtx, cfg, xlog.NewConsole(xlog.WithSink(os.Stderr)))
 	}()
 	waitHTTP(t, "http://"+httpAddr+"/healthz")
 
