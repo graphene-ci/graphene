@@ -28,3 +28,11 @@ build: ## Build the server binary
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "%-18s %s\n", $$1, $$2}'
+
+.PHONY: compose-up
+compose-up: ## Bring the installation up (server + dependencies)
+	docker compose up -d --build
+
+.PHONY: compose-down
+compose-down: ## Tear the installation down, keep volumes
+	docker compose down
