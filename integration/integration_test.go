@@ -67,6 +67,9 @@ func TestFullContour(t *testing.T) {
 	defer func() { _ = srv.Stop() }()
 
 	// Binaries: the agent from its sibling checkout, the pipeline here.
+	if _, err := os.Stat(filepath.Join("..", "..", "agent", "go.mod")); err != nil {
+		t.Skip("agent sibling checkout not present")
+	}
 	bins := t.TempDir()
 	agentBin := build(t, bins, "graphene-agent", filepath.Join("..", "..", "agent"), "./cmd/graphene-agent")
 	pipelineBin := build(t, bins, "testpipeline", "", "github.com/graphene-ci/graphene/integration/testpipeline")
