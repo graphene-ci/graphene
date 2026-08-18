@@ -1,0 +1,106 @@
+// Package ops implements the side-effect boundaries of the system
+// resource flows (pipeline/pkg/flow/*): machine ops against the agent
+// registry and ssh, artifact ops against the blob store. Every method is
+// idempotent — the flows retry them freely.
+package ops
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/graphene-ci/graphene/internal/agents"
+	"github.com/graphene-ci/graphene/internal/secrets"
+	"github.com/graphene-ci/pipeline/pkg/flow/machine"
+	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/pipeline"
+)
+
+// MachineOps implements machine.Ops: agent presence from the registry,
+// ssh install for machines that already exist.
+type MachineOps struct {
+	registry *agents.Registry
+	secrets  secrets.Store
+	userData func(id.MachineId) (string, error)
+}
+
+// NewMachineOps assembles the ops.
+func NewMachineOps(registry *agents.Registry, store secrets.Store, userData func(id.MachineId) (string, error)) *MachineOps {
+	return &MachineOps{registry: registry, secrets: store, userData: userData}
+}
+
+// UserData renders the agent install script for a machine: one script
+// for both paths — a fresh VM's user-data and the ssh install.
+func (o *MachineOps) UserData(machineId id.MachineId) (string, error) {
+	return o.userData(machineId)
+}
+
+// AgentStatus reports whether the machine's agent is connected.
+func (o *MachineOps) AgentStatus(_ context.Context, machineId id.MachineId) (machine.AgentStatus, error) {
+	return o.registry.Status(machineId), nil
+}
+
+// InstallSSH runs the agent install script on an existing machine over
+// ssh — the same bytes a fresh VM gets through user-data. Idempotent: the
+// script itself converges.
+func (o *MachineOps) InstallSSH(ctx context.Context, machineId id.MachineId, install pipeline.SSHInstall) error {
+	script, err := o.userData(machineId)
+	if err != nil {
+		return err
+	}
+	keyPEM, err := o.secrets.Get(install.KeyRef.Name)
+	if err != nil {
+		return err
+	}
+	signer, err := ssh.ParsePrivateKey([]byte(keyPEM))
+	if err != nil {
+		return fmt.Errorf("parse ssh key: %w", err)
+	}
+	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(install.HostKey))
+	if err != nil {
+		return fmt.Errorf("parse host key: %w", err)
+	}
+	address := install.Address
+	if _, _, splitErr := net.SplitHostPort(address); splitErr != nil {
+		address = net.JoinHostPort(address, "22")
+	}
+	sshCfg := &ssh.ClientConfig{
+		User:            install.User,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.FixedHostKey(hostKey),
+		Timeout:         30 * time.Second,
+	}
+	raw, err := (&net.Dialer{Timeout: sshCfg.Timeout}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", address, err)
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(raw, address, sshCfg)
+	if err != nil {
+		_ = raw.Close()
+		return fmt.Errorf("ssh handshake %s: %w", address, err)
+	}
+	conn := ssh.NewClient(sshConn, chans, reqs)
+	defer func() { _ = conn.Close() }()
+	session, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = session.Close() }()
+	// The install token is inside the script; it never appears in argv.
+	session.Stdin = strings.NewReader(script)
+	if out, err := session.CombinedOutput("sh -s"); err != nil {
+		return fmt.Errorf("install script: %w: %s", err, truncate(string(out), 2048))
+	}
+	return nil
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
