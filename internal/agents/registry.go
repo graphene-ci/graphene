@@ -20,7 +20,7 @@ import (
 
 	"github.com/graphene-ci/agent/pkg/agentpb"
 	"github.com/graphene-ci/graphene/internal/auth"
-	"github.com/graphene-ci/pipeline/pkg/flow/machine"
+	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/id"
 )
 
@@ -33,12 +33,12 @@ type Registry struct {
 	log              *slog.Logger
 
 	mu     sync.Mutex
-	agents map[id.MachineId]*session
+	agents map[id.AgentId]*session
 }
 
 // session is one connected agent.
 type session struct {
-	machineId   id.MachineId
+	agentId     id.AgentId
 	facts       *agentpb.Facts
 	factsDigest string
 	lastSeen    time.Time
@@ -50,7 +50,7 @@ type session struct {
 	pending   map[string]chan string // command id -> error text ("" = ok)
 
 	containersMu sync.Mutex
-	containers   map[id.RunId]map[id.MachineId]agentpb.ContainerState
+	containers   map[id.RunId]map[id.AgentId]agentpb.ContainerState
 }
 
 // New builds the registry.
@@ -58,7 +58,7 @@ func New(heartbeat time.Duration, log *slog.Logger) *Registry {
 	return &Registry{
 		heartbeatSeconds: uint32(max(1, int(heartbeat/time.Second))), //nolint:gosec // small positive
 		log:              log,
-		agents:           map[id.MachineId]*session{},
+		agents:           map[id.AgentId]*session{},
 	}
 }
 
@@ -76,36 +76,36 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	if hello == nil {
 		return status.Error(codes.InvalidArgument, "first message must be hello")
 	}
-	machineId, err := id.ParseMachineId(hello.GetMachineId())
+	agentId, err := id.ParseAgentId(hello.GetAgentId())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	// The token is scoped to one machine: an agent cannot embody another.
-	if principal.MachineId != machineId {
+	if principal.AgentId != agentId {
 		return status.Error(codes.PermissionDenied, "token is not for this machine")
 	}
 
 	s := &session{
-		machineId:   machineId,
+		agentId:     agentId,
 		facts:       hello.GetFacts(),
 		factsDigest: digest(hello.GetFacts()),
 		lastSeen:    time.Now(),
 		stream:      stream,
 		pending:     map[string]chan string{},
-		containers:  map[id.RunId]map[id.MachineId]agentpb.ContainerState{},
+		containers:  map[id.RunId]map[id.AgentId]agentpb.ContainerState{},
 	}
 	r.mu.Lock()
-	r.agents[machineId] = s
+	r.agents[agentId] = s
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
-		if r.agents[machineId] == s {
-			delete(r.agents, machineId)
+		if r.agents[agentId] == s {
+			delete(r.agents, agentId)
 		}
 		r.mu.Unlock()
-		r.log.Info("agent disconnected", "machine", machineId)
+		r.log.Info("agent disconnected", "machine", agentId)
 	}()
-	r.log.Info("agent connected", "machine", machineId, "version", hello.GetAgentVersion())
+	r.log.Info("agent connected", "machine", agentId, "version", hello.GetAgentVersion())
 
 	if err := s.send(&agentpb.SessionResponse{Body: &agentpb.SessionResponse_HelloAck{
 		HelloAck: &agentpb.HelloAck{HeartbeatSeconds: r.heartbeatSeconds},
@@ -127,7 +127,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 		case *agentpb.SessionRequest_ContainerReport:
 			s.track(body.ContainerReport)
 			r.log.Info("container report",
-				"machine", body.ContainerReport.GetMachineId(),
+				"machine", body.ContainerReport.GetAgentId(),
 				"run", body.ContainerReport.GetRunId(),
 				"state", body.ContainerReport.GetState().String(),
 				"message", body.ContainerReport.GetMessage())
@@ -140,7 +140,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 // EnsureContainer asks the machine's agent to bring the container up and
 // waits for the command result.
 func (r *Registry) EnsureContainer(ctx context.Context, spec *agentpb.ContainerSpec) error {
-	return r.command(ctx, id.MachineId(spec.GetMachineId()), func(commandId string) *agentpb.SessionResponse {
+	return r.command(ctx, id.AgentId(spec.GetAgentId()), func(commandId string) *agentpb.SessionResponse {
 		return &agentpb.SessionResponse{Body: &agentpb.SessionResponse_EnsureContainer{
 			EnsureContainer: &agentpb.EnsureContainer{CommandId: commandId, Spec: spec},
 		}}
@@ -149,12 +149,12 @@ func (r *Registry) EnsureContainer(ctx context.Context, spec *agentpb.ContainerS
 
 // StopContainer asks the machine's agent to stop the (machine × run)
 // container and waits for the result.
-func (r *Registry) StopContainer(ctx context.Context, machineId id.MachineId, runId id.RunId) error {
-	return r.command(ctx, machineId, func(commandId string) *agentpb.SessionResponse {
+func (r *Registry) StopContainer(ctx context.Context, agentId id.AgentId, runId id.RunId) error {
+	return r.command(ctx, agentId, func(commandId string) *agentpb.SessionResponse {
 		return &agentpb.SessionResponse{Body: &agentpb.SessionResponse_StopContainer{
 			StopContainer: &agentpb.StopContainer{
 				CommandId: commandId,
-				MachineId: string(machineId),
+				AgentId:   string(agentId),
 				RunId:     string(runId),
 			},
 		}}
@@ -162,26 +162,26 @@ func (r *Registry) StopContainer(ctx context.Context, machineId id.MachineId, ru
 }
 
 // Status reports the agent's presence for the machine flow.
-func (r *Registry) Status(machineId id.MachineId) machine.AgentStatus {
+func (r *Registry) Status(agentId id.AgentId) agentflow.AgentStatus {
 	r.mu.Lock()
-	s, ok := r.agents[machineId]
+	s, ok := r.agents[agentId]
 	r.mu.Unlock()
 	if !ok {
-		return machine.AgentStatus{}
+		return agentflow.AgentStatus{}
 	}
-	return machine.AgentStatus{
+	return agentflow.AgentStatus{
 		Connected:   true,
 		Addresses:   s.facts.GetAddresses(),
 		FactsDigest: s.factsDigest,
 	}
 }
 
-func (r *Registry) command(ctx context.Context, machineId id.MachineId, build func(commandId string) *agentpb.SessionResponse) error {
+func (r *Registry) command(ctx context.Context, agentId id.AgentId, build func(commandId string) *agentpb.SessionResponse) error {
 	r.mu.Lock()
-	s, ok := r.agents[machineId]
+	s, ok := r.agents[agentId]
 	r.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("agent of machine %q is not connected", machineId)
+		return fmt.Errorf("agent of machine %q is not connected", agentId)
 	}
 	commandId := uuid.NewString()
 	ch := make(chan string, 1)
@@ -230,7 +230,7 @@ func (r *Registry) StopRunContainers(ctx context.Context, runId id.RunId) error 
 		if !has {
 			continue
 		}
-		if err := r.StopContainer(ctx, s.machineId, runId); err != nil {
+		if err := r.StopContainer(ctx, s.agentId, runId); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -241,12 +241,12 @@ func (r *Registry) StopRunContainers(ctx context.Context, runId id.RunId) error 
 // containers leave the set.
 func (s *session) track(report *agentpb.ContainerReport) {
 	runId := id.RunId(report.GetRunId())
-	machineId := id.MachineId(report.GetMachineId())
+	agentId := id.AgentId(report.GetAgentId())
 	s.containersMu.Lock()
 	defer s.containersMu.Unlock()
 	if report.GetState() == agentpb.ContainerState_CONTAINER_STATE_STOPPED {
 		if byMachine, ok := s.containers[runId]; ok {
-			delete(byMachine, machineId)
+			delete(byMachine, agentId)
 			if len(byMachine) == 0 {
 				delete(s.containers, runId)
 			}
@@ -254,9 +254,9 @@ func (s *session) track(report *agentpb.ContainerReport) {
 		return
 	}
 	if s.containers[runId] == nil {
-		s.containers[runId] = map[id.MachineId]agentpb.ContainerState{}
+		s.containers[runId] = map[id.AgentId]agentpb.ContainerState{}
 	}
-	s.containers[runId][machineId] = report.GetState()
+	s.containers[runId][agentId] = report.GetState()
 }
 
 func (s *session) deliver(res *agentpb.CommandResult) {

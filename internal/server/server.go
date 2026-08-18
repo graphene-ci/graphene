@@ -21,8 +21,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/httpapi"
+	"github.com/graphene-ci/graphene/internal/managed"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/secrets"
+	"github.com/graphene-ci/graphene/internal/sweeper"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -42,7 +44,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	authn := auth.New(cfg.Tokens)
 	registry := agents.New(cfg.AgentHeartbeat, log)
 	store := secrets.Static(cfg.Secrets)
-	machineOps := ops.NewMachineOps(registry, store, userDataBuilder(cfg))
+	agentOps := ops.NewAgentOps(registry, store, userDataBuilder(cfg))
 	artifactOps := ops.NewArtifactOps(cfg.BlobDir)
 
 	codecOpt, unknownOpt, closeProxy, err := temporalproxy.New(cfg.TemporalHostPort)
@@ -62,9 +64,10 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	serverWorker, err := worker.New(worker.Deps{
 		Client:       temporalClient,
 		Registry:     registry,
-		MachineOps:   machineOps,
+		AgentOps:     agentOps,
 		ArtifactOps:  artifactOps,
 		ExternalGRPC: cfg.ExternalGRPC,
+		ExternalHTTP: cfg.ExternalHTTP,
 		RunToken:     firstToken(cfg, "run"),
 		Log:          log,
 	})
@@ -72,12 +75,19 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("assemble worker: %w", err)
 	}
 
+	runner := managed.New(temporalClient, cfg.ExternalGRPC, cfg.ExternalHTTP, firstToken(cfg, "run"), log)
+	sweep := sweeper.New(temporalClient, serverWorker, log)
+
 	httpServer := &http.Server{
 		Addr: cfg.ListenHTTP,
 		Handler: httpapi.New(httpapi.Deps{
 			Auth:             authn,
 			Temporal:         temporalClient,
 			RegistryUpstream: cfg.RegistryUpstream,
+			Secrets:          store,
+			BlobDir:          cfg.BlobDir,
+			Capabilities:     serverWorker,
+			Launcher:         runner,
 			Log:              log,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -99,6 +109,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	})
 	group.Go(func() error { return serverWorker.Run(gctx) })
+	group.Go(func() error { sweep.Tick(gctx, time.Duration(cfg.SweepSeconds)*time.Second); return gctx.Err() })
+	group.Go(func() error { runner.Tick(gctx, time.Duration(cfg.ReapSeconds)*time.Second); return gctx.Err() })
 	group.Go(func() error {
 		<-gctx.Done()
 		grpcServer.GracefulStop()
@@ -114,17 +126,17 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // script for both paths — a fresh VM's user-data and the ssh install —
 // because two scripts would drift. The install token is the machine's
 // agent token from the config.
-func userDataBuilder(cfg config.Config) func(id.MachineId) (string, error) {
-	return func(machineId id.MachineId) (string, error) {
+func userDataBuilder(cfg config.Config) func(id.AgentId) (string, error) {
+	return func(agentId id.AgentId) (string, error) {
 		token := ""
 		for _, t := range cfg.Tokens {
-			if t.Role == "agent" && t.MachineId == string(machineId) {
+			if t.Role == "agent" && t.AgentId == string(agentId) {
 				token = t.Token
 				break
 			}
 		}
 		if token == "" {
-			return "", fmt.Errorf("no agent token configured for machine %q", machineId)
+			return "", fmt.Errorf("no agent token configured for machine %q", agentId)
 		}
 		// The script converges: safe to run twice (ssh install after a
 		// user-data boot, a re-run after a failure).
@@ -134,7 +146,7 @@ mkdir -p /etc/graphene-agent
 cat > /etc/graphene-agent/env <<EOF
 GRAPHENE_AGENT_SERVER=%s
 GRAPHENE_AGENT_TOKEN=%s
-GRAPHENE_AGENT_MACHINE_ID=%s
+GRAPHENE_AGENT_ID=%s
 GRAPHENE_AGENT_REGISTRY=%s
 EOF
 chmod 600 /etc/graphene-agent/env
@@ -162,7 +174,7 @@ UNIT
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
-`, cfg.ExternalGRPC, token, machineId, cfg.ListenHTTP), nil
+`, cfg.ExternalGRPC, token, agentId, cfg.ListenHTTP), nil
 	}
 }
 

@@ -1,9 +1,10 @@
 // Package integration proves the full contour on one developer machine:
-// user code (testpipeline) → graphene server (Temporal proxy, agent
-// registry, server worker) → agent (exec runtime) → machine container →
-// back. A real Temporal dev server underneath (set TEMPORAL_CLI to skip
-// the download); the agent and the pipeline run as separate processes,
-// exactly as they would in an installation.
+// user code (testpipeline, surface v2) → graphene server (Temporal
+// proxy, agent registry, server worker, HTTP door, sweeper) → agent
+// (exec runtime) → per-(agent × run) container → back. A real Temporal
+// dev server underneath (set TEMPORAL_CLI to skip the download); the
+// agent and the pipeline run as separate processes, exactly as they
+// would in an installation.
 package integration
 
 import (
@@ -21,12 +22,14 @@ import (
 	"testing"
 	"time"
 
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/server"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 )
 
@@ -34,7 +37,7 @@ const (
 	agentToken = "test-agent-token"
 	runToken   = "test-run-token"
 	adminToken = "test-admin-token"
-	machineId  = "vm-e2e"
+	agentId    = "vm-e2e"
 	runId      = "run-e2e"
 )
 
@@ -42,17 +45,20 @@ func TestFullContour(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test needs a dev server and process builds")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
-	// Temporal underneath — visible only to the server.
+	// Temporal underneath — visible only to the server. The tree lives
+	// in search attributes: owner, keep-until.
 	srv, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{
 		ExistingPath:  os.Getenv("TEMPORAL_CLI"),
 		ClientOptions: &client.Options{},
-		LogLevel:      "error",
+		LogLevel:      "warn",
 		SearchAttributes: temporal.NewSearchAttributes(
 			entdefine.SearchAttrKind.ValueSet("seed"),
 			entdefine.SearchAttrPhase.ValueSet("seed"),
+			wire.SearchAttrOwner.ValueSet("seed"),
+			wire.SearchAttrKeepUntil.ValueSet(time.Now()),
 		),
 	})
 	if err != nil {
@@ -60,46 +66,62 @@ func TestFullContour(t *testing.T) {
 	}
 	defer func() { _ = srv.Stop() }()
 
-	// Binaries: the agent and the user pipeline.
+	// Binaries: the agent from its sibling checkout, the pipeline here.
 	bins := t.TempDir()
-	// The agent builds from its sibling checkout — its own module owns
-	// its dependency graph.
 	agentBin := build(t, bins, "graphene-agent", filepath.Join("..", "..", "agent"), "./cmd/graphene-agent")
 	pipelineBin := build(t, bins, "testpipeline", "", "github.com/graphene-ci/graphene/integration/testpipeline")
 
 	// The server: one gRPC door (agents + Temporal proxy), one HTTP door.
 	grpcAddr := freeAddr(t)
 	httpAddr := freeAddr(t)
+	blobDir := t.TempDir()
 	cfg := config.Config{
-		ListenGRPC:       grpcAddr,
-		ListenHTTP:       httpAddr,
-		ExternalGRPC:     grpcAddr,
+		ListenGRPC:   grpcAddr,
+		ListenHTTP:   httpAddr,
+		ExternalGRPC: grpcAddr,
+		// DEBUG PROBE: set GRAPHENE_E2E_DIRECT=1 to route containers past
+		// the proxy straight to Temporal.
+		ExternalHTTP:     "http://" + httpAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
-			{Token: agentToken, Role: "agent", MachineId: machineId},
+			{Token: agentToken, Role: "agent", AgentId: agentId},
 			{Token: runToken, Role: "run"},
 			{Token: adminToken, Role: "admin"},
 		},
-		BlobDir: t.TempDir(),
+		BlobDir:               blobDir,
+		AgentHeartbeatSeconds: 1,
+		SweepSeconds:          2,
+		ReapSeconds:           2,
 	}
+	if os.Getenv("GRAPHENE_E2E_DIRECT") == "1" {
+		cfg.ExternalGRPC = srv.FrontendHostPort()
+	}
+	applyDefaults(&cfg)
 	serverCtx, stopServer := context.WithCancel(ctx)
 	defer stopServer()
+	serverLog := io.Writer(os.Stderr)
+	if dir := os.Getenv("GRAPHENE_E2E_LOGS"); dir != "" {
+		if f, err := os.Create(filepath.Join(dir, "server.log")); err == nil { //nolint:gosec // test log dir
+			serverLog = f
+		}
+	}
 	serverDone := make(chan error, 1)
 	go func() {
-		cfg := cfg
-		cfg.AgentHeartbeatSeconds = 1
-		applyDefaults(&cfg)
-		serverDone <- server.Run(serverCtx, cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		serverDone <- server.Run(serverCtx, cfg, slog.New(slog.NewTextHandler(serverLog, nil)))
 	}()
 	waitHTTP(t, "http://"+httpAddr+"/healthz")
 
 	// The agent: outbound-only, exec runtime (the "container" is the same
 	// pipeline binary in the machine role).
 	agentData := t.TempDir()
+	if dir := os.Getenv("GRAPHENE_E2E_LOGS"); dir != "" {
+		agentData = filepath.Join(dir, "agent-data")
+		_ = os.MkdirAll(agentData, 0o750) //nolint:gosec // test log dir named by the runner
+	}
 	agent := command(ctx, agentBin, nil,
 		"GRAPHENE_AGENT_SERVER="+grpcAddr,
 		"GRAPHENE_AGENT_TOKEN="+agentToken,
-		"GRAPHENE_AGENT_MACHINE_ID="+machineId,
+		"GRAPHENE_AGENT_ID="+agentId,
 		"GRAPHENE_AGENT_INSECURE=1",
 		"GRAPHENE_AGENT_DATA_DIR="+agentData,
 		"GRAPHENE_AGENT_RUNTIME=exec",
@@ -112,10 +134,15 @@ func TestFullContour(t *testing.T) {
 	// The run worker: the same user binary in the run role, dialing the
 	// server's proxy — never Temporal itself.
 	markerDir := t.TempDir()
+	if dir := os.Getenv("GRAPHENE_E2E_LOGS"); dir != "" {
+		markerDir = filepath.Join(dir, "markers")
+		_ = os.MkdirAll(markerDir, 0o750) //nolint:gosec // test log dir named by the runner
+	}
 	runWorker := command(ctx, pipelineBin, nil,
 		"GRAPHENE_ROLE=run",
 		"GRAPHENE_RUN_ID="+runId,
 		"GRAPHENE_ADDRESS="+grpcAddr,
+		"GRAPHENE_HTTP=http://"+httpAddr,
 		"GRAPHENE_TOKEN="+runToken,
 		"GRAPHENE_IMAGE="+pipelineBin,
 		"GRAPHENE_INSECURE=1",
@@ -126,39 +153,70 @@ func TestFullContour(t *testing.T) {
 	defer stop(runWorker)
 
 	// Start the run through the server API — the only door.
-	params, _ := json.Marshal(map[string]string{"machineId": machineId, "markerDir": markerDir})
-	body, _ := json.Marshal(map[string]any{"runId": runId, "workflow": "E2EPipeline", "params": json.RawMessage(params)})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+httpAddr+"/api/v1/runs", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("start run: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	params, _ := json.Marshal(map[string]any{
+		"agentId":   agentId,
+		"markerDir": markerDir,
+		"keep":      3 * time.Second,
+	})
+	body, _ := json.Marshal(map[string]any{"runId": runId, "pipeline": "e2e", "params": json.RawMessage(params)})
+	resp := doJSON(ctx, t, http.MethodPost, "http://"+httpAddr+"/api/v1/runs", adminToken, body)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		t.Fatalf("start run: %s: %s", resp.Status, raw)
 	}
+	_ = resp.Body.Close()
 
-	// The run completes: machine declared and ready (agent connected),
-	// container ensured on first touch, both machine functions executed
-	// inside the agent-hosted process, cleanup ran.
+	//nolint:errcheck,gosec // debug hook, best effort
+	if dir := os.Getenv("GRAPHENE_E2E_LOGS"); dir != "" {
+		go func() {
+			time.Sleep(45 * time.Second)
+			f, _ := os.Create(filepath.Join(dir, "history.log"))
+			defer f.Close()
+			for _, kind := range []enums.TaskQueueType{enums.TASK_QUEUE_TYPE_WORKFLOW, enums.TASK_QUEUE_TYPE_ACTIVITY} {
+				tq, tqErr := srv.Client().DescribeTaskQueue(ctx, "agent/"+agentId+"/run/run/"+runId, kind)
+				fmt.Fprintf(f, "TASKQUEUE %v err=%v %v\n", kind, tqErr, tq.String())
+			}
+			it := srv.Client().GetWorkflowHistory(ctx, "run/"+runId, "", false, 0)
+			for it.HasNext() {
+				ev, err := it.Next()
+				if err != nil {
+					fmt.Fprintln(f, "ERR", err)
+					return
+				}
+				fmt.Fprintf(f, "%d %s %s\n", ev.GetEventId(), ev.GetEventType(), ev.String()[:min(300, len(ev.String()))])
+			}
+		}()
+	}
+
+	// The run completes: agent declared and connected, container ensured
+	// on first touch, activities executed inside the agent-hosted
+	// process, capability published and required, selection fanned out,
+	// artifact uploaded and attached, stand transfer done, cleanup ran.
 	awaitStatus(ctx, t, httpAddr, "Completed")
 
-	assertFile(t, filepath.Join(markerDir, "on-machine"))
-	assertFile(t, filepath.Join(markerDir, "action"))
-
-	// The machine functions ran in the agent-hosted process, not in the
-	// run worker: the recorded pid differs from the run worker's.
-	raw, err := os.ReadFile(filepath.Join(markerDir, "on-machine")) //nolint:gosec // test reads its own tempdir
+	for _, marker := range []string{"on-machine", "action", "fan-out"} {
+		if _, err := os.Stat(filepath.Join(markerDir, marker)); err != nil { //nolint:gosec // test dir
+			t.Fatalf("expected marker %s: %v", marker, err)
+		}
+	}
+	// The machine code ran in the agent-hosted process, not the worker.
+	raw, err := os.ReadFile(filepath.Join(markerDir, "on-machine")) //nolint:gosec // test tempdir
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := fmt.Sprintf("pid=%d", runWorker.Process.Pid); string(raw) == want {
-		t.Fatalf("machine function ran inside the run worker (pid %d)", runWorker.Process.Pid)
+		t.Fatalf("machine code ran inside the run worker (pid %d)", runWorker.Process.Pid)
 	}
 
-	// Cleanup stopped the machine container: the agent's state dir drains.
+	// The artifact's bytes reached the blob store; the stand TTL then
+	// collects the record and its finalizer deletes the bytes.
+	awaitTrue(ctx, t, "stand TTL sweep of the artifact", func() bool {
+		left, _ := filepath.Glob(filepath.Join(blobDir, "blobs", "*"))
+		return len(left) == 0
+	})
+
+	// Cleanup stopped the machine container: the agent's state drains.
 	awaitTrue(ctx, t, "machine container stopped", func() bool {
 		entries, err := os.ReadDir(filepath.Join(agentData, "state"))
 		return err == nil && len(entries) == 0
@@ -183,8 +241,17 @@ func build(t *testing.T, dir, name, workdir, pkg string) string {
 func command(ctx context.Context, bin string, args []string, env ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // test runs binaries it just built
 	cmd.Env = append(os.Environ(), env...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	out := os.Stderr
+	if dir := os.Getenv("GRAPHENE_E2E_LOGS"); dir != "" {
+		//nolint:gosec // test log dir
+		f, err := os.OpenFile(filepath.Join(dir, filepath.Base(bin)+".log"),
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err == nil {
+			out = f
+		}
+	}
+	cmd.Stdout = out
+	cmd.Stderr = out
 	return cmd
 }
 
@@ -206,6 +273,20 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
+func doJSON(ctx context.Context, t *testing.T, method, url, token string, body []byte) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func waitHTTP(t *testing.T, url string) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
@@ -225,18 +306,16 @@ func waitHTTP(t *testing.T, url string) {
 func awaitStatus(ctx context.Context, t *testing.T, httpAddr, want string) {
 	t.Helper()
 	awaitTrue(ctx, t, "run status "+want, func() bool {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+httpAddr+"/api/v1/runs/"+runId, nil)
-		req.Header.Set("Authorization", "Bearer "+adminToken)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return false
-		}
+		resp := doJSON(ctx, t, http.MethodGet, "http://"+httpAddr+"/api/v1/runs/"+runId, adminToken, nil)
 		defer func() { _ = resp.Body.Close() }()
 		var status struct {
 			Status string `json:"status"`
 		}
 		if json.NewDecoder(resp.Body).Decode(&status) != nil {
 			return false
+		}
+		if status.Status == "Failed" || status.Status == "Terminated" {
+			t.Fatalf("run reached %s", status.Status)
 		}
 		return status.Status == want
 	})
@@ -256,13 +335,6 @@ func awaitTrue(ctx context.Context, t *testing.T, what string, cond func() bool)
 	}
 }
 
-func assertFile(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected file %s: %v", path, err)
-	}
-}
-
 // applyDefaults mirrors config.Load's defaulting for a hand-built config.
 func applyDefaults(cfg *config.Config) {
 	if cfg.AgentHeartbeatSeconds == 0 {
@@ -271,5 +343,11 @@ func applyDefaults(cfg *config.Config) {
 	cfg.AgentHeartbeat = time.Duration(cfg.AgentHeartbeatSeconds) * time.Second
 	if cfg.TemporalNamespace == "" {
 		cfg.TemporalNamespace = "default"
+	}
+	if cfg.SweepSeconds == 0 {
+		cfg.SweepSeconds = 30
+	}
+	if cfg.ReapSeconds == 0 {
+		cfg.ReapSeconds = 10
 	}
 }

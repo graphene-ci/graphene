@@ -4,28 +4,49 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/pipeline"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
+
+// CapabilityPublisher writes a capability onto an agent's record.
+type CapabilityPublisher interface {
+	PublishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error
+}
+
+// RunLauncher starts the managed run container for a run.
+type RunLauncher interface {
+	Start(ctx context.Context, runId id.RunId, image string) error
+}
 
 // Deps is everything the HTTP API needs.
 type Deps struct {
 	Auth             *auth.Authenticator
 	Temporal         client.Client
 	RegistryUpstream string
+	Secrets          secrets.Store
+	BlobDir          string
+	Capabilities     CapabilityPublisher
+	Launcher         RunLauncher
 	Log              *slog.Logger
 }
 
@@ -34,16 +55,19 @@ type Deps struct {
 // server only starts the workflow.
 type StartRunRequest struct {
 	RunId id.RunId `json:"runId"`
-	// Workflow is the registered workflow type name of the pipeline (the
-	// Go function name until the manifest mechanism lands).
-	Workflow string `json:"workflow"`
+	// Pipeline is the workflow type on the wire — the pipeline id.
+	Pipeline string `json:"pipeline"`
 	// Params is the typed params value of the pipeline, as JSON.
 	Params json.RawMessage `json:"params"`
+	// Image, when set, makes the run MANAGED: the server launches the
+	// worker container itself; empty means an inplace worker serves the
+	// queue.
+	Image string `json:"image,omitempty"`
 }
 
 // StartRunResponse reports the started workflow.
 type StartRunResponse struct {
-	WorkflowId string `json:"workflowId"`
+	WorkflowId    string `json:"workflowId"`
 	TemporalRunId string `json:"temporalRunId"`
 }
 
@@ -60,6 +84,14 @@ func New(deps Deps) http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	// Secrets resolve at the point of use, by name, with the worker's
+	// token; the value goes out exactly once and never into records.
+	mux.HandleFunc("GET /api/v1/secrets/{name}", deps.requireRole(deps.getSecret, auth.RoleRun, auth.RoleAdmin))
+	// Blobs are content-addressed: PUT is idempotent by construction.
+	mux.HandleFunc("PUT /api/v1/blobs/{location...}", deps.requireRole(deps.putBlob, auth.RoleRun, auth.RoleAdmin))
+	mux.HandleFunc("GET /api/v1/blobs/{location...}", deps.requireRole(deps.getBlob, auth.RoleRun, auth.RoleAdmin))
+	// Capabilities are published from wherever the installation happened.
+	mux.HandleFunc("PUT /api/v1/agents/{agentId}/capabilities/{name}", deps.requireRole(deps.putCapability, auth.RoleRun, auth.RoleAdmin))
 	if deps.RegistryUpstream != "" {
 		proxy, err := registryProxy(deps.RegistryUpstream)
 		if err != nil {
@@ -83,8 +115,8 @@ func (d Deps) startRun(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Workflow == "" {
-		httpError(w, http.StatusBadRequest, errors.New("workflow is required"))
+	if req.Pipeline == "" {
+		httpError(w, http.StatusBadRequest, errors.New("pipeline is required"))
 		return
 	}
 	opts := client.StartWorkflowOptions{
@@ -97,12 +129,22 @@ func (d Deps) startRun(w http.ResponseWriter, r *http.Request) {
 	if len(req.Params) > 0 {
 		args = append(args, req.Params)
 	}
-	run, err := d.Temporal.ExecuteWorkflow(r.Context(), opts, req.Workflow, args...)
+	run, err := d.Temporal.ExecuteWorkflow(r.Context(), opts, req.Pipeline, args...)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
-	d.Log.Info("run started", "run", req.RunId, "workflow", req.Workflow)
+	if req.Image != "" {
+		if d.Launcher == nil {
+			httpError(w, http.StatusNotImplemented, errors.New("managed runs are not enabled"))
+			return
+		}
+		if err := d.Launcher.Start(r.Context(), req.RunId, req.Image); err != nil {
+			httpError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
+	d.Log.Info("run started", "run", req.RunId, "pipeline", req.Pipeline, "managed", req.Image != "")
 	writeJSON(w, StartRunResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()})
 }
 
@@ -141,6 +183,72 @@ func (d Deps) requireRoleHandler(next http.Handler, roles ...auth.Role) http.Han
 		}
 		httpError(w, http.StatusForbidden, fmt.Errorf("role %s may not call this", p.Role))
 	})
+}
+
+func (d Deps) getSecret(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	value, err := d.Secrets.Get(id.SecretId(name))
+	if err != nil {
+		httpError(w, http.StatusNotFound, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	_, _ = w.Write([]byte(value)) //nolint:gosec // plain-text secret value to an authenticated worker, not HTML
+}
+
+func (d Deps) putBlob(w http.ResponseWriter, r *http.Request) {
+	location := path.Clean(r.PathValue("location"))
+	if location == "." || !filepath.IsLocal(location) {
+		httpError(w, http.StatusBadRequest, errors.New("bad blob location"))
+		return
+	}
+	target := filepath.Join(d.BlobDir, filepath.FromSlash(location))
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640) //nolint:gosec // confined above
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := io.Copy(f, r.Body); err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (d Deps) getBlob(w http.ResponseWriter, r *http.Request) {
+	location := path.Clean(r.PathValue("location"))
+	if location == "." || !filepath.IsLocal(location) {
+		httpError(w, http.StatusBadRequest, errors.New("bad blob location"))
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(d.BlobDir, filepath.FromSlash(location)))
+}
+
+func (d Deps) putCapability(w http.ResponseWriter, r *http.Request) {
+	agentId, err := id.ParseAgentId(r.PathValue("agentId"))
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	var capability pipeline.Capability
+	if err := json.NewDecoder(r.Body).Decode(&capability); err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	if capability.Name == "" || capability.Name != r.PathValue("name") {
+		httpError(w, http.StatusBadRequest, errors.New("capability name mismatch"))
+		return
+	}
+	if err := d.Capabilities.PublishCapability(r.Context(), agentId, capability); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func registryProxy(upstream string) (http.Handler, error) {

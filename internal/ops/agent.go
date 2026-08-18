@@ -15,40 +15,40 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/secrets"
-	"github.com/graphene-ci/pipeline/pkg/flow/machine"
+	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 )
 
-// MachineOps implements machine.Ops: agent presence from the registry,
+// AgentOps implements machine.Ops: agent presence from the registry,
 // ssh install for machines that already exist.
-type MachineOps struct {
+type AgentOps struct {
 	registry *agents.Registry
 	secrets  secrets.Store
-	userData func(id.MachineId) (string, error)
+	userData func(id.AgentId) (string, error)
 }
 
-// NewMachineOps assembles the ops.
-func NewMachineOps(registry *agents.Registry, store secrets.Store, userData func(id.MachineId) (string, error)) *MachineOps {
-	return &MachineOps{registry: registry, secrets: store, userData: userData}
+// NewAgentOps assembles the ops.
+func NewAgentOps(registry *agents.Registry, store secrets.Store, userData func(id.AgentId) (string, error)) *AgentOps {
+	return &AgentOps{registry: registry, secrets: store, userData: userData}
 }
 
 // UserData renders the agent install script for a machine: one script
 // for both paths — a fresh VM's user-data and the ssh install.
-func (o *MachineOps) UserData(machineId id.MachineId) (string, error) {
-	return o.userData(machineId)
+func (o *AgentOps) UserData(agentId id.AgentId) (string, error) {
+	return o.userData(agentId)
 }
 
 // AgentStatus reports whether the machine's agent is connected.
-func (o *MachineOps) AgentStatus(_ context.Context, machineId id.MachineId) (machine.AgentStatus, error) {
-	return o.registry.Status(machineId), nil
+func (o *AgentOps) AgentStatus(_ context.Context, agentId id.AgentId) (agentflow.AgentStatus, error) {
+	return o.registry.Status(agentId), nil
 }
 
 // InstallSSH runs the agent install script on an existing machine over
 // ssh — the same bytes a fresh VM gets through user-data. Idempotent: the
 // script itself converges.
-func (o *MachineOps) InstallSSH(ctx context.Context, machineId id.MachineId, install pipeline.SSHInstall) error {
-	script, err := o.userData(machineId)
+func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install pipeline.SSHInstall) error {
+	script, err := o.userData(agentId)
 	if err != nil {
 		return err
 	}

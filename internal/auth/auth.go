@@ -30,9 +30,9 @@ const (
 // Principal is an authenticated caller.
 type Principal struct {
 	Role Role
-	// MachineId is set for agent principals: the one machine the token
-	// may embody.
-	MachineId id.MachineId
+	// AgentId is set for agent principals: the one record the token may
+	// embody.
+	AgentId id.AgentId
 }
 
 // Authenticator checks tokens.
@@ -49,7 +49,7 @@ func New(tokens []config.Token) *Authenticator {
 func (a *Authenticator) Check(token string) (Principal, bool) {
 	for _, t := range a.tokens {
 		if subtle.ConstantTimeCompare([]byte(t.Token), []byte(token)) == 1 {
-			return Principal{Role: Role(t.Role), MachineId: id.MachineId(t.MachineId)}, true
+			return Principal{Role: Role(t.Role), AgentId: id.AgentId(t.AgentId)}, true
 		}
 	}
 	return Principal{}, false
