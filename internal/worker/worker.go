@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/gopherex/xlog"
@@ -22,7 +23,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 
-	"github.com/graphene-ci/agent/pkg/agentpb"
+	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/ops"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
@@ -34,14 +35,15 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
-// Deps is everything the worker needs.
+// Deps is everything the worker needs — one worker per NAMESPACE, its
+// client bound to the namespace's Temporal namespace.
 type Deps struct {
+	Namespace    string
 	Client       client.Client
 	Registry     *agents.Registry
 	AgentOps     *ops.AgentOps
 	ArtifactOps  *ops.ArtifactOps
 	ExternalGRPC string
-	ExternalHTTP string
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
@@ -191,10 +193,15 @@ func labelsMatch(want, have map[string]string) bool {
 	return true
 }
 
-// transferResource gives a resource to a new owner through the entity's
-// own transfer command. System kinds only for now — library kinds carry
-// their records on run workers and join the tree in a follow-up.
+// transferResource is the activity form of Transfer.
 func (s *Worker) transferResource(ctx context.Context, req wire.TransferResourceRequest) error {
+	return s.Transfer(ctx, req)
+}
+
+// Transfer gives a resource to a new owner through the entity's own
+// transfer command: typed for the system kinds, by wire identity for
+// every kind that registered the command (library kinds included).
+func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest) error {
 	kind, resource, ok := strings.Cut(string(req.Resource), "/")
 	if !ok {
 		return fmt.Errorf("resource ref %q: want kind/id", req.Resource)
@@ -210,7 +217,12 @@ func (s *Worker) transferResource(ctx context.Context, req wire.TransferResource
 		_, err := entclient.Exec(ctx, artifacts, entity.ResourceID(resource), cmd)
 		return err
 	default:
-		return fmt.Errorf("transfer of kind %q is not supported yet", kind)
+		payload, err := json.Marshal(cmd)
+		if err != nil {
+			return err
+		}
+		_, err = entclient.ExecRaw(ctx, s.deps.Client, string(req.Resource), wire.TransferOwnerCmdName, payload, "")
+		return err
 	}
 }
 
@@ -327,7 +339,7 @@ func (s *Worker) deleteResource(ctx context.Context, owner ref.OwnerRef) error {
 // cascade deletes everything owned by owner (recursively), deepest
 // first; the owner itself is the CALLER's business.
 func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
-	children, err := ownedBy(ctx, s.deps.Client, owner)
+	children, err := OwnedBy(ctx, s.deps.Client, owner)
 	if err != nil {
 		return err
 	}
@@ -346,7 +358,7 @@ func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
 
 // ownedBy lists the workflow ids of the entities currently owned by
 // owner. A workflow id IS the resource ref ("kind/id") by construction.
-func ownedBy(ctx context.Context, c client.Client, owner ref.OwnerRef) ([]string, error) {
+func OwnedBy(ctx context.Context, c client.Client, owner ref.OwnerRef) ([]string, error) {
 	query := fmt.Sprintf("EntityOwner = '%s' AND ExecutionStatus = 'Running'", string(owner))
 	var out []string
 	var token []byte
@@ -434,17 +446,17 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 		return errors.New("ensure container: the run has no worker image (" + wire.EnvImage + " was empty)")
 	}
 	env := map[string]string{
-		wire.EnvRole:    "machine",
-		wire.EnvAddress: s.deps.ExternalGRPC,
-		wire.EnvHTTP:    s.deps.ExternalHTTP,
-		wire.EnvRunId:   string(req.RunId),
-		wire.EnvAgentId: string(req.AgentId),
-		wire.EnvImage:   req.Image,
-		wire.EnvToken:   s.deps.RunToken,
+		wire.EnvRole:      "machine",
+		wire.EnvAddress:   s.deps.ExternalGRPC,
+		wire.EnvNamespace: s.deps.Namespace,
+		wire.EnvRunId:     string(req.RunId),
+		wire.EnvAgentId:   string(req.AgentId),
+		wire.EnvImage:     req.Image,
+		wire.EnvToken:     s.deps.RunToken,
 		// TODO(tls): drop once the door serves TLS.
 		wire.EnvInsecure: "1",
 	}
-	if err := s.deps.Registry.EnsureContainer(ctx, &agentpb.ContainerSpec{
+	if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace, &agentpb.ContainerSpec{
 		AgentId: string(req.AgentId),
 		RunId:   string(req.RunId),
 		Image:   req.Image,
@@ -475,7 +487,7 @@ func (s *Worker) runCleanup(ctx context.Context, runId id.RunId) error {
 	if err := s.deleteResource(ctx, ref.RunOwner(runId)); err != nil {
 		return err
 	}
-	return s.deps.Registry.StopRunContainers(ctx, runId)
+	return s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, runId)
 }
 
 // agentUserData renders the install script for a machine.

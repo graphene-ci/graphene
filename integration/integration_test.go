@@ -10,6 +10,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/gopherex/xlog"
@@ -77,19 +78,21 @@ func TestFullContour(t *testing.T) {
 	// The server: one gRPC door (agents + Temporal proxy), one HTTP door.
 	grpcAddr := freeAddr(t)
 	httpAddr := freeAddr(t)
+	connectAddr := freeAddr(t)
 	blobDir := t.TempDir()
 	cfg := config.Config{
-		ListenGRPC:   grpcAddr,
-		ListenHTTP:   httpAddr,
-		ExternalGRPC: grpcAddr,
+		ListenGRPC:    grpcAddr,
+		ListenHTTP:    httpAddr,
+		ListenConnect: connectAddr,
+		ExternalGRPC:  grpcAddr,
 		// DEBUG PROBE: set GRAPHENE_E2E_DIRECT=1 to route containers past
 		// the proxy straight to Temporal.
 		ExternalHTTP:     "http://" + httpAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
-			{Token: agentToken, Role: "agent", AgentId: agentId},
-			{Token: runToken, Role: "run"},
-			{Token: adminToken, Role: "admin"},
+			{Token: agentToken, Role: "agent", Namespace: "default", AgentId: agentId},
+			{Token: runToken, Role: "run", Namespace: "default"},
+			{Token: adminToken, Role: "admin", Namespace: "*"},
 		},
 		BlobDir:               blobDir,
 		AgentHeartbeatSeconds: 1,
@@ -145,7 +148,7 @@ func TestFullContour(t *testing.T) {
 		"GRAPHENE_ROLE=run",
 		"GRAPHENE_RUN_ID="+runId,
 		"GRAPHENE_ADDRESS="+grpcAddr,
-		"GRAPHENE_HTTP=http://"+httpAddr,
+		"GRAPHENE_NAMESPACE=default",
 		"GRAPHENE_TOKEN="+runToken,
 		"GRAPHENE_IMAGE="+pipelineBin,
 		"GRAPHENE_INSECURE=1",
@@ -156,13 +159,21 @@ func TestFullContour(t *testing.T) {
 	defer stop(runWorker)
 
 	// Start the run through the server API — the only door.
-	params, _ := json.Marshal(map[string]any{
+	paramsJSON, _ := json.Marshal(map[string]any{
 		"agentId":   agentId,
 		"markerDir": markerDir,
 		"keep":      3 * time.Second,
 	})
-	body, _ := json.Marshal(map[string]any{"runId": runId, "pipeline": "e2e", "params": json.RawMessage(params)})
-	resp := doJSON(ctx, t, http.MethodPost, "http://"+httpAddr+"/api/v1/runs", adminToken, body)
+	params := base64.StdEncoding.EncodeToString(paramsJSON)
+	// The run starts through the CONNECT port — the browser-facing
+	// management plane speaks plain JSON POSTs.
+	body, _ := json.Marshal(map[string]any{
+		"runId":    runId,
+		"pipeline": "e2e",
+		"params":   params,
+	})
+	resp := doJSON(ctx, t, http.MethodPost,
+		"http://"+connectAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -196,7 +207,7 @@ func TestFullContour(t *testing.T) {
 	// on first touch, activities executed inside the agent-hosted
 	// process, capability published and required, selection fanned out,
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
-	awaitStatus(ctx, t, httpAddr, "Completed")
+	awaitStatus(ctx, t, connectAddr, "Completed")
 
 	for _, marker := range []string{"on-machine", "action", "fan-out"} {
 		if _, err := os.Stat(filepath.Join(markerDir, marker)); err != nil { //nolint:gosec // test dir
@@ -215,7 +226,7 @@ func TestFullContour(t *testing.T) {
 	// The artifact's bytes reached the blob store; the stand TTL then
 	// collects the record and its finalizer deletes the bytes.
 	awaitTrue(ctx, t, "stand TTL sweep of the artifact", func() bool {
-		left, _ := filepath.Glob(filepath.Join(blobDir, "blobs", "*"))
+		left, _ := filepath.Glob(filepath.Join(blobDir, "default", "blobs", "*"))
 		return len(left) == 0
 	})
 
@@ -283,6 +294,7 @@ func doJSON(ctx context.Context, t *testing.T, method, url, token string, body [
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -306,10 +318,12 @@ func waitHTTP(t *testing.T, url string) {
 	t.Fatal("server HTTP never came up")
 }
 
-func awaitStatus(ctx context.Context, t *testing.T, httpAddr, want string) {
+func awaitStatus(ctx context.Context, t *testing.T, connectAddr, want string) {
 	t.Helper()
+	body, _ := json.Marshal(map[string]string{"runId": runId})
 	awaitTrue(ctx, t, "run status "+want, func() bool {
-		resp := doJSON(ctx, t, http.MethodGet, "http://"+httpAddr+"/api/v1/runs/"+runId, adminToken, nil)
+		resp := doJSON(ctx, t, http.MethodPost,
+			"http://"+connectAddr+"/graphene.management.v1.RunsAPI/GetRun", adminToken, body)
 		defer func() { _ = resp.Body.Close() }()
 		var status struct {
 			Status string `json:"status"`

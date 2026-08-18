@@ -1,8 +1,9 @@
 # The graphene installation: the server and everything it stands on.
-# Temporal and the registry are INTERNAL — the server is the single door
-# (gRPC :7233, HTTP :7280). Agents connect from outside to externalGrpc
-# in deployments/config/server.json — edit it to your host's address for
-# machines beyond localhost, and replace the dev tokens.
+# Temporal, minio, and the registry are INTERNAL — the server is the
+# single door (gRPC :7233, HTTP :7280, ConnectRPC :7281 for browsers).
+# Agents connect from outside to GRAPHENE_SERVER_EXTERNAL_GRPC — set it
+# to your host's address for machines beyond localhost, and replace the
+# dev tokens.
 services:
   postgres:
     image: postgres:16-alpine
@@ -49,10 +50,52 @@ services:
     restart: "no"
     networks: [graphene]
 
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: graphene
+      MINIO_ROOT_PASSWORD: graphene-dev-secret
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [graphene]
+
+  # One-shot: the buckets the blob store and the registry live in. The
+  # server ensures its own bucket too — this covers the registry, which
+  # does not.
+  minio-buckets:
+    image: minio/mc:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set graphene http://minio:9000 graphene graphene-dev-secret &&
+        mc mb --ignore-existing graphene/graphene-blobs graphene/graphene-registry
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    networks: [graphene]
+
   registry:
     image: registry:2
-    volumes:
-      - registry-data:/var/lib/registry
+    environment:
+      REGISTRY_STORAGE: s3
+      REGISTRY_STORAGE_S3_REGIONENDPOINT: "http://minio:9000"
+      REGISTRY_STORAGE_S3_REGION: "us-east-1"
+      REGISTRY_STORAGE_S3_BUCKET: "graphene-registry"
+      REGISTRY_STORAGE_S3_ACCESSKEY: "graphene"
+      REGISTRY_STORAGE_S3_SECRETKEY: "graphene-dev-secret"
+      REGISTRY_STORAGE_S3_SECURE: "false"
+      REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
+    depends_on:
+      minio-buckets:
+        condition: service_completed_successfully
     networks: [graphene]
 
   graphene-server:
@@ -64,6 +107,7 @@ services:
     environment:
       GRAPHENE_SERVER_GRPC: ":7233"
       GRAPHENE_SERVER_HTTP: ":7280"
+      GRAPHENE_SERVER_CONNECT: ":7281"
       # Agents and workers OUTSIDE this host dial these — set to the
       # host's real address for machines beyond localhost.
       GRAPHENE_SERVER_EXTERNAL_GRPC: "127.0.0.1:7233"
@@ -71,7 +115,11 @@ services:
       GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
       GRAPHENE_TEMPORAL_NAMESPACE: "default"
       GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
-      GRAPHENE_BLOBS_DIR: "/var/lib/graphene-server/blobs"
+      GRAPHENE_BLOBS_BACKEND: "s3"
+      GRAPHENE_BLOBS_S3_ENDPOINT: "minio:9000"
+      GRAPHENE_BLOBS_S3_BUCKET: "graphene-blobs"
+      GRAPHENE_BLOBS_S3_ACCESS_KEY: "graphene"
+      GRAPHENE_BLOBS_S3_SECRET_KEY: "graphene-dev-secret"
       # REPLACE the dev tokens before exposing the door anywhere.
       GRAPHENE_AUTH_ADMIN_TOKENS: "dev-admin-token"
       GRAPHENE_AUTH_RUN_TOKENS: "dev-run-token"
@@ -79,16 +127,16 @@ services:
       GRAPHENE_LOG_LEVEL: "info"
       GRAPHENE_LOG_FORMAT: "json"
     volumes:
-      - graphene-blobs:/var/lib/graphene-server/blobs
       # The managed contour launches run-worker containers on this host.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      # The single door: the server's gRPC (agents, workers, Temporal
-      # proxy) and HTTP (runs, blobs, secrets, registry proxy). Managed
-      # run containers run with host networking and reach the door
-      # through these published ports (externalGrpc in the config).
+      # The doors: gRPC (agents, workers, Temporal proxy), HTTP (probes,
+      # registry proxy), ConnectRPC (management API for browsers).
+      # Managed run containers run with host networking and reach the
+      # gRPC door through the published port (externalGrpc).
       - "7233:7233"
       - "7280:7280"
+      - "7281:7281"
     # Root for the docker socket; the binary itself needs nothing else.
     user: "0:0"
     networks: [graphene]
@@ -97,12 +145,13 @@ services:
         condition: service_healthy
       temporal-search-attributes:
         condition: service_completed_successfully
+      minio-buckets:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
   postgres-data:
-  registry-data:
-  graphene-blobs:
+  minio-data:
 
 networks:
   graphene:

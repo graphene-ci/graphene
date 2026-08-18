@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// RunsAPI starts and observes pipeline runs. The worker — a managed
+// container or an inplace binary — serves the run's queue; the server
+// starts the workflow (and the container, when the run is managed).
+service RunsAPI {
+  rpc StartRun(StartRunRequest) returns (StartRunResponse);
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  // Result waits for the run to finish and returns its typed result as
+  // JSON.
+  rpc RunResult(RunResultRequest) returns (RunResultResponse);
+  // Cancel asks the run to stop; the guaranteed-teardown path still
+  // runs (unlike a terminate).
+  rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+}
+
+message StartRunRequest {
+  string run_id = 1;
+  // Pipeline is the workflow type on the wire — the pipeline id.
+  string pipeline = 2;
+  // Params is the typed params value of the pipeline, as JSON.
+  bytes params = 3;
+  // Image, when set, makes the run MANAGED: the server launches the
+  // worker container itself.
+  string image = 4;
+}
+
+message StartRunResponse {
+  string workflow_id = 1;
+  string temporal_run_id = 2;
+}
+
+message GetRunRequest {
+  string run_id = 1;
+}
+
+message GetRunResponse {
+  string status = 1;
+}
+
+message RunResultRequest {
+  string run_id = 1;
+}
+
+message RunResultResponse {
+  // Result is the run's typed Result as JSON.
+  bytes result = 1;
+}
+
+message CancelRunRequest {
+  string run_id = 1;
+}
+
+message CancelRunResponse {}
+
+message ListRunsRequest {
+  // Status filters ("Running", "Completed", ...); empty — all.
+  string status = 1;
+}
+
+message RunInfo {
+  string run_id = 1;
+  string pipeline = 2;
+  string status = 3;
+}
+
+message ListRunsResponse {
+  repeated RunInfo runs = 1;
+}

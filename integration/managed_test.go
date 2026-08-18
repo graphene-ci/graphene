@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/gopherex/xlog"
 	"io"
@@ -75,18 +76,22 @@ func TestManagedRun(t *testing.T) {
 
 	grpcAddr := freeAddr(t)
 	httpAddr := freeAddr(t)
+	connectAddr := freeAddr(t)
 	const managedRunId = "run-managed"
 	const managedAgent = "vm-managed"
+	// Managed containers are named per namespace by the runner.
+	const managedContainer = "graphene-run-default-" + managedRunId
 	cfg := config.Config{
 		ListenGRPC:       grpcAddr,
 		ListenHTTP:       httpAddr,
+		ListenConnect:    connectAddr,
 		ExternalGRPC:     grpcAddr,
 		ExternalHTTP:     "http://" + httpAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
-			{Token: agentToken, Role: "agent", AgentId: managedAgent},
-			{Token: runToken, Role: "run"},
-			{Token: adminToken, Role: "admin"},
+			{Token: agentToken, Role: "agent", Namespace: "default", AgentId: managedAgent},
+			{Token: runToken, Role: "run", Namespace: "default"},
+			{Token: adminToken, Role: "admin", Namespace: "*"},
 		},
 		BlobDir:               t.TempDir(),
 		AgentHeartbeatSeconds: 1,
@@ -121,7 +126,7 @@ func TestManagedRun(t *testing.T) {
 	if err := os.Chmod(markerDir, 0o777); err != nil { //nolint:gosec // scratch container writes here
 		t.Fatal(err)
 	}
-	params, _ := json.Marshal(map[string]any{
+	paramsJSON, _ := json.Marshal(map[string]any{
 		"agentId":   managedAgent,
 		"markerDir": markerDir,
 		"keep":      time.Second,
@@ -129,10 +134,11 @@ func TestManagedRun(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"runId":    managedRunId,
 		"pipeline": "e2e",
-		"params":   json.RawMessage(params),
+		"params":   base64.StdEncoding.EncodeToString(paramsJSON),
 		"image":    image,
 	})
-	resp := doJSON(ctx, t, http.MethodPost, "http://"+httpAddr+"/api/v1/runs", adminToken, body)
+	resp := doJSON(ctx, t, http.MethodPost,
+		"http://"+connectAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -142,7 +148,7 @@ func TestManagedRun(t *testing.T) {
 
 	// The container the server launched must exist...
 	awaitTrue(ctx, t, "managed container running", func() bool {
-		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() == nil
+		return exec.Command("docker", "inspect", managedContainer).Run() == nil
 	})
 
 	// The image knows nothing of the machine role binary path — machine
@@ -156,7 +162,7 @@ func TestManagedRun(t *testing.T) {
 		t.Fatalf("terminate: %v", err)
 	}
 	awaitTrue(ctx, t, "managed container reaped", func() bool {
-		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() != nil
+		return exec.Command("docker", "inspect", managedContainer).Run() != nil
 	})
 
 	stopServer()

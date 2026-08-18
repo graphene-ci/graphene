@@ -20,17 +20,19 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 )
 
-// AgentOps implements machine.Ops: agent presence from the registry,
-// ssh install for machines that already exist.
+// AgentOps implements the agent flow's Ops for ONE namespace: agent
+// presence from the registry, ssh install for machines that already
+// exist.
 type AgentOps struct {
-	registry *agents.Registry
-	secrets  secrets.Store
-	userData func(id.AgentId) (string, error)
+	namespace string
+	registry  *agents.Registry
+	secrets   secrets.Store
+	userData  func(id.AgentId) (string, error)
 }
 
-// NewAgentOps assembles the ops.
-func NewAgentOps(registry *agents.Registry, store secrets.Store, userData func(id.AgentId) (string, error)) *AgentOps {
-	return &AgentOps{registry: registry, secrets: store, userData: userData}
+// NewAgentOps assembles the ops bound to a namespace.
+func NewAgentOps(namespace string, registry *agents.Registry, store secrets.Store, userData func(id.AgentId) (string, error)) *AgentOps {
+	return &AgentOps{namespace: namespace, registry: registry, secrets: store, userData: userData}
 }
 
 // UserData renders the agent install script for a machine: one script
@@ -41,7 +43,7 @@ func (o *AgentOps) UserData(agentId id.AgentId) (string, error) {
 
 // AgentStatus reports whether the machine's agent is connected.
 func (o *AgentOps) AgentStatus(_ context.Context, agentId id.AgentId) (agentflow.AgentStatus, error) {
-	return o.registry.Status(agentId), nil
+	return o.registry.Status(o.namespace, agentId), nil
 }
 
 // InstallSSH runs the agent install script on an existing machine over

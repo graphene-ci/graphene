@@ -1,0 +1,119 @@
+// Management plane: the business surface over resources — what a CLI,
+// a UI, or graphene-ci-cloud drives. The caller's NAMESPACE comes from
+// its token, never from a request: a foreign namespace cannot even be
+// asked for.
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// ResourcesAPI operates the resource records: entity workflows with
+// owned lifetimes in one ownership tree.
+service ResourcesAPI {
+  // List returns the resources matching the selector — a snapshot.
+  rpc List(ListRequest) returns (ListResponse);
+  // Get describes one resource: phase, spec, state — works even after
+  // the record closed.
+  rpc Get(GetRequest) returns (GetResponse);
+  // Tree returns the ownership subtree under an owner, parents before
+  // children.
+  rpc Tree(TreeRequest) returns (TreeResponse);
+  // Delete tears the resource down with its whole subtree, deepest
+  // first, and waits for the teardown to finish.
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  // Transfer gives the resource (with its subtree) to a new owner;
+  // ownership is given away, never taken.
+  rpc Transfer(TransferRequest) returns (TransferResponse);
+  // Invoke sends an entity command by name with a raw JSON payload and
+  // returns the raw JSON result. The entity's validators still run; the
+  // request id deduplicates retries.
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+}
+
+// Selector picks resources: every set field must match.
+message Selector {
+  // Kind of the record ("agent", "artifact", library kinds).
+  string kind = 1;
+  // Phase: creating | ready | deleting | deleted | ...
+  string phase = 2;
+  // Owner ref ("run/x", "stand/p", "agent/vm-1").
+  string owner = 3;
+  // Labels matched by equality on the record's labels.
+  map<string, string> labels = 4;
+}
+
+message ListRequest {
+  Selector selector = 1;
+}
+
+message Resource {
+  // Ref addresses the record: "kind/id" — also its workflow id.
+  string ref = 1;
+  string kind = 2;
+  string phase = 3;
+  // Owner is the CURRENT owner from the record's state.
+  string owner = 4;
+  // Spec and state as raw JSON — typed by whoever defined the kind.
+  bytes spec = 5;
+  bytes state = 6;
+  int32 pending_commands = 7;
+  bool marked_for_deletion = 8;
+}
+
+message ListResponse {
+  repeated Resource resources = 1;
+}
+
+message GetRequest {
+  string ref = 1;
+}
+
+message GetResponse {
+  Resource resource = 1;
+}
+
+message TreeRequest {
+  // Owner to start from: "run/x", "stand/p", or a resource ref.
+  string owner = 1;
+}
+
+// TreeNode is one resource with its children.
+message TreeNode {
+  Resource resource = 1;
+  repeated TreeNode children = 2;
+}
+
+message TreeResponse {
+  repeated TreeNode roots = 1;
+}
+
+message DeleteRequest {
+  string ref = 1;
+}
+
+message DeleteResponse {}
+
+message TransferRequest {
+  string ref = 1;
+  string new_owner = 2;
+  // Keep bounds the stay under the new owner, seconds; 0 keeps the
+  // resource until an explicit delete.
+  int64 keep_seconds = 3;
+}
+
+message TransferResponse {}
+
+message InvokeRequest {
+  string ref = 1;
+  string command = 2;
+  // Payload is the command's request as JSON.
+  bytes payload = 3;
+  // RequestId deduplicates retries (empty — generated).
+  string request_id = 4;
+}
+
+message InvokeResponse {
+  // Result is the command's response as JSON.
+  bytes result = 1;
+}

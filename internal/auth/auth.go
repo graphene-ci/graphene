@@ -30,9 +30,18 @@ const (
 // Principal is an authenticated caller.
 type Principal struct {
 	Role Role
+	// Namespace scopes the caller; "*" is every namespace (admins). It
+	// comes from the TOKEN, never from a request: a foreign namespace
+	// cannot even be asked for.
+	Namespace string
 	// AgentId is set for agent principals: the one record the token may
 	// embody.
 	AgentId id.AgentId
+}
+
+// In reports whether the principal may act in the namespace.
+func (p Principal) In(namespace string) bool {
+	return p.Namespace == "*" || p.Namespace == namespace
 }
 
 // Authenticator checks tokens.
@@ -49,7 +58,7 @@ func New(tokens []config.Token) *Authenticator {
 func (a *Authenticator) Check(token string) (Principal, bool) {
 	for _, t := range a.tokens {
 		if subtle.ConstantTimeCompare([]byte(t.Token), []byte(token)) == 1 {
-			return Principal{Role: Role(t.Role), AgentId: id.AgentId(t.AgentId)}, true
+			return Principal{Role: Role(t.Role), Namespace: t.Namespace, AgentId: id.AgentId(t.AgentId)}, true
 		}
 	}
 	return Principal{}, false
