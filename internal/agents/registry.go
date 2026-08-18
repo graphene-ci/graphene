@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/gopherex/xlog"
 	"sync"
 	"time"
 
@@ -30,7 +30,7 @@ type Registry struct {
 	agentpb.UnimplementedAgentAPIServer
 
 	heartbeatSeconds uint32
-	log              *slog.Logger
+	log              *xlog.Logger
 
 	mu     sync.Mutex
 	agents map[id.AgentId]*session
@@ -54,7 +54,7 @@ type session struct {
 }
 
 // New builds the registry.
-func New(heartbeat time.Duration, log *slog.Logger) *Registry {
+func New(heartbeat time.Duration, log *xlog.Logger) *Registry {
 	return &Registry{
 		heartbeatSeconds: uint32(max(1, int(heartbeat/time.Second))), //nolint:gosec // small positive
 		log:              log,
@@ -103,9 +103,9 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 			delete(r.agents, agentId)
 		}
 		r.mu.Unlock()
-		r.log.Info("agent disconnected", "machine", agentId)
+		r.log.Info("agent disconnected", xlog.Any("agent", agentId))
 	}()
-	r.log.Info("agent connected", "machine", agentId, "version", hello.GetAgentVersion())
+	r.log.Info("agent connected", xlog.Any("agent", agentId), xlog.String("version", hello.GetAgentVersion()))
 
 	if err := s.send(&agentpb.SessionResponse{Body: &agentpb.SessionResponse_HelloAck{
 		HelloAck: &agentpb.HelloAck{HeartbeatSeconds: r.heartbeatSeconds},
@@ -127,10 +127,10 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 		case *agentpb.SessionRequest_ContainerReport:
 			s.track(body.ContainerReport)
 			r.log.Info("container report",
-				"machine", body.ContainerReport.GetAgentId(),
-				"run", body.ContainerReport.GetRunId(),
-				"state", body.ContainerReport.GetState().String(),
-				"message", body.ContainerReport.GetMessage())
+				xlog.String("agent", body.ContainerReport.GetAgentId()),
+				xlog.String("run", body.ContainerReport.GetRunId()),
+				xlog.String("state", body.ContainerReport.GetState().String()),
+				xlog.String("message", body.ContainerReport.GetMessage()))
 		case *agentpb.SessionRequest_CommandResult:
 			s.deliver(body.CommandResult)
 		}

@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gopherex/xlog"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -47,7 +47,9 @@ type Deps struct {
 	BlobDir          string
 	Capabilities     CapabilityPublisher
 	Launcher         RunLauncher
-	Log              *slog.Logger
+	// Health serves the outside probes (/healthz/liveness, readiness).
+	Health http.Handler
+	Log    *xlog.Logger
 }
 
 // StartRunRequest asks the server to start a pipeline run. The worker —
@@ -81,9 +83,14 @@ func New(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/runs", deps.requireRole(deps.startRun, auth.RoleRun, auth.RoleAdmin))
 	mux.HandleFunc("GET /api/v1/runs/{runId}", deps.requireRole(deps.runStatus, auth.RoleRun, auth.RoleAdmin))
+	// Liveness alias for the historical path; the real probes live under
+	// /healthz/... — no token: balancers and kubelets call these.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	if deps.Health != nil {
+		mux.Handle("/healthz/", deps.Health)
+	}
 	// Secrets resolve at the point of use, by name, with the worker's
 	// token; the value goes out exactly once and never into records.
 	mux.HandleFunc("GET /api/v1/secrets/{name}", deps.requireRole(deps.getSecret, auth.RoleRun, auth.RoleAdmin))
@@ -95,7 +102,7 @@ func New(deps Deps) http.Handler {
 	if deps.RegistryUpstream != "" {
 		proxy, err := registryProxy(deps.RegistryUpstream)
 		if err != nil {
-			deps.Log.Error("registry proxy disabled", "error", err)
+			deps.Log.Error("registry proxy disabled", xlog.Err(err))
 		} else {
 			// Agents pull worker images through here — the only registry
 			// they know.
@@ -144,7 +151,7 @@ func (d Deps) startRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	d.Log.Info("run started", "run", req.RunId, "pipeline", req.Pipeline, "managed", req.Image != "")
+	d.Log.Info("run started", xlog.Any("run", req.RunId), xlog.String("pipeline", req.Pipeline), xlog.Bool("managed", req.Image != ""))
 	writeJSON(w, StartRunResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()})
 }
 

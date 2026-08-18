@@ -76,6 +76,8 @@ services:
       GRAPHENE_AUTH_ADMIN_TOKENS: "dev-admin-token"
       GRAPHENE_AUTH_RUN_TOKENS: "dev-run-token"
       GRAPHENE_AUTH_AGENT_TOKENS: "vm-1:dev-agent-token"
+      GRAPHENE_LOG_LEVEL: "info"
+      GRAPHENE_LOG_FORMAT: "json"
     volumes:
       - graphene-blobs:/var/lib/graphene-server/blobs
       # The managed contour launches run-worker containers on this host.

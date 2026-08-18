@@ -62,6 +62,13 @@ type File struct {
 		Values map[string]string `mapstructure:"values"`
 	} `mapstructure:"secrets"`
 
+	Log struct {
+		// Level: debug | info | warn | error.
+		Level string `mapstructure:"level" default:"info" validate:"oneof=debug info warn error"`
+		// Format: json (production) | console (humans).
+		Format string `mapstructure:"format" default:"json" validate:"oneof=json console"`
+	} `mapstructure:"log"`
+
 	Intervals struct {
 		AgentHeartbeatSeconds int `mapstructure:"agent_heartbeat_seconds" default:"15"`
 		SweepSeconds          int `mapstructure:"sweep_seconds" default:"30"`
@@ -71,6 +78,9 @@ type File struct {
 
 // Config is the resolved runtime configuration the server composes from.
 type Config struct {
+	LogLevel  string
+	LogFormat string
+
 	ListenGRPC   string
 	ListenHTTP   string
 	ExternalGRPC string
@@ -120,6 +130,8 @@ func Load() (Config, error) {
 // Resolve turns the file shape into the runtime configuration.
 func Resolve(f File) (Config, error) {
 	cfg := Config{
+		LogLevel:              f.Log.Level,
+		LogFormat:             f.Log.Format,
 		ListenGRPC:            f.Server.Grpc,
 		ListenHTTP:            f.Server.HTTP,
 		ExternalGRPC:          f.Server.ExternalGRPC,
