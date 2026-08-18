@@ -1,0 +1,107 @@
+# The graphene installation: the server and everything it stands on.
+# Temporal and the registry are INTERNAL — the server is the single door
+# (gRPC :7233, HTTP :7280). Agents connect from outside to externalGrpc
+# in deployments/config/server.json — edit it to your host's address for
+# machines beyond localhost, and replace the dev tokens.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [graphene]
+
+  temporal:
+    image: temporalio/auto-setup:1.29.7
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "temporal operator cluster health --address temporal:7233 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks: [graphene]
+
+  temporal-search-attributes:
+    image: temporalio/admin-tools:1.29.7-tctl-1.18.4-cli-1.7.2
+    entrypoint: ["/bin/sh", "/create-search-attributes.sh"]
+    volumes:
+      - ./deployments/temporal/create-search-attributes.sh:/create-search-attributes.sh:ro
+    depends_on:
+      temporal:
+        condition: service_healthy
+    restart: "no"
+    networks: [graphene]
+
+  registry:
+    image: registry:2
+    volumes:
+      - registry-data:/var/lib/registry
+    networks: [graphene]
+
+  graphene-server:
+    build:
+      context: .
+      dockerfile: deployments/server.Dockerfile
+    # The WHOLE configuration is environment: the dotted YAML path
+    # uppercased under the GRAPHENE prefix (see internal/config).
+    environment:
+      GRAPHENE_SERVER_GRPC: ":7233"
+      GRAPHENE_SERVER_HTTP: ":7280"
+      # Agents and workers OUTSIDE this host dial these — set to the
+      # host's real address for machines beyond localhost.
+      GRAPHENE_SERVER_EXTERNAL_GRPC: "127.0.0.1:7233"
+      GRAPHENE_SERVER_EXTERNAL_HTTP: "http://127.0.0.1:7280"
+      GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
+      GRAPHENE_TEMPORAL_NAMESPACE: "default"
+      GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
+      GRAPHENE_BLOBS_DIR: "/var/lib/graphene-server/blobs"
+      # REPLACE the dev tokens before exposing the door anywhere.
+      GRAPHENE_AUTH_ADMIN_TOKENS: "dev-admin-token"
+      GRAPHENE_AUTH_RUN_TOKENS: "dev-run-token"
+      GRAPHENE_AUTH_AGENT_TOKENS: "vm-1:dev-agent-token"
+    volumes:
+      - graphene-blobs:/var/lib/graphene-server/blobs
+      # The managed contour launches run-worker containers on this host.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      # The single door: the server's gRPC (agents, workers, Temporal
+      # proxy) and HTTP (runs, blobs, secrets, registry proxy). Managed
+      # run containers run with host networking and reach the door
+      # through these published ports (externalGrpc in the config).
+      - "7233:7233"
+      - "7280:7280"
+    # Root for the docker socket; the binary itself needs nothing else.
+    user: "0:0"
+    networks: [graphene]
+    depends_on:
+      temporal:
+        condition: service_healthy
+      temporal-search-attributes:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  registry-data:
+  graphene-blobs:
+
+networks:
+  graphene:
+    name: graphene

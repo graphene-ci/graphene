@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/google/uuid v1.6.0
+	github.com/gopherex/xconf v1.1.1
 	github.com/graphene-ci/agent v0.0.0-20260818135129-d3db41d2b4c0
 	github.com/graphene-ci/pipeline v0.0.0-20260818144554-48ca5450afca
 	github.com/graphene-ci/temporal-entity v0.0.0-20260818135158-717d0ab8b0f7
@@ -15,9 +16,11 @@ require (
 	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
@@ -60,5 +63,4 @@ require (
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
