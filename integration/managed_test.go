@@ -142,7 +142,7 @@ func TestManagedRun(t *testing.T) {
 
 	// The container the server launched must exist...
 	awaitTrue(ctx, t, "managed container running", func() bool {
-		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() == nil //nolint:gosec // fixed args
+		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() == nil
 	})
 
 	// The image knows nothing of the machine role binary path — machine
@@ -156,7 +156,7 @@ func TestManagedRun(t *testing.T) {
 		t.Fatalf("terminate: %v", err)
 	}
 	awaitTrue(ctx, t, "managed container reaped", func() bool {
-		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() != nil //nolint:gosec // fixed args
+		return exec.Command("docker", "inspect", "graphene-run-"+managedRunId).Run() != nil
 	})
 
 	stopServer()
