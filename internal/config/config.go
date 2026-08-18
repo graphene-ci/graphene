@@ -25,8 +25,11 @@ type File struct {
 	Server struct {
 		// Grpc is the single gRPC door: agent sessions + Temporal proxy.
 		Grpc string `mapstructure:"grpc" default:":7233"`
-		// Http is the HTTP door: runs, blobs, secrets, registry proxy.
+		// Http is the HTTP door: probes and the registry proxy.
 		HTTP string `mapstructure:"http" default:":7280"`
+		// Connect serves the management API for browsers (ConnectRPC:
+		// gRPC-web/JSON) on its own port.
+		Connect string `mapstructure:"connect" default:":7281"`
 		// ExternalGrpc is what workers and agents dial; defaults to Grpc.
 		ExternalGRPC string `mapstructure:"external_grpc"`
 		// ExternalHttp is the HTTP base workers use; defaults from Http.
@@ -44,14 +47,25 @@ type File struct {
 	} `mapstructure:"registry"`
 
 	Blobs struct {
-		Dir string `mapstructure:"dir" default:"/var/lib/graphene-server/blobs"`
+		// Backend: file | s3.
+		Backend string `mapstructure:"backend" default:"file" validate:"oneof=file s3"`
+		Dir     string `mapstructure:"dir" default:"/var/lib/graphene-server/blobs"`
+		S3      struct {
+			Endpoint  string `mapstructure:"endpoint"`
+			Bucket    string `mapstructure:"bucket" default:"graphene-blobs"`
+			AccessKey string `mapstructure:"access_key"`
+			SecretKey string `mapstructure:"secret_key"`
+			UseSSL    bool   `mapstructure:"use_ssl"`
+		} `mapstructure:"s3"`
 	} `mapstructure:"blobs"`
 
 	Auth struct {
-		// AdminTokens / RunTokens are comma-separated token lists.
+		// AdminTokens / RunTokens are comma-separated "token[@namespace]"
+		// lists; an admin token defaults to every namespace ("*"), a run
+		// token to "default".
 		AdminTokens string `mapstructure:"admin_tokens"`
 		RunTokens   string `mapstructure:"run_tokens"`
-		// AgentTokens is comma-separated "agentId:token" pairs.
+		// AgentTokens is comma-separated "agentId:token[@namespace]".
 		AgentTokens string `mapstructure:"agent_tokens"`
 	} `mapstructure:"auth"`
 
@@ -81,10 +95,11 @@ type Config struct {
 	LogLevel  string
 	LogFormat string
 
-	ListenGRPC   string
-	ListenHTTP   string
-	ExternalGRPC string
-	ExternalHTTP string
+	ListenGRPC    string
+	ListenHTTP    string
+	ListenConnect string
+	ExternalGRPC  string
+	ExternalHTTP  string
 
 	TemporalHostPort  string
 	TemporalNamespace string
@@ -92,7 +107,9 @@ type Config struct {
 	Tokens  []Token
 	Secrets map[string]string
 
+	BlobBackend      string
 	BlobDir          string
+	BlobS3           S3
 	RegistryUpstream string
 
 	AgentHeartbeat        time.Duration
@@ -101,11 +118,22 @@ type Config struct {
 	ReapSeconds           int
 }
 
+// S3 is the blob store's S3 wiring.
+type S3 struct {
+	Endpoint  string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+	UseSSL    bool
+}
+
 // Token is one credential with its scope.
 type Token struct {
 	Token string
 	// Role is "agent", "run", or "admin".
 	Role string
+	// Namespace scopes the token; "*" is every namespace (admins).
+	Namespace string
 	// AgentId scopes an agent token to the one record it may embody.
 	AgentId string
 }
@@ -130,15 +158,24 @@ func Load() (Config, error) {
 // Resolve turns the file shape into the runtime configuration.
 func Resolve(f File) (Config, error) {
 	cfg := Config{
-		LogLevel:              f.Log.Level,
-		LogFormat:             f.Log.Format,
-		ListenGRPC:            f.Server.Grpc,
-		ListenHTTP:            f.Server.HTTP,
-		ExternalGRPC:          f.Server.ExternalGRPC,
-		ExternalHTTP:          f.Server.ExternalHTTP,
-		TemporalHostPort:      f.Temporal.HostPort,
-		TemporalNamespace:     f.Temporal.Namespace,
-		BlobDir:               f.Blobs.Dir,
+		LogLevel:          f.Log.Level,
+		LogFormat:         f.Log.Format,
+		ListenGRPC:        f.Server.Grpc,
+		ListenHTTP:        f.Server.HTTP,
+		ListenConnect:     f.Server.Connect,
+		ExternalGRPC:      f.Server.ExternalGRPC,
+		ExternalHTTP:      f.Server.ExternalHTTP,
+		TemporalHostPort:  f.Temporal.HostPort,
+		TemporalNamespace: f.Temporal.Namespace,
+		BlobBackend:       f.Blobs.Backend,
+		BlobDir:           f.Blobs.Dir,
+		BlobS3: S3{
+			Endpoint:  f.Blobs.S3.Endpoint,
+			Bucket:    f.Blobs.S3.Bucket,
+			AccessKey: f.Blobs.S3.AccessKey,
+			SecretKey: f.Blobs.S3.SecretKey,
+			UseSSL:    f.Blobs.S3.UseSSL,
+		},
 		RegistryUpstream:      f.Registry.Upstream,
 		AgentHeartbeatSeconds: f.Intervals.AgentHeartbeatSeconds,
 		SweepSeconds:          f.Intervals.SweepSeconds,
@@ -156,18 +193,21 @@ func Resolve(f File) (Config, error) {
 	}
 	cfg.AgentHeartbeat = time.Duration(cfg.AgentHeartbeatSeconds) * time.Second
 
-	for _, tok := range splitCSV(f.Auth.AdminTokens) {
-		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "admin"})
+	for _, entry := range splitCSV(f.Auth.AdminTokens) {
+		tok, ns := splitToken(entry, "*")
+		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "admin", Namespace: ns})
 	}
-	for _, tok := range splitCSV(f.Auth.RunTokens) {
-		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "run"})
+	for _, entry := range splitCSV(f.Auth.RunTokens) {
+		tok, ns := splitToken(entry, "default")
+		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "run", Namespace: ns})
 	}
 	for _, pair := range splitCSV(f.Auth.AgentTokens) {
-		agentId, tok, ok := strings.Cut(pair, ":")
-		if !ok || agentId == "" || tok == "" {
-			return cfg, fmt.Errorf("auth.agent_tokens: %q is not agentId:token", pair)
+		agentId, rest, ok := strings.Cut(pair, ":")
+		if !ok || agentId == "" || rest == "" {
+			return cfg, fmt.Errorf("auth.agent_tokens: %q is not agentId:token[@namespace]", pair)
 		}
-		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "agent", AgentId: agentId})
+		tok, ns := splitToken(rest, "default")
+		cfg.Tokens = append(cfg.Tokens, Token{Token: tok, Role: "agent", Namespace: ns, AgentId: agentId})
 	}
 	if len(cfg.Tokens) == 0 {
 		return cfg, fmt.Errorf("no tokens configured: nobody could connect")
@@ -190,6 +230,14 @@ func Resolve(f File) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// splitToken parses "token[@namespace]".
+func splitToken(entry, defaultNS string) (token, namespace string) {
+	if tok, ns, ok := strings.Cut(entry, "@"); ok && ns != "" {
+		return tok, ns
+	}
+	return entry, defaultNS
 }
 
 func splitCSV(s string) []string {

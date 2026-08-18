@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// NamespacesAPI manages the isolation units of an installation. A
+// graphene namespace is SYMMETRIC to a Temporal namespace: records,
+// queues, visibility, the ownership tree — all isolated by the durable
+// core itself. Tokens are scoped to one namespace; in the cloud a
+// namespace becomes an organization's home.
+service NamespacesAPI {
+  // Create registers the namespace in Temporal (with the graphene
+  // search attributes) and makes it schedulable. Idempotent.
+  rpc CreateNamespace(CreateNamespaceRequest) returns (CreateNamespaceResponse);
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse);
+}
+
+message CreateNamespaceRequest {
+  string name = 1;
+  // RetentionDays for closed workflows (default 30).
+  int32 retention_days = 2;
+}
+
+message CreateNamespaceResponse {}
+
+message ListNamespacesRequest {}
+
+message ListNamespacesResponse {
+  repeated string names = 1;
+}

@@ -25,15 +25,15 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
-// Runner launches and reaps managed run containers.
+// Runner launches and reaps managed run containers of ONE namespace.
 type Runner struct {
-	docker   *dockerclient.Client
-	temporal client.Client
-	log      *xlog.Logger
+	namespace string
+	docker    *dockerclient.Client
+	temporal  client.Client
+	log       *xlog.Logger
 
 	// wiring handed to every run container.
 	externalGRPC string
-	externalHTTP string
 	runToken     string
 
 	mu   sync.Mutex
@@ -42,18 +42,18 @@ type Runner struct {
 
 // New builds the runner over the host's docker daemon; an installation
 // without docker serves inplace runs only (Start returns the error).
-func New(temporal client.Client, externalGRPC, externalHTTP, runToken string, log *xlog.Logger) *Runner {
+func New(namespace string, temporal client.Client, externalGRPC, runToken string, log *xlog.Logger) *Runner {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Warn("managed contour disabled: no docker", xlog.Err(err))
 		docker = nil
 	}
 	return &Runner{
+		namespace:    namespace,
 		docker:       docker,
 		temporal:     temporal,
 		log:          log,
 		externalGRPC: externalGRPC,
-		externalHTTP: externalHTTP,
 		runToken:     runToken,
 		runs:         map[id.RunId]string{},
 	}
@@ -87,7 +87,7 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	env := []string{
 		wire.EnvRole + "=run",
 		wire.EnvAddress + "=" + r.externalGRPC,
-		wire.EnvHTTP + "=" + r.externalHTTP,
+		wire.EnvNamespace + "=" + r.namespace,
 		wire.EnvRunId + "=" + string(runId),
 		wire.EnvToken + "=" + r.runToken,
 		wire.EnvImage + "=" + imageRef,
@@ -99,7 +99,7 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 		&container.HostConfig{
 			NetworkMode:   "host",
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-		}, nil, nil, "graphene-run-"+sanitize(string(runId)))
+		}, nil, nil, "graphene-run-"+sanitize(r.namespace)+"-"+sanitize(string(runId)))
 	if err != nil {
 		return fmt.Errorf("create run container: %w", err)
 	}

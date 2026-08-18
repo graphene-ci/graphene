@@ -1,0 +1,20 @@
+lint:
+  use:
+    - DEFAULT
+  service_suffix: API
+generate:
+  inputs:
+    - directory: proto
+  plugins:
+    - name: go
+      out: .
+      opts:
+        module: github.com/graphene-ci/graphene
+    - name: go-grpc
+      out: .
+      opts:
+        module: github.com/graphene-ci/graphene
+    - name: connect-go
+      out: .
+      opts:
+        module: github.com/graphene-ci/graphene

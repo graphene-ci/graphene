@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/graphene-ci/agent/pkg/agentpb"
+	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/auth"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -33,11 +33,19 @@ type Registry struct {
 	log              *xlog.Logger
 
 	mu     sync.Mutex
-	agents map[id.AgentId]*session
+	agents map[agentKey]*session
+}
+
+// agentKey isolates agents per namespace: the same agent id in two
+// namespaces is two different agents.
+type agentKey struct {
+	namespace string
+	agentId   id.AgentId
 }
 
 // session is one connected agent.
 type session struct {
+	namespace   string
 	agentId     id.AgentId
 	facts       *agentpb.Facts
 	factsDigest string
@@ -58,7 +66,7 @@ func New(heartbeat time.Duration, log *xlog.Logger) *Registry {
 	return &Registry{
 		heartbeatSeconds: uint32(max(1, int(heartbeat/time.Second))), //nolint:gosec // small positive
 		log:              log,
-		agents:           map[id.AgentId]*session{},
+		agents:           map[agentKey]*session{},
 	}
 }
 
@@ -80,12 +88,14 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	// The token is scoped to one machine: an agent cannot embody another.
+	// The token is scoped to one record: an agent cannot embody another.
 	if principal.AgentId != agentId {
-		return status.Error(codes.PermissionDenied, "token is not for this machine")
+		return status.Error(codes.PermissionDenied, "token is not for this agent")
 	}
+	key := agentKey{namespace: principal.Namespace, agentId: agentId}
 
 	s := &session{
+		namespace:   principal.Namespace,
 		agentId:     agentId,
 		facts:       hello.GetFacts(),
 		factsDigest: digest(hello.GetFacts()),
@@ -95,15 +105,15 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 		containers:  map[id.RunId]map[id.AgentId]agentpb.ContainerState{},
 	}
 	r.mu.Lock()
-	r.agents[agentId] = s
+	r.agents[key] = s
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
-		if r.agents[agentId] == s {
-			delete(r.agents, agentId)
+		if r.agents[key] == s {
+			delete(r.agents, key)
 		}
 		r.mu.Unlock()
-		r.log.Info("agent disconnected", xlog.Any("agent", agentId))
+		r.log.Info("agent disconnected", xlog.Any("agent", agentId), xlog.String("namespace", key.namespace))
 	}()
 	r.log.Info("agent connected", xlog.Any("agent", agentId), xlog.String("version", hello.GetAgentVersion()))
 
@@ -139,8 +149,8 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 
 // EnsureContainer asks the machine's agent to bring the container up and
 // waits for the command result.
-func (r *Registry) EnsureContainer(ctx context.Context, spec *agentpb.ContainerSpec) error {
-	return r.command(ctx, id.AgentId(spec.GetAgentId()), func(commandId string) *agentpb.SessionResponse {
+func (r *Registry) EnsureContainer(ctx context.Context, namespace string, spec *agentpb.ContainerSpec) error {
+	return r.command(ctx, namespace, id.AgentId(spec.GetAgentId()), func(commandId string) *agentpb.SessionResponse {
 		return &agentpb.SessionResponse{Body: &agentpb.SessionResponse_EnsureContainer{
 			EnsureContainer: &agentpb.EnsureContainer{CommandId: commandId, Spec: spec},
 		}}
@@ -149,8 +159,8 @@ func (r *Registry) EnsureContainer(ctx context.Context, spec *agentpb.ContainerS
 
 // StopContainer asks the machine's agent to stop the (machine × run)
 // container and waits for the result.
-func (r *Registry) StopContainer(ctx context.Context, agentId id.AgentId, runId id.RunId) error {
-	return r.command(ctx, agentId, func(commandId string) *agentpb.SessionResponse {
+func (r *Registry) StopContainer(ctx context.Context, namespace string, agentId id.AgentId, runId id.RunId) error {
+	return r.command(ctx, namespace, agentId, func(commandId string) *agentpb.SessionResponse {
 		return &agentpb.SessionResponse{Body: &agentpb.SessionResponse_StopContainer{
 			StopContainer: &agentpb.StopContainer{
 				CommandId: commandId,
@@ -162,9 +172,9 @@ func (r *Registry) StopContainer(ctx context.Context, agentId id.AgentId, runId 
 }
 
 // Status reports the agent's presence for the machine flow.
-func (r *Registry) Status(agentId id.AgentId) agentflow.AgentStatus {
+func (r *Registry) Status(namespace string, agentId id.AgentId) agentflow.AgentStatus {
 	r.mu.Lock()
-	s, ok := r.agents[agentId]
+	s, ok := r.agents[agentKey{namespace: namespace, agentId: agentId}]
 	r.mu.Unlock()
 	if !ok {
 		return agentflow.AgentStatus{}
@@ -176,9 +186,9 @@ func (r *Registry) Status(agentId id.AgentId) agentflow.AgentStatus {
 	}
 }
 
-func (r *Registry) command(ctx context.Context, agentId id.AgentId, build func(commandId string) *agentpb.SessionResponse) error {
+func (r *Registry) command(ctx context.Context, namespace string, agentId id.AgentId, build func(commandId string) *agentpb.SessionResponse) error {
 	r.mu.Lock()
-	s, ok := r.agents[agentId]
+	s, ok := r.agents[agentKey{namespace: namespace, agentId: agentId}]
 	r.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("agent of machine %q is not connected", agentId)
@@ -215,11 +225,13 @@ func (s *session) send(msg *agentpb.SessionResponse) error {
 
 // StopRunContainers stops the run's container on every machine that has
 // one — the teardown half of the run cleanup.
-func (r *Registry) StopRunContainers(ctx context.Context, runId id.RunId) error {
+func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runId id.RunId) error {
 	r.mu.Lock()
 	sessions := make([]*session, 0, len(r.agents))
-	for _, s := range r.agents {
-		sessions = append(sessions, s)
+	for key, s := range r.agents {
+		if key.namespace == namespace {
+			sessions = append(sessions, s)
+		}
 	}
 	r.mu.Unlock()
 	var errs []error
@@ -230,7 +242,7 @@ func (r *Registry) StopRunContainers(ctx context.Context, runId id.RunId) error 
 		if !has {
 			continue
 		}
-		if err := r.StopContainer(ctx, s.agentId, runId); err != nil {
+		if err := r.StopContainer(ctx, namespace, s.agentId, runId); err != nil {
 			errs = append(errs, err)
 		}
 	}

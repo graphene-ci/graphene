@@ -7,69 +7,51 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/ref"
 )
 
-// ArtifactOps implements artifact.Ops over a filesystem blob store —
-// the dev contour's byte storage (S3 replaces it, the semantics stay:
-// Location is a path inside the store, never an absolute file path).
+// ArtifactOps implements artifact.Ops over the blob store, bound to one
+// namespace.
 type ArtifactOps struct {
-	dir string
+	namespace string
+	store     blob.Store
 }
 
-// NewArtifactOps roots the store.
-func NewArtifactOps(dir string) *ArtifactOps {
-	return &ArtifactOps{dir: dir}
+// NewArtifactOps binds the store to a namespace.
+func NewArtifactOps(namespace string, store blob.Store) *ArtifactOps {
+	return &ArtifactOps{namespace: namespace, store: store}
 }
 
 // Stat verifies the blob exists and, for sha256-pinned refs, that the
 // bytes match the digest.
-func (o *ArtifactOps) Stat(_ context.Context, _ id.ArtifactId, blob ref.BlobRef) (bool, error) {
-	path, err := o.path(blob)
-	if err != nil {
-		return false, err
+func (o *ArtifactOps) Stat(ctx context.Context, _ id.ArtifactId, blobRef ref.BlobRef) (bool, error) {
+	digest, pinned := strings.CutPrefix(blobRef.Digest, "sha256:")
+	if !pinned {
+		return o.store.Exists(ctx, o.namespace, blobRef.Location)
 	}
-	f, err := os.Open(path) //nolint:gosec // path is confined by o.path
-	if errors.Is(err, os.ErrNotExist) {
+	r, err := o.store.Get(ctx, o.namespace, blobRef.Location)
+	if errors.Is(err, blob.ErrNotFound) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = f.Close() }()
-	if digest, ok := strings.CutPrefix(blob.Digest, "sha256:"); ok {
-		h := sha256.New()
-		if _, err := io.Copy(h, f); err != nil {
-			return false, err
-		}
-		if hex.EncodeToString(h.Sum(nil)) != digest {
-			return false, fmt.Errorf("blob at %q does not match digest %s", blob.Location, blob.Digest)
-		}
+	defer func() { _ = r.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return false, err
+	}
+	if hex.EncodeToString(h.Sum(nil)) != digest {
+		return false, fmt.Errorf("blob at %q does not match digest %s", blobRef.Location, blobRef.Digest)
 	}
 	return true, nil
 }
 
 // Delete removes the bytes; not-found is not an error.
-func (o *ArtifactOps) Delete(_ context.Context, _ id.ArtifactId, blob ref.BlobRef) error {
-	path, err := o.path(blob)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
-func (o *ArtifactOps) path(blob ref.BlobRef) (string, error) {
-	loc := filepath.Clean(strings.TrimPrefix(blob.Location, "/"))
-	if loc == "." || !filepath.IsLocal(loc) {
-		return "", fmt.Errorf("blob location %q escapes the store", blob.Location)
-	}
-	return filepath.Join(o.dir, loc), nil
+func (o *ArtifactOps) Delete(ctx context.Context, _ id.ArtifactId, blobRef ref.BlobRef) error {
+	return o.store.Delete(ctx, o.namespace, blobRef.Location)
 }
