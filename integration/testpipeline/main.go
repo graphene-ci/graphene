@@ -1,7 +1,9 @@
-// Command testpipeline is the user code of the integration contour: one
-// binary, every role. The pipeline declares a machine, runs a converging
-// function and a one-shot action on it, and finishes — exercising the
-// whole code → server → agent → container path.
+// Command testpipeline is the user code of the integration contour on
+// surface v2: one binary, every role. It exercises the whole system —
+// an agent with labels, inline activities on its machine (at-least-once
+// and at-most-once), a capability published and required, a selection
+// fan-out, an artifact from computed bytes, a foreign attach, and a
+// stand transfer with a TTL.
 package main
 
 import (
@@ -10,61 +12,107 @@ import (
 	"os"
 	"time"
 
-	"go.temporal.io/sdk/workflow"
-
-	"github.com/graphene-ci/pipeline/pkg/id"
+	pipelineactivity "github.com/graphene-ci/pipeline/pkg/activity"
+	"github.com/graphene-ci/pipeline/pkg/artifact"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 )
 
-// Params is the typed parameter set of the pipeline.
+// Params is the typed input of the run.
 type Params struct {
-	MachineId string `json:"machineId"`
-	MarkerDir string `json:"markerDir"`
+	AgentId   string        `json:"agentId"`
+	MarkerDir string        `json:"markerDir"`
+	Keep      time.Duration `json:"keep"`
 }
 
-// E2EPipeline is the run workflow.
-func E2EPipeline(ctx workflow.Context, params Params) error {
-	machine := pipeline.Machine(ctx, id.MachineId(params.MachineId), pipeline.MachineSpec{})
-	state, err := machine.Ready(ctx)
-	if err != nil {
-		return fmt.Errorf("machine: %w", err)
-	}
-	if !state.AgentConnected {
-		return fmt.Errorf("machine ready but agent not connected")
-	}
-
-	opts := pipeline.ExecOptions{Timeout: time.Minute, HeartbeatTimeout: 20 * time.Second}
-	if err := pipeline.OnMachine(ctx, id.MachineId(params.MachineId), opts,
-		WriteMarker, params.MarkerDir+"/on-machine").Get(ctx, nil); err != nil {
-		return fmt.Errorf("on machine: %w", err)
-	}
-	var pid int
-	if err := pipeline.Action(ctx, id.MachineId(params.MachineId), opts,
-		OneShot, params.MarkerDir+"/action").Get(ctx, &pid); err != nil {
-		return fmt.Errorf("action: %w", err)
-	}
-	if pid == 0 {
-		return fmt.Errorf("action reported no pid")
-	}
-	return nil
-}
-
-// WriteMarker is a machine function: it runs inside the agent-hosted
-// container and proves it by writing where the workflow cannot.
-func WriteMarker(_ context.Context, path string) error {
-	return os.WriteFile(path, []byte(fmt.Sprintf("pid=%d", os.Getpid())), 0o600)
-}
-
-// OneShot is the at-most-once machine function.
-func OneShot(_ context.Context, path string) (int, error) {
-	if err := os.WriteFile(path, []byte("once"), 0o600); err != nil {
-		return 0, err
-	}
-	return os.Getpid(), nil
+// Result is the run's output.
+type Result struct {
+	Report         string `json:"report"`
+	FanOut         int    `json:"fanOut"`
+	BaselineDigest string `json:"baselineDigest"`
 }
 
 func main() {
-	pipeline.Main("e2e", E2EPipeline,
-		pipeline.WithMachineFunctions(WriteMarker, OneShot),
-	)
+	pipeline.Main("e2e", func(ctx pipeline.Context, params Params) (Result, error) {
+		agent := pipeline.NewAgent(ctx, params.AgentId,
+			pipeline.WithLabels(map[string]string{"role": "e2e"}))
+		if state := agent.Ready(ctx); !state.AgentConnected {
+			return Result{}, fmt.Errorf("agent ready but not connected")
+		}
+
+		// Converging code on the machine: proves it runs in the
+		// agent-hosted container by writing where the workflow cannot.
+		report, err := pipelineactivity.Activity(ctx, agent,
+			pipelineactivity.ActivityFn("write-marker",
+				func(_ context.Context, dir string) (string, error) {
+					msg := fmt.Sprintf("pid=%d", os.Getpid())
+					return msg, os.WriteFile(dir+"/on-machine", []byte(msg), 0o600)
+				},
+				params.MarkerDir,
+			),
+		)
+		if err != nil {
+			return Result{}, fmt.Errorf("on machine: %w", err)
+		}
+
+		// One-shot: at most once, never a silent second execution.
+		if _, err := pipelineactivity.Activity(ctx, agent,
+			pipelineactivity.ActivityFn("one-shot",
+				func(_ context.Context, dir string) (string, error) {
+					return "once", os.WriteFile(dir+"/action", []byte("once"), 0o600)
+				},
+				params.MarkerDir,
+			),
+			pipelineactivity.WithGuarantee(pipelineactivity.AtMostOnce),
+		); err != nil {
+			return Result{}, fmt.Errorf("one shot: %w", err)
+		}
+
+		// A capability, published onto the record and then REQUIRED: the
+		// attach below refuses to be ready before it is there.
+		if err := pipeline.PublishCapability(ctx, agent, pipeline.Capability{
+			Name: "marker", Version: "1", BroughtBy: "testpipeline", Ready: true,
+		}); err != nil {
+			return Result{}, fmt.Errorf("publish: %w", err)
+		}
+		foreign := pipeline.AttachAgent(ctx, params.AgentId, pipeline.Need("marker"))
+		if state := foreign.Ready(ctx); !state.AgentConnected {
+			return Result{}, fmt.Errorf("attached agent not connected")
+		}
+
+		// "Run it on all who are marked": selection + fan-out.
+		marked, err := pipeline.SelectAgents(ctx,
+			pipeline.WithLabels(map[string]string{"role": "e2e"}),
+			pipeline.Need("marker"),
+		)
+		if err != nil {
+			return Result{}, fmt.Errorf("select: %w", err)
+		}
+		fanReports, err := pipelineactivity.ActivityAll(ctx, marked,
+			pipelineactivity.ActivityFn("fan-out",
+				func(_ context.Context, dir string) (string, error) {
+					return "fan", os.WriteFile(dir+"/fan-out", []byte("fan"), 0o600)
+				},
+				params.MarkerDir,
+			),
+		)
+		if err != nil {
+			return Result{}, fmt.Errorf("fan out: %w", err)
+		}
+
+		// An artifact from bytes the run computed; then attached back the
+		// foreign way and read.
+		art := pipeline.NewArtifact(ctx, "e2e-report", artifact.FromBytes([]byte(report)))
+		if state := art.Ready(ctx); !state.Verified {
+			return Result{}, fmt.Errorf("artifact not verified")
+		}
+		baseline := pipeline.AttachArtifact(ctx, "e2e-report")
+		digest := baseline.Ready(ctx).Blob.Digest
+
+		// Long life is a transfer: the artifact goes to the pipeline's
+		// Stand with a small TTL — the run ends, the record stays until
+		// the sweeper collects it.
+		pipeline.ToStand(ctx, art, pipeline.KeepFor(params.Keep))
+
+		return Result{Report: report, FanOut: len(fanReports), BaselineDigest: digest}, nil
+	})
 }

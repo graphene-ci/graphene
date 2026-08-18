@@ -10,11 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
-	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
+	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
@@ -24,8 +25,9 @@ import (
 	"github.com/graphene-ci/agent/pkg/agentpb"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/ops"
+	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
-	"github.com/graphene-ci/pipeline/pkg/flow/machine"
+	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 	"github.com/graphene-ci/pipeline/pkg/ref"
@@ -36,9 +38,10 @@ import (
 type Deps struct {
 	Client       client.Client
 	Registry     *agents.Registry
-	MachineOps   *ops.MachineOps
+	AgentOps     *ops.AgentOps
 	ArtifactOps  *ops.ArtifactOps
 	ExternalGRPC string
+	ExternalHTTP string
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
@@ -49,7 +52,7 @@ type Deps struct {
 type Worker struct {
 	w           worker.Worker
 	deps        Deps
-	machineDef  *entdefine.Definition[pipeline.MachineSpec, machine.State]
+	agentDef    *entdefine.Definition[pipeline.AgentSpec, agentflow.State]
 	artifactDef *entdefine.Definition[pipeline.ArtifactSpec, artifact.State]
 }
 
@@ -59,28 +62,156 @@ func New(deps Deps) (*Worker, error) {
 	s := &Worker{
 		w:           w,
 		deps:        deps,
-		machineDef:  machine.Definition(machine.Options{}),
+		agentDef:    agentflow.Definition(agentflow.Options{}),
 		artifactDef: artifact.Definition(),
 	}
 
-	if err := errors.Join(s.machineDef.Register(w), s.artifactDef.Register(w)); err != nil {
+	if err := errors.Join(s.agentDef.Register(w), s.artifactDef.Register(w)); err != nil {
 		return nil, err
 	}
 
 	// Ops behind the flows.
-	w.RegisterActivityWithOptions(deps.MachineOps.InstallSSH, activity.RegisterOptions{Name: machine.InstallSSHActivity})
-	w.RegisterActivityWithOptions(deps.MachineOps.AgentStatus, activity.RegisterOptions{Name: machine.AgentStatusActivity})
+	w.RegisterActivityWithOptions(deps.AgentOps.InstallSSH, activity.RegisterOptions{Name: agentflow.InstallSSHActivity})
+	w.RegisterActivityWithOptions(deps.AgentOps.AgentStatus, activity.RegisterOptions{Name: agentflow.AgentStatusActivity})
 	w.RegisterActivityWithOptions(deps.ArtifactOps.Stat, activity.RegisterOptions{Name: artifact.StatActivity})
 	w.RegisterActivityWithOptions(deps.ArtifactOps.Delete, activity.RegisterOptions{Name: artifact.DeleteActivity})
 
 	// The server-queue contract the pipeline library calls.
-	w.RegisterActivityWithOptions(s.declareMachine, activity.RegisterOptions{Name: wire.DeclareMachineActivity})
+	w.RegisterActivityWithOptions(s.declareAgent, activity.RegisterOptions{Name: wire.DeclareAgentActivity})
 	w.RegisterActivityWithOptions(s.declareArtifact, activity.RegisterOptions{Name: wire.DeclareArtifactActivity})
 	w.RegisterActivityWithOptions(s.deleteResource, activity.RegisterOptions{Name: wire.DeleteResourceActivity})
 	w.RegisterActivityWithOptions(s.ensureContainer, activity.RegisterOptions{Name: wire.EnsureContainerActivity})
 	w.RegisterActivityWithOptions(s.runCleanup, activity.RegisterOptions{Name: wire.RunCleanupActivity})
 	w.RegisterActivityWithOptions(s.agentUserData, activity.RegisterOptions{Name: wire.AgentUserDataActivity})
+	w.RegisterActivityWithOptions(s.attachAgent, activity.RegisterOptions{Name: wire.AttachAgentActivity})
+	w.RegisterActivityWithOptions(s.attachArtifact, activity.RegisterOptions{Name: wire.AttachArtifactActivity})
+	w.RegisterActivityWithOptions(s.selectAgents, activity.RegisterOptions{Name: wire.SelectAgentsActivity})
+	w.RegisterActivityWithOptions(s.publishCapability, activity.RegisterOptions{Name: wire.PublishCapabilityActivity})
+	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
 	return s, nil
+}
+
+// PublishCapability writes a capability onto an agent's record — also
+// the HTTP door's implementation.
+func (s *Worker) PublishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error {
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.Exec(ctx, agents, entity.ResourceID(agentId), agentflow.PublishCapabilityCmd{Capability: capability})
+	return err
+}
+
+// publishCapability is the activity form.
+func (s *Worker) publishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error {
+	return s.PublishCapability(ctx, agentId, capability)
+}
+
+// attachAgent recognizes an EXISTING agent: no record — an error, never
+// a creation. It waits until the agent is ready AND the needs are met.
+func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wire.NeedSpec) (pipeline.AgentState, error) {
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	rid := entity.ResourceID(agentId)
+	for {
+		out, err := agents.Describe(ctx, rid)
+		if err != nil {
+			return pipeline.AgentState{}, fmt.Errorf("agent %s is not known here: %w", agentId, err)
+		}
+		switch out.Phase {
+		case entity.PhaseReady:
+			if pipeline.NeedsSatisfied(needs, out.State.Capabilities) {
+				return out.State.AgentState, nil
+			}
+			activity.RecordHeartbeat(ctx, "waiting for capabilities")
+		case entity.PhaseCreating:
+			activity.RecordHeartbeat(ctx, string(out.Phase))
+		case entity.PhaseDeleting, entity.PhaseDeleted, entity.PhaseDeleteFailed, entity.PhaseCreateFailed:
+			return pipeline.AgentState{}, fmt.Errorf("agent %s is going away (phase %s)", agentId, out.Phase)
+		}
+		select {
+		case <-ctx.Done():
+			return pipeline.AgentState{}, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// attachArtifact recognizes an EXISTING artifact.
+func (s *Worker) attachArtifact(ctx context.Context, artifactId id.ArtifactId) (pipeline.ArtifactState, error) {
+	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
+	rid := entity.ResourceID(artifactId)
+	for {
+		out, err := artifacts.Describe(ctx, rid)
+		if err != nil {
+			return pipeline.ArtifactState{}, fmt.Errorf("artifact %s is not known here: %w", artifactId, err)
+		}
+		switch out.Phase {
+		case entity.PhaseReady:
+			return out.State.ArtifactState, nil
+		case entity.PhaseCreating:
+			activity.RecordHeartbeat(ctx, string(out.Phase))
+		case entity.PhaseDeleting, entity.PhaseDeleted, entity.PhaseDeleteFailed, entity.PhaseCreateFailed:
+			return pipeline.ArtifactState{}, fmt.Errorf("artifact %s is going away (phase %s)", artifactId, out.Phase)
+		}
+		select {
+		case <-ctx.Done():
+			return pipeline.ArtifactState{}, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// selectAgents lists the agents matching the selector — a snapshot.
+func (s *Worker) selectAgents(ctx context.Context, sel wire.AgentSelector) ([]id.AgentId, error) {
+	ids, err := listRunning(ctx, s.deps.Client, agentflow.Kind)
+	if err != nil {
+		return nil, err
+	}
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	var out []id.AgentId
+	for _, rid := range ids {
+		desc, err := agents.Describe(ctx, rid)
+		if err != nil || desc.Phase != entity.PhaseReady {
+			continue
+		}
+		if !labelsMatch(sel.Labels, desc.Spec.Labels) {
+			continue
+		}
+		if !pipeline.NeedsSatisfied(sel.Needs, desc.State.Capabilities) {
+			continue
+		}
+		out = append(out, id.AgentId(rid))
+	}
+	return out, nil
+}
+
+func labelsMatch(want, have map[string]string) bool {
+	for k, v := range want {
+		if have[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// transferResource gives a resource to a new owner through the entity's
+// own transfer command. System kinds only for now — library kinds carry
+// their records on run workers and join the tree in a follow-up.
+func (s *Worker) transferResource(ctx context.Context, req wire.TransferResourceRequest) error {
+	kind, resource, ok := strings.Cut(string(req.Resource), "/")
+	if !ok {
+		return fmt.Errorf("resource ref %q: want kind/id", req.Resource)
+	}
+	cmd := ownership.TransferCmd{NewOwner: req.NewOwner, Keep: req.Keep}
+	switch entity.KindName(kind) {
+	case agentflow.Kind:
+		agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+		_, err := entclient.Exec(ctx, agents, entity.ResourceID(resource), cmd)
+		return err
+	case artifact.Kind:
+		artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
+		_, err := entclient.Exec(ctx, artifacts, entity.ResourceID(resource), cmd)
+		return err
+	default:
+		return fmt.Errorf("transfer of kind %q is not supported yet", kind)
+	}
 }
 
 // Run polls until ctx ends.
@@ -101,33 +232,36 @@ func interruptFromContext(ctx context.Context) <-chan any {
 	return ch
 }
 
-// declareMachine creates (or attaches to) the machine entity and blocks
+// declareAgent creates (or attaches to) the machine entity and blocks
 // until it is ready, heartbeating while it converges.
-func (s *Worker) declareMachine(ctx context.Context, machineId id.MachineId, spec pipeline.MachineSpec) (pipeline.MachineState, error) {
-	machines := entclient.Bind(s.machineDef, s.deps.Client, wire.ServerQueue)
-	rid := entity.ResourceID(machineId)
+func (s *Worker) declareAgent(ctx context.Context, agentId id.AgentId, spec pipeline.AgentSpec) (pipeline.AgentState, error) {
+	machines := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	rid := entity.ResourceID(agentId)
 	if _, err := machines.CreateOrAttach(ctx, rid, spec); err != nil {
-		return pipeline.MachineState{}, err
+		return pipeline.AgentState{}, err
 	}
 	for {
 		out, err := machines.Describe(ctx, rid)
 		if err != nil {
-			return pipeline.MachineState{}, err
+			return pipeline.AgentState{}, err
 		}
 		switch out.Phase {
 		case entity.PhaseReady:
-			return out.State.MachineState, nil
+			if pipeline.NeedsSatisfied(spec.Needs, out.State.Capabilities) {
+				return out.State.AgentState, nil
+			}
+			activity.RecordHeartbeat(ctx, "waiting for capabilities")
 		case entity.PhaseCreateFailed:
-			return pipeline.MachineState{}, fmt.Errorf("machine %s failed to create", machineId)
+			return pipeline.AgentState{}, fmt.Errorf("agent %s failed to create", agentId)
 		case entity.PhaseDeleting, entity.PhaseDeleted, entity.PhaseDeleteFailed:
-			return pipeline.MachineState{}, fmt.Errorf("machine %s is going away (phase %s)", machineId, out.Phase)
+			return pipeline.AgentState{}, fmt.Errorf("machine %s is going away (phase %s)", agentId, out.Phase)
 		case entity.PhaseCreating:
 			// still converging — keep polling
 		}
 		activity.RecordHeartbeat(ctx, string(out.Phase))
 		select {
 		case <-ctx.Done():
-			return pipeline.MachineState{}, ctx.Err()
+			return pipeline.AgentState{}, ctx.Err()
 		case <-time.After(2 * time.Second):
 		}
 	}
@@ -164,60 +298,74 @@ func (s *Worker) declareArtifact(ctx context.Context, artifactId id.ArtifactId, 
 	}
 }
 
-// deleteResource tears down every entity owned by the given owner and
-// waits until each is gone. The owned set is found by scanning the
-// running entities of the known kinds and matching spec.Owner.
-// TODO(chassis): an EntityOwner search attribute in temporal-entity
-// turns the scan into one visibility query.
+// CascadeDelete deletes everything owned by owner, deepest first — the
+// sweeper's entry point and the run cleanup's engine. The tree is read
+// from the EntityOwner search attribute: one visibility query per node;
+// children go before their parent (the vm before the subnet before the
+// network).
+func (s *Worker) CascadeDelete(ctx context.Context, owner ref.OwnerRef) error {
+	return s.cascade(ctx, owner)
+}
+
+// DeleteOne deletes one resource by its workflow id and waits for it to
+// close.
+func (s *Worker) DeleteOne(ctx context.Context, workflowId string) error {
+	if err := s.deps.Client.SignalWorkflow(ctx, workflowId, "", entity.DeleteSignalName, nil); err != nil {
+		return err
+	}
+	return awaitClosed(ctx, s.deps.Client, workflowId)
+}
+
+// deleteResource is the activity form of the cascade.
 func (s *Worker) deleteResource(ctx context.Context, owner ref.OwnerRef) error {
 	if err := owner.Validate(); err != nil {
 		return err
 	}
-	machines := entclient.Bind(s.machineDef, s.deps.Client, wire.ServerQueue)
-	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
-
-	var errs []error
-	errs = append(errs, deleteOwned(ctx, s.deps.Client, machine.Kind, machines,
-		func(spec pipeline.MachineSpec) ref.OwnerRef { return spec.Owner }, owner))
-	errs = append(errs, deleteOwned(ctx, s.deps.Client, artifact.Kind, artifacts,
-		func(spec pipeline.ArtifactSpec) ref.OwnerRef { return spec.Owner }, owner))
-	return errors.Join(errs...)
+	return s.cascade(ctx, owner)
 }
 
-// deleteOwned finds the running entities of one kind owned by owner,
-// signals Delete, and waits for each to finish.
-func deleteOwned[Spec, State any](
-	ctx context.Context,
-	c client.Client,
-	kind entity.KindName,
-	cl *entclient.Client[Spec, State],
-	ownerOf func(Spec) ref.OwnerRef,
-	owner ref.OwnerRef,
-) error {
-	ids, err := listRunning(ctx, c, kind)
+// cascade deletes everything owned by owner (recursively), deepest
+// first; the owner itself is the CALLER's business.
+func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
+	children, err := ownedBy(ctx, s.deps.Client, owner)
 	if err != nil {
 		return err
 	}
-	var owned []entity.ResourceID
-	for _, rid := range ids {
-		out, err := cl.Describe(ctx, rid)
-		if err != nil {
-			continue // gone between list and describe
-		}
-		if ownerOf(out.Spec) != owner {
+	var errs []error
+	for _, child := range children {
+		if err := s.cascade(ctx, ref.OwnerRef(child)); err != nil {
+			errs = append(errs, err)
 			continue
 		}
-		if err := cl.Delete(ctx, rid); err != nil {
-			return err
-		}
-		owned = append(owned, rid)
-	}
-	for _, rid := range owned {
-		if err := awaitClosed(ctx, c, cl.WorkflowID(rid)); err != nil {
-			return err
+		if err := s.DeleteOne(ctx, child); err != nil {
+			errs = append(errs, fmt.Errorf("delete %s: %w", child, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+// ownedBy lists the workflow ids of the entities currently owned by
+// owner. A workflow id IS the resource ref ("kind/id") by construction.
+func ownedBy(ctx context.Context, c client.Client, owner ref.OwnerRef) ([]string, error) {
+	query := fmt.Sprintf("EntityOwner = '%s' AND ExecutionStatus = 'Running'", string(owner))
+	var out []string
+	var token []byte
+	for {
+		resp, err := c.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+			Query:         query,
+			NextPageToken: token,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list owned by %s: %w", owner, err)
+		}
+		for _, e := range resp.GetExecutions() {
+			out = append(out, e.GetExecution().GetWorkflowId())
+		}
+		token = resp.GetNextPageToken()
+		if len(token) == 0 {
+			return out, nil
+		}
+	}
 }
 
 // listRunning lists the running entity workflows of one kind through
@@ -267,7 +415,9 @@ func awaitClosed(ctx context.Context, c client.Client, workflowID string) error 
 		if d.GetWorkflowExecutionInfo().GetStatus() != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
 			return nil
 		}
-		activity.RecordHeartbeat(ctx, "awaiting teardown of "+workflowID)
+		if activity.IsActivity(ctx) {
+			activity.RecordHeartbeat(ctx, "awaiting teardown of "+workflowID)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -284,21 +434,39 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 		return errors.New("ensure container: the run has no worker image (" + wire.EnvImage + " was empty)")
 	}
 	env := map[string]string{
-		wire.EnvRole:      "machine",
-		wire.EnvAddress:   s.deps.ExternalGRPC,
-		wire.EnvRunId:     string(req.RunId),
-		wire.EnvMachineId: string(req.MachineId),
-		wire.EnvImage:     req.Image,
-		wire.EnvToken:     s.deps.RunToken,
+		wire.EnvRole:    "machine",
+		wire.EnvAddress: s.deps.ExternalGRPC,
+		wire.EnvHTTP:    s.deps.ExternalHTTP,
+		wire.EnvRunId:   string(req.RunId),
+		wire.EnvAgentId: string(req.AgentId),
+		wire.EnvImage:   req.Image,
+		wire.EnvToken:   s.deps.RunToken,
 		// TODO(tls): drop once the door serves TLS.
 		wire.EnvInsecure: "1",
 	}
-	return s.deps.Registry.EnsureContainer(ctx, &agentpb.ContainerSpec{
-		MachineId: string(req.MachineId),
-		RunId:     string(req.RunId),
-		Image:     req.Image,
-		Env:       env,
-	})
+	if err := s.deps.Registry.EnsureContainer(ctx, &agentpb.ContainerSpec{
+		AgentId: string(req.AgentId),
+		RunId:   string(req.RunId),
+		Image:   req.Image,
+		Env:     env,
+	}); err != nil {
+		return err
+	}
+	// "Ensured" means the worker inside the container POLLS, not that a
+	// process exists: the activity dispatched right after this must land.
+	queue := wire.AgentRunQueue(req.AgentId, req.RunId)
+	for {
+		tq, err := s.deps.Client.DescribeTaskQueue(ctx, queue, enums.TASK_QUEUE_TYPE_ACTIVITY)
+		if err == nil && len(tq.GetPollers()) > 0 {
+			return nil
+		}
+		activity.RecordHeartbeat(ctx, "waiting for the container worker to poll")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // runCleanup is the guaranteed teardown of a finished run: delete every
@@ -311,6 +479,6 @@ func (s *Worker) runCleanup(ctx context.Context, runId id.RunId) error {
 }
 
 // agentUserData renders the install script for a machine.
-func (s *Worker) agentUserData(_ context.Context, machineId id.MachineId) (string, error) {
-	return s.deps.MachineOps.UserData(machineId)
+func (s *Worker) agentUserData(_ context.Context, agentId id.AgentId) (string, error) {
+	return s.deps.AgentOps.UserData(agentId)
 }
