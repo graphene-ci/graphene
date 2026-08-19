@@ -92,6 +92,9 @@ services:
       REGISTRY_STORAGE_S3_SECRETKEY: "graphene-dev-secret"
       REGISTRY_STORAGE_S3_SECURE: "false"
       REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
+      # No presigned-URL redirects: minio is not reachable from outside
+      # the compose network — the registry streams blobs itself.
+      REGISTRY_STORAGE_REDIRECT_DISABLE: "true"
     depends_on:
       minio-buckets:
         condition: service_completed_successfully

@@ -7,6 +7,8 @@ package managed
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/gopherex/xlog"
 	"io"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -80,7 +83,12 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	if exists {
 		return nil
 	}
-	if pull, err := r.docker.ImagePull(ctx, imageRef, image.PullOptions{}); err == nil {
+	// The image lives behind our own /v2 door: the daemon authenticates
+	// with the run token as the Basic password (the door challenges,
+	// the daemon retries with credentials).
+	authJSON, _ := json.Marshal(registry.AuthConfig{Username: "token", Password: r.runToken}) //nolint:gosec // registry credentials travel to the local docker daemon only
+	pullOpts := image.PullOptions{RegistryAuth: base64.URLEncoding.EncodeToString(authJSON)}
+	if pull, err := r.docker.ImagePull(ctx, imageRef, pullOpts); err == nil {
 		_, _ = io.Copy(io.Discard, pull)
 		_ = pull.Close()
 	} // a local image is fine — pull is best-effort
