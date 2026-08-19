@@ -13,15 +13,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/gopherex/xlog"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"github.com/gopherex/xlog"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
@@ -30,6 +33,8 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/server"
+	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
+	"github.com/graphene-ci/graphene/pkg/proto/management/v1/managementv1connect"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 )
@@ -225,6 +230,22 @@ func TestFullContour(t *testing.T) {
 			wire.LabelRun, runId, got, listOut.Resources[0].Labels)
 	}
 
+	// Observe: dimension 2 — the run's translated history through the
+	// door, with payloads (history is secret-free by construction).
+	observed := observeEvents(ctx, t, doorAddr, "run/"+runId)
+	if !observed["run-completed"] {
+		t.Fatalf("events stream misses run-completed: %v", observed)
+	}
+	if !observed["activity:server.agent.declare"] {
+		t.Fatalf("events stream misses the declare activity: %v", observed)
+	}
+	// Dimension 2 of an ENTITY: the agent record's own history carries
+	// its commands.
+	agentEvents := observeEvents(ctx, t, doorAddr, "agent/"+agentId)
+	if !agentEvents["command-received"] {
+		t.Fatalf("agent entity history misses commands: %v", agentEvents)
+	}
+
 	for _, marker := range []string{"on-machine", "action", "fan-out"} {
 		if _, err := os.Stat(filepath.Join(markerDir, marker)); err != nil { //nolint:gosec // test dir
 			t.Fatalf("expected marker %s: %v", marker, err)
@@ -386,4 +407,36 @@ func applyDefaults(cfg *config.Config) {
 	if cfg.ReapSeconds == 0 {
 		cfg.ReapSeconds = 10
 	}
+}
+
+// observeEvents drains ObserveAPI.Events for a ref and returns the seen
+// kinds (activities also as "activity:<subject>").
+func observeEvents(ctx context.Context, t *testing.T, doorAddr, ref string) map[string]bool {
+	t.Helper()
+	client := managementv1connect.NewObserveAPIClient(
+		&http.Client{Transport: bearerTransport{token: adminToken}},
+		"http://"+doorAddr)
+	stream, err := client.Events(ctx, connect.NewRequest(&managementv1.EventsRequest{Ref: ref}))
+	if err != nil {
+		t.Fatalf("events %s: %v", ref, err)
+	}
+	seen := map[string]bool{}
+	for stream.Receive() {
+		ev := stream.Msg()
+		seen[ev.GetKind()] = true
+		if ev.GetSubject() != "" && strings.HasPrefix(ev.GetKind(), "activity-") {
+			seen["activity:"+ev.GetSubject()] = true
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("events %s stream: %v", ref, err)
+	}
+	return seen
+}
+
+type bearerTransport struct{ token string }
+
+func (b bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(req)
 }

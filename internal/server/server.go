@@ -118,6 +118,11 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Secrets: secretStore,
 		Log:     log.With(xlog.String("component", "management")),
 	}
+	observe := &services.Observe{
+		Bundles:    bundles,
+		Management: management,
+		Log:        log.With(xlog.String("component", "observe")),
+	}
 	otlp := &services.OTLP{
 		Endpoint: cfg.OtelEndpoint,
 		Log:      log.With(xlog.String("component", "otlp")),
@@ -153,7 +158,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	// proxy behind everything else. Unencrypted HTTP/2 stays on so a
 	// TLS proxy in front can speak h2c for every protocol at once.
 	rootMux := http.NewServeMux()
-	services.MountConnect(rootMux, management, authn)
+	services.MountConnect(rootMux, management, observe, authn)
 	rootMux.Handle("/", httpapi.New(httpapi.Deps{
 		Auth:             authn,
 		RegistryUpstream: cfg.RegistryUpstream,
