@@ -52,8 +52,15 @@ func New(deps Deps) http.Handler {
 func (d Deps) requireRole(next http.Handler, roles ...auth.Role) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		// Docker daemons speak Basic after a challenge — the token rides
+		// as the password, the username is ignored.
+		if _, basic, ok := r.BasicAuth(); ok {
+			token = basic
+		}
 		p, ok := d.Auth.Check(token)
 		if !ok {
+			// The challenge makes docker daemons retry WITH credentials.
+			w.Header().Set("WWW-Authenticate", `Basic realm="graphene"`)
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
