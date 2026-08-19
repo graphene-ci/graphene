@@ -21,16 +21,22 @@ const Kind entity.KindName = "pipeline"
 // is state the publications write.
 type Spec struct{}
 
-// State holds the current manifest.
+// State holds the current manifest and the current worker image.
 type State struct {
 	// Manifest is graphene.manifest.v1.Manifest as protojson.
 	Manifest json.RawMessage `json:"manifest,omitempty"`
 	Digest   string          `json:"digest,omitempty"`
+	// Image is the pipeline's current worker image — what a push
+	// recorded last; runs started without an explicit image use it.
+	Image string `json:"image,omitempty"`
 }
 
 // PublishCmd replaces the manifest when its content changed.
 type PublishCmd struct {
 	Manifest json.RawMessage `json:"manifest"`
+	// Image, when set, updates the pipeline's worker image (a push);
+	// empty keeps the current one (a worker start announcement).
+	Image string `json:"image,omitempty"`
 }
 
 // Name is the command's wire identity.
@@ -54,8 +60,11 @@ func New() *entdefine.Definition[Spec, State] {
 		sum := sha256.Sum256(cmd.Manifest)
 		digest := "sha256:" + hex.EncodeToString(sum[:])
 		st := ec.State()
-		if st.Digest == digest {
+		if st.Digest == digest && (cmd.Image == "" || cmd.Image == st.Image) {
 			return PublishRes{Digest: digest, Changed: false}, nil
+		}
+		if cmd.Image != "" {
+			st.Image = cmd.Image
 		}
 		st.Manifest = cmd.Manifest
 		st.Digest = digest

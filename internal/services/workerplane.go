@@ -35,6 +35,7 @@ type WorkerPlane struct {
 	workerplanev1.UnimplementedBlobsAPIServer
 	workerplanev1.UnimplementedEventsAPIServer
 	workerplanev1.UnimplementedManifestAPIServer
+	workerplanev1.UnimplementedRunsAPIServer
 
 	Bundles *nsbundle.Manager
 	Secrets *secrets.Namespaced
@@ -202,10 +203,68 @@ func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.Pu
 	if m.GetPipelineId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "manifest has no pipeline id")
 	}
-	if err := b.Worker.PublishManifest(ctx, m.GetPipelineId(), req.GetManifest()); err != nil {
+	if err := b.Worker.PublishManifest(ctx, m.GetPipelineId(), req.GetManifest(), req.GetImage()); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return &workerplanev1.PublishManifestResponse{}, nil
+}
+
+// GetPipeline reads the pipeline record: the current image and the last
+// published manifest — a push compares against it.
+func (w *WorkerPlane) GetPipeline(ctx context.Context, req *workerplanev1.GetPipelineRequest) (*workerplanev1.GetPipelineResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetPipelineId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "pipeline id is required")
+	}
+	st, err := b.Worker.GetPipeline(ctx, req.GetPipelineId())
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &workerplanev1.GetPipelineResponse{Image: st.Image, Manifest: st.Manifest, Digest: st.Digest}, nil
+}
+
+// StartRun starts a run of the caller's own pipeline — the binary's
+// `run` subcommand comes through this door with its run token.
+func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunRequest) (*workerplanev1.StartRunResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	workflowId, temporalRunId, err := startRunCore(ctx, b, w.Log,
+		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels())
+	if err != nil {
+		return nil, err
+	}
+	return &workerplanev1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}, nil
+}
+
+// GetRun reports the run's status.
+func (w *WorkerPlane) GetRun(ctx context.Context, req *workerplanev1.GetRunRequest) (*workerplanev1.GetRunResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+req.GetRunId(), "")
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &workerplanev1.GetRunResponse{Status: desc.GetWorkflowExecutionInfo().GetStatus().String()}, nil
+}
+
+// RunResult waits for the run and returns its typed result as JSON.
+func (w *WorkerPlane) RunResult(ctx context.Context, req *workerplanev1.RunResultRequest) (*workerplanev1.RunResultResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	var out json.RawMessage
+	if err := b.Client.GetWorkflow(ctx, "run/"+req.GetRunId(), "").Get(ctx, &out); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &workerplanev1.RunResultResponse{Result: out}, nil
 }
 
 func mustJSON(s string) json.RawMessage {
