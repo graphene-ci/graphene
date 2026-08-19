@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
@@ -103,7 +104,17 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 		wire.EnvInsecure + "=1",
 	}
 	created, err := r.docker.ContainerCreate(ctx,
-		&container.Config{Image: imageRef, Env: env},
+		&container.Config{
+			Image: imageRef,
+			Env:   env,
+			// The labels ARE the tracking: the reaper lists them from the
+			// daemon, so run containers survive server restarts without
+			// becoming orphans.
+			Labels: map[string]string{
+				labelNamespace: r.namespace,
+				labelRun:       string(runId),
+			},
+		},
 		&container.HostConfig{
 			NetworkMode:   "host",
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
@@ -121,21 +132,40 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	return nil
 }
 
+// Container labels the reaper tracks runs by.
+const (
+	labelNamespace = "graphene.io/namespace"
+	labelRun       = "graphene.io/run"
+)
+
 // Reap stops the containers of runs that are OVER: the run workflow is
-// closed and nothing runs on the run's queue any more. Called on a tick.
+// closed and nothing runs on the run's queue any more. Called on a
+// tick. The candidates come from the DAEMON by label, not from process
+// memory — a server restart leaves no orphans.
 func (r *Runner) Reap(ctx context.Context) {
-	r.mu.Lock()
-	snapshot := make(map[id.RunId]string, len(r.runs))
-	for k, v := range r.runs {
-		snapshot[k] = v
+	if r.docker == nil {
+		return
 	}
-	r.mu.Unlock()
-	for runId, containerId := range snapshot {
+	list, err := r.docker.ContainerList(ctx, container.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.Arg("label", labelNamespace+"="+r.namespace),
+		),
+	})
+	if err != nil {
+		r.log.Error("reap: list run containers", xlog.Err(err))
+		return
+	}
+	for _, c := range list {
+		runId := id.RunId(c.Labels[labelRun])
+		if runId == "" {
+			continue
+		}
 		over, err := r.runOver(ctx, runId)
 		if err != nil || !over {
 			continue
 		}
-		if err := r.docker.ContainerRemove(ctx, containerId, container.RemoveOptions{Force: true}); err != nil {
+		if err := r.docker.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil {
 			r.log.Error("reap run container", xlog.Any("run", runId), xlog.Err(err))
 			continue
 		}
