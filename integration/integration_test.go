@@ -58,6 +58,7 @@ func TestFullContour(t *testing.T) {
 		SearchAttributes: temporal.NewSearchAttributes(
 			entdefine.SearchAttrKind.ValueSet("seed"),
 			entdefine.SearchAttrPhase.ValueSet("seed"),
+			entdefine.SearchAttrLabels.ValueSet([]string{"seed=seed"}),
 			wire.SearchAttrOwner.ValueSet("seed"),
 			wire.SearchAttrKeepUntil.ValueSet(time.Now()),
 		),
@@ -76,18 +77,10 @@ func TestFullContour(t *testing.T) {
 	pipelineBin := build(t, bins, "testpipeline", "", "github.com/graphene-ci/graphene/integration/testpipeline")
 
 	// The server: one gRPC door (agents + Temporal proxy), one HTTP door.
-	grpcAddr := freeAddr(t)
-	httpAddr := freeAddr(t)
-	connectAddr := freeAddr(t)
+	doorAddr := freeAddr(t)
 	blobDir := t.TempDir()
 	cfg := config.Config{
-		ListenGRPC:    grpcAddr,
-		ListenHTTP:    httpAddr,
-		ListenConnect: connectAddr,
-		ExternalGRPC:  grpcAddr,
-		// DEBUG PROBE: set GRAPHENE_E2E_DIRECT=1 to route containers past
-		// the proxy straight to Temporal.
-		ExternalHTTP:     "http://" + httpAddr,
+		Listen:           doorAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
 			{Token: agentToken, Role: "agent", Namespace: "default", AgentId: agentId},
@@ -98,9 +91,6 @@ func TestFullContour(t *testing.T) {
 		AgentHeartbeatSeconds: 1,
 		SweepSeconds:          2,
 		ReapSeconds:           2,
-	}
-	if os.Getenv("GRAPHENE_E2E_DIRECT") == "1" {
-		cfg.ExternalGRPC = srv.FrontendHostPort()
 	}
 	applyDefaults(&cfg)
 	serverCtx, stopServer := context.WithCancel(ctx)
@@ -115,7 +105,7 @@ func TestFullContour(t *testing.T) {
 	go func() {
 		serverDone <- server.Run(serverCtx, cfg, xlog.NewConsole(xlog.WithSink(serverLog)))
 	}()
-	waitHTTP(t, "http://"+httpAddr+"/healthz")
+	waitHTTP(t, "http://"+doorAddr+"/healthz")
 
 	// The agent: outbound-only, exec runtime (the "container" is the same
 	// pipeline binary in the machine role).
@@ -125,7 +115,7 @@ func TestFullContour(t *testing.T) {
 		_ = os.MkdirAll(agentData, 0o750) //nolint:gosec // test log dir named by the runner
 	}
 	agent := command(ctx, agentBin, nil,
-		"GRAPHENE_AGENT_SERVER="+grpcAddr,
+		"GRAPHENE_AGENT_SERVER="+doorAddr,
 		"GRAPHENE_AGENT_TOKEN="+agentToken,
 		"GRAPHENE_AGENT_ID="+agentId,
 		"GRAPHENE_AGENT_INSECURE=1",
@@ -147,7 +137,7 @@ func TestFullContour(t *testing.T) {
 	runWorker := command(ctx, pipelineBin, nil,
 		"GRAPHENE_ROLE=run",
 		"GRAPHENE_RUN_ID="+runId,
-		"GRAPHENE_ADDRESS="+grpcAddr,
+		"GRAPHENE_ADDRESS="+doorAddr,
 		"GRAPHENE_NAMESPACE=default",
 		"GRAPHENE_TOKEN="+runToken,
 		"GRAPHENE_IMAGE="+pipelineBin,
@@ -173,7 +163,7 @@ func TestFullContour(t *testing.T) {
 		"params":   params,
 	})
 	resp := doJSON(ctx, t, http.MethodPost,
-		"http://"+connectAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
+		"http://"+doorAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -207,7 +197,33 @@ func TestFullContour(t *testing.T) {
 	// on first touch, activities executed inside the agent-hosted
 	// process, capability published and required, selection fanned out,
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
-	awaitStatus(ctx, t, connectAddr, "Completed")
+	awaitStatus(ctx, t, doorAddr, "Completed")
+
+	// Labels: the agent record is selectable by its user label through
+	// the visibility pushdown, and carries the system marker of the run
+	// that created it.
+	listBody, _ := json.Marshal(map[string]any{
+		"selector": map[string]any{"kind": "agent", "labels": map[string]string{"role": "e2e"}},
+	})
+	listResp := doJSON(ctx, t, http.MethodPost,
+		"http://"+doorAddr+"/graphene.management.v1.ResourcesAPI/List", adminToken, listBody)
+	var listOut struct {
+		Resources []struct {
+			Ref    string            `json:"ref"`
+			Labels map[string]string `json:"labels"`
+		} `json:"resources"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listOut); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	_ = listResp.Body.Close()
+	if len(listOut.Resources) != 1 || listOut.Resources[0].Ref != "agent/"+agentId {
+		t.Fatalf("label selection: want [agent/%s], got %+v", agentId, listOut.Resources)
+	}
+	if got := listOut.Resources[0].Labels[wire.LabelRun]; got != runId {
+		t.Fatalf("system label %s: want %q, got %q (labels %v)",
+			wire.LabelRun, runId, got, listOut.Resources[0].Labels)
+	}
 
 	for _, marker := range []string{"on-machine", "action", "fan-out"} {
 		if _, err := os.Stat(filepath.Join(markerDir, marker)); err != nil { //nolint:gosec // test dir
@@ -318,12 +334,12 @@ func waitHTTP(t *testing.T, url string) {
 	t.Fatal("server HTTP never came up")
 }
 
-func awaitStatus(ctx context.Context, t *testing.T, connectAddr, want string) {
+func awaitStatus(ctx context.Context, t *testing.T, doorAddr, want string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"runId": runId})
 	awaitTrue(ctx, t, "run status "+want, func() bool {
 		resp := doJSON(ctx, t, http.MethodPost,
-			"http://"+connectAddr+"/graphene.management.v1.RunsAPI/GetRun", adminToken, body)
+			"http://"+doorAddr+"/graphene.management.v1.RunsAPI/GetRun", adminToken, body)
 		defer func() { _ = resp.Body.Close() }()
 		var status struct {
 			Status string `json:"status"`
@@ -354,6 +370,9 @@ func awaitTrue(ctx context.Context, t *testing.T, what string, cond func() bool)
 
 // applyDefaults mirrors config.Load's defaulting for a hand-built config.
 func applyDefaults(cfg *config.Config) {
+	if cfg.External == "" {
+		cfg.External = cfg.Listen
+	}
 	if cfg.AgentHeartbeatSeconds == 0 {
 		cfg.AgentHeartbeatSeconds = 15
 	}

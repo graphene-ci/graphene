@@ -59,6 +59,9 @@ message Resource {
   bytes state = 6;
   int32 pending_commands = 7;
   bool marked_for_deletion = 8;
+  // Labels are the record's markers — metric-label semantics; keys
+  // under "graphene.io/" are written by the system.
+  map<string, string> labels = 9;
 }
 
 message ListResponse {

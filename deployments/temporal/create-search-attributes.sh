@@ -20,5 +20,6 @@ create() {
 create EntityKind Keyword
 create EntityPhase Keyword
 create EntityOwner Keyword
+create EntityLabels KeywordList
 create EntityKeepUntil Datetime
 echo "search attributes ready"

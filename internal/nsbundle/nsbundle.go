@@ -40,7 +40,7 @@ type Deps struct {
 	Registry         *agents.Registry
 	Secrets          *secrets.Namespaced
 	Blobs            blob.Store
-	ExternalGRPC     string
+	External         string
 	// RunTokenFor returns the run token of a namespace.
 	RunTokenFor func(namespace string) string
 	// UserDataFor renders the agent install script.
@@ -116,20 +116,20 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		func(agentId id.AgentId) (string, error) { return m.deps.UserDataFor(namespace, agentId) })
 	artifactOps := ops.NewArtifactOps(namespace, m.deps.Blobs)
 	w, err := worker.New(worker.Deps{
-		Namespace:    namespace,
-		Client:       c,
-		Registry:     m.deps.Registry,
-		AgentOps:     agentOps,
-		ArtifactOps:  artifactOps,
-		ExternalGRPC: m.deps.ExternalGRPC,
-		RunToken:     m.deps.RunTokenFor(namespace),
-		Log:          log.With(xlog.String("component", "worker")),
+		Namespace:   namespace,
+		Client:      c,
+		Registry:    m.deps.Registry,
+		AgentOps:    agentOps,
+		ArtifactOps: artifactOps,
+		External:    m.deps.External,
+		RunToken:    m.deps.RunTokenFor(namespace),
+		Log:         log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {
 		c.Close()
 		return nil, err
 	}
-	runner := managed.New(namespace, c, m.deps.ExternalGRPC, m.deps.RunTokenFor(namespace),
+	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
 		log.With(xlog.String("component", "managed")))
 	sweep := sweeper.New(c, w, log.With(xlog.String("component", "sweeper")))
 
@@ -170,6 +170,7 @@ func (m *Manager) CreateNamespace(ctx context.Context, base client.Client, name 
 			"EntityKind":      enums.INDEXED_VALUE_TYPE_KEYWORD,
 			"EntityPhase":     enums.INDEXED_VALUE_TYPE_KEYWORD,
 			"EntityOwner":     enums.INDEXED_VALUE_TYPE_KEYWORD,
+			"EntityLabels":    enums.INDEXED_VALUE_TYPE_KEYWORD_LIST,
 			"EntityKeepUntil": enums.INDEXED_VALUE_TYPE_DATETIME,
 		},
 	})

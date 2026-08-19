@@ -28,6 +28,9 @@ message StartRunRequest {
   // Image, when set, makes the run MANAGED: the server launches the
   // worker container itself.
   string image = 4;
+  // Labels mark the run for later selection — same semantics as
+  // resource labels; "graphene.io/" keys are reserved for the system.
+  map<string, string> labels = 5;
 }
 
 message StartRunResponse {
@@ -61,12 +64,15 @@ message CancelRunResponse {}
 message ListRunsRequest {
   // Status filters ("Running", "Completed", ...); empty — all.
   string status = 1;
+  // Labels filter by equality; every pair must match.
+  map<string, string> labels = 2;
 }
 
 message RunInfo {
   string run_id = 1;
   string pipeline = 2;
   string status = 3;
+  map<string, string> labels = 4;
 }
 
 message ListRunsResponse {

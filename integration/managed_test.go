@@ -47,6 +47,7 @@ func TestManagedRun(t *testing.T) {
 		SearchAttributes: temporal.NewSearchAttributes(
 			entdefine.SearchAttrKind.ValueSet("seed"),
 			entdefine.SearchAttrPhase.ValueSet("seed"),
+			entdefine.SearchAttrLabels.ValueSet([]string{"seed=seed"}),
 			wire.SearchAttrOwner.ValueSet("seed"),
 			wire.SearchAttrKeepUntil.ValueSet(time.Now()),
 		),
@@ -74,19 +75,13 @@ func TestManagedRun(t *testing.T) {
 	}
 	agentBin := build(t, bins, "graphene-agent", filepath.Join("..", "..", "agent"), "./cmd/graphene-agent")
 
-	grpcAddr := freeAddr(t)
-	httpAddr := freeAddr(t)
-	connectAddr := freeAddr(t)
+	doorAddr := freeAddr(t)
 	const managedRunId = "run-managed"
 	const managedAgent = "vm-managed"
 	// Managed containers are named per namespace by the runner.
 	const managedContainer = "graphene-run-default-" + managedRunId
 	cfg := config.Config{
-		ListenGRPC:       grpcAddr,
-		ListenHTTP:       httpAddr,
-		ListenConnect:    connectAddr,
-		ExternalGRPC:     grpcAddr,
-		ExternalHTTP:     "http://" + httpAddr,
+		Listen:           doorAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
 			{Token: agentToken, Role: "agent", Namespace: "default", AgentId: managedAgent},
@@ -105,10 +100,10 @@ func TestManagedRun(t *testing.T) {
 	go func() {
 		serverDone <- server.Run(serverCtx, cfg, xlog.NewConsole(xlog.WithSink(os.Stderr)))
 	}()
-	waitHTTP(t, "http://"+httpAddr+"/healthz")
+	waitHTTP(t, "http://"+doorAddr+"/healthz")
 
 	agent := command(ctx, agentBin, nil,
-		"GRAPHENE_AGENT_SERVER="+grpcAddr,
+		"GRAPHENE_AGENT_SERVER="+doorAddr,
 		"GRAPHENE_AGENT_TOKEN="+agentToken,
 		"GRAPHENE_AGENT_ID="+managedAgent,
 		"GRAPHENE_AGENT_INSECURE=1",
@@ -138,7 +133,7 @@ func TestManagedRun(t *testing.T) {
 		"image":    image,
 	})
 	resp := doJSON(ctx, t, http.MethodPost,
-		"http://"+connectAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
+		"http://"+doorAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()

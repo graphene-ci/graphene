@@ -23,17 +23,15 @@ const EnvConfigPath = "GRAPHENE_SERVER_CONFIG"
 // File is the on-disk/env shape of the configuration.
 type File struct {
 	Server struct {
-		// Grpc is the single gRPC door: agent sessions + Temporal proxy.
-		Grpc string `mapstructure:"grpc" default:":7233"`
-		// Http is the HTTP door: probes and the registry proxy.
-		HTTP string `mapstructure:"http" default:":7280"`
-		// Connect serves the management API for browsers (ConnectRPC:
-		// gRPC-web/JSON) on its own port.
-		Connect string `mapstructure:"connect" default:":7281"`
-		// ExternalGrpc is what workers and agents dial; defaults to Grpc.
-		ExternalGRPC string `mapstructure:"external_grpc"`
-		// ExternalHttp is the HTTP base workers use; defaults from Http.
-		ExternalHTTP string `mapstructure:"external_http"`
+		// Listen is THE port: gRPC (agents, workers, the Temporal proxy,
+		// the worker and management planes), ConnectRPC for browsers,
+		// probes, and the registry proxy — one listener, split by
+		// content. A TLS proxy in front (caddy: reverse_proxy
+		// h2c://host:port) terminates TLS for everything at once.
+		Listen string `mapstructure:"listen" default:":7233"`
+		// External is the address agents, workers, and managed
+		// containers dial ("host:port"); defaults from Listen.
+		External string `mapstructure:"external"`
 	} `mapstructure:"server"`
 
 	Temporal struct {
@@ -95,11 +93,8 @@ type Config struct {
 	LogLevel  string
 	LogFormat string
 
-	ListenGRPC    string
-	ListenHTTP    string
-	ListenConnect string
-	ExternalGRPC  string
-	ExternalHTTP  string
+	Listen   string
+	External string
 
 	TemporalHostPort  string
 	TemporalNamespace string
@@ -160,11 +155,8 @@ func Resolve(f File) (Config, error) {
 	cfg := Config{
 		LogLevel:          f.Log.Level,
 		LogFormat:         f.Log.Format,
-		ListenGRPC:        f.Server.Grpc,
-		ListenHTTP:        f.Server.HTTP,
-		ListenConnect:     f.Server.Connect,
-		ExternalGRPC:      f.Server.ExternalGRPC,
-		ExternalHTTP:      f.Server.ExternalHTTP,
+		Listen:            f.Server.Listen,
+		External:          f.Server.External,
 		TemporalHostPort:  f.Temporal.HostPort,
 		TemporalNamespace: f.Temporal.Namespace,
 		BlobBackend:       f.Blobs.Backend,
@@ -182,13 +174,10 @@ func Resolve(f File) (Config, error) {
 		ReapSeconds:           f.Intervals.ReapSeconds,
 		Secrets:               map[string]string{},
 	}
-	if cfg.ExternalGRPC == "" {
-		cfg.ExternalGRPC = cfg.ListenGRPC
-	}
-	if cfg.ExternalHTTP == "" {
-		cfg.ExternalHTTP = "http://" + strings.TrimPrefix(cfg.ListenHTTP, ":")
-		if strings.HasPrefix(cfg.ListenHTTP, ":") {
-			cfg.ExternalHTTP = "http://127.0.0.1" + cfg.ListenHTTP
+	if cfg.External == "" {
+		cfg.External = cfg.Listen
+		if strings.HasPrefix(cfg.Listen, ":") {
+			cfg.External = "127.0.0.1" + cfg.Listen
 		}
 	}
 	cfg.AgentHeartbeat = time.Duration(cfg.AgentHeartbeatSeconds) * time.Second

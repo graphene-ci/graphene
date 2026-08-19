@@ -12,8 +12,8 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
-	github.com/graphene-ci/pipeline v0.0.0-20260818170138-6b57a14187ef
-	github.com/graphene-ci/temporal-entity v0.0.0-20260818164547-40e756a10ce2
+	github.com/graphene-ci/pipeline v0.0.0-20260819090736-0eaae561cd9b
+	github.com/graphene-ci/temporal-entity v0.0.0-20260819090436-ae248ff4d338
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/siderolabs/grpc-proxy v0.5.2
 	go.temporal.io/api v1.63.5
@@ -65,6 +65,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/stretchr/testify v1.12.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect

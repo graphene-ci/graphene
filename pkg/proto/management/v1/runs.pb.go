@@ -30,7 +30,10 @@ type StartRunRequest struct {
 	Params []byte `protobuf:"bytes,3,opt,name=params,proto3" json:"params,omitempty"`
 	// Image, when set, makes the run MANAGED: the server launches the
 	// worker container itself.
-	Image         string `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	Image string `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	// Labels mark the run for later selection — same semantics as
+	// resource labels; "graphene.io/" keys are reserved for the system.
+	Labels        map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -91,6 +94,13 @@ func (x *StartRunRequest) GetImage() string {
 		return x.Image
 	}
 	return ""
+}
+
+func (x *StartRunRequest) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
 }
 
 type StartRunResponse struct {
@@ -405,7 +415,9 @@ func (*CancelRunResponse) Descriptor() ([]byte, []int) {
 type ListRunsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Status filters ("Running", "Completed", ...); empty — all.
-	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Labels filter by equality; every pair must match.
+	Labels        map[string]string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -447,11 +459,19 @@ func (x *ListRunsRequest) GetStatus() string {
 	return ""
 }
 
+func (x *ListRunsRequest) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 type RunInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	Pipeline      string                 `protobuf:"bytes,2,opt,name=pipeline,proto3" json:"pipeline,omitempty"`
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -507,6 +527,13 @@ func (x *RunInfo) GetStatus() string {
 	return ""
 }
 
+func (x *RunInfo) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
 type ListRunsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Runs          []*RunInfo             `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
@@ -555,12 +582,16 @@ var File_proto_management_v1_runs_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\n" +
-	"\x1eproto/management/v1/runs.proto\x12\x16graphene.management.v1\"r\n" +
+	"\x1eproto/management/v1/runs.proto\x12\x16graphene.management.v1\"\xfa\x01\n" +
 	"\x0fStartRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
 	"\bpipeline\x18\x02 \x01(\tR\bpipeline\x12\x16\n" +
 	"\x06params\x18\x03 \x01(\fR\x06params\x12\x14\n" +
-	"\x05image\x18\x04 \x01(\tR\x05image\"[\n" +
+	"\x05image\x18\x04 \x01(\tR\x05image\x12K\n" +
+	"\x06labels\x18\x05 \x03(\v23.graphene.management.v1.StartRunRequest.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"[\n" +
 	"\x10StartRunResponse\x12\x1f\n" +
 	"\vworkflow_id\x18\x01 \x01(\tR\n" +
 	"workflowId\x12&\n" +
@@ -575,13 +606,21 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\fR\x06result\")\n" +
 	"\x10CancelRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x13\n" +
-	"\x11CancelRunResponse\")\n" +
+	"\x11CancelRunResponse\"\xb1\x01\n" +
 	"\x0fListRunsRequest\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"T\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12K\n" +
+	"\x06labels\x18\x02 \x03(\v23.graphene.management.v1.ListRunsRequest.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd4\x01\n" +
 	"\aRunInfo\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
 	"\bpipeline\x18\x02 \x01(\tR\bpipeline\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"G\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12C\n" +
+	"\x06labels\x18\x04 \x03(\v2+.graphene.management.v1.RunInfo.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"G\n" +
 	"\x10ListRunsResponse\x123\n" +
 	"\x04runs\x18\x01 \x03(\v2\x1f.graphene.management.v1.RunInfoR\x04runs2\xe4\x03\n" +
 	"\aRunsAPI\x12]\n" +
@@ -603,7 +642,7 @@ func file_proto_management_v1_runs_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_runs_proto_rawDescData
 }
 
-var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*StartRunRequest)(nil),   // 0: graphene.management.v1.StartRunRequest
 	(*StartRunResponse)(nil),  // 1: graphene.management.v1.StartRunResponse
@@ -616,24 +655,30 @@ var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*ListRunsRequest)(nil),   // 8: graphene.management.v1.ListRunsRequest
 	(*RunInfo)(nil),           // 9: graphene.management.v1.RunInfo
 	(*ListRunsResponse)(nil),  // 10: graphene.management.v1.ListRunsResponse
+	nil,                       // 11: graphene.management.v1.StartRunRequest.LabelsEntry
+	nil,                       // 12: graphene.management.v1.ListRunsRequest.LabelsEntry
+	nil,                       // 13: graphene.management.v1.RunInfo.LabelsEntry
 }
 var file_proto_management_v1_runs_proto_depIdxs = []int32{
-	9,  // 0: graphene.management.v1.ListRunsResponse.runs:type_name -> graphene.management.v1.RunInfo
-	0,  // 1: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
-	2,  // 2: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
-	4,  // 3: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
-	6,  // 4: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
-	8,  // 5: graphene.management.v1.RunsAPI.ListRuns:input_type -> graphene.management.v1.ListRunsRequest
-	1,  // 6: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
-	3,  // 7: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
-	5,  // 8: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
-	7,  // 9: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
-	10, // 10: graphene.management.v1.RunsAPI.ListRuns:output_type -> graphene.management.v1.ListRunsResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	11, // 0: graphene.management.v1.StartRunRequest.labels:type_name -> graphene.management.v1.StartRunRequest.LabelsEntry
+	12, // 1: graphene.management.v1.ListRunsRequest.labels:type_name -> graphene.management.v1.ListRunsRequest.LabelsEntry
+	13, // 2: graphene.management.v1.RunInfo.labels:type_name -> graphene.management.v1.RunInfo.LabelsEntry
+	9,  // 3: graphene.management.v1.ListRunsResponse.runs:type_name -> graphene.management.v1.RunInfo
+	0,  // 4: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
+	2,  // 5: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
+	4,  // 6: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
+	6,  // 7: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
+	8,  // 8: graphene.management.v1.RunsAPI.ListRuns:input_type -> graphene.management.v1.ListRunsRequest
+	1,  // 9: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
+	3,  // 10: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
+	5,  // 11: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
+	7,  // 12: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
+	10, // 13: graphene.management.v1.RunsAPI.ListRuns:output_type -> graphene.management.v1.ListRunsResponse
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_runs_proto_init() }
@@ -647,7 +692,7 @@ func file_proto_management_v1_runs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_runs_proto_rawDesc), len(file_proto_management_v1_runs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

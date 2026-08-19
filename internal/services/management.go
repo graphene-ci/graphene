@@ -4,14 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gopherex/xlog"
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
+	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
+	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -55,11 +60,21 @@ func (m *Management) StartRun(ctx context.Context, req *managementv1.StartRunReq
 	if req.GetPipeline() == "" {
 		return nil, status.Error(codes.InvalidArgument, "pipeline is required")
 	}
+	if err := wire.ValidateUserLabels(req.GetLabels()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
 		TaskQueue: wire.RunQueue(runId),
 		// A run id names ONE run: starting it twice attaches, never forks.
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+	}
+	if len(req.GetLabels()) > 0 {
+		// The run carries its labels in the same EntityLabels attribute
+		// resources use — one label language across the system.
+		opts.TypedSearchAttributes = temporal.NewSearchAttributes(
+			entdefine.SearchAttrLabels.ValueSet(labelPairs(req.GetLabels())),
+		)
 	}
 	var args []any
 	if len(req.GetParams()) > 0 {
@@ -132,6 +147,11 @@ func (m *Management) ListRuns(ctx context.Context, req *managementv1.ListRunsReq
 	if req.GetStatus() != "" {
 		query += fmt.Sprintf(" AND ExecutionStatus = '%s'", req.GetStatus())
 	}
+	labelTerms, err := labelQueryTerms(req.GetLabels())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	query += labelTerms
 	resp := &managementv1.ListRunsResponse{}
 	var token []byte
 	for {
@@ -147,6 +167,7 @@ func (m *Management) ListRuns(ctx context.Context, req *managementv1.ListRunsReq
 				RunId:    stripPrefix(e.GetExecution().GetWorkflowId(), "run/"),
 				Pipeline: e.GetType().GetName(),
 				Status:   e.GetStatus().String(),
+				Labels:   labelsFromSearchAttrs(e.GetSearchAttributes()),
 			})
 		}
 		token = page.GetNextPageToken()
@@ -175,6 +196,11 @@ func (m *Management) List(ctx context.Context, req *managementv1.ListRequest) (*
 	if sel.GetOwner() != "" {
 		query += fmt.Sprintf(" AND EntityOwner = '%s'", sel.GetOwner())
 	}
+	labelTerms, err := labelQueryTerms(sel.GetLabels())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	query += labelTerms
 	query += ` AND ExecutionStatus = 'Running'`
 	resp := &managementv1.ListResponse{}
 	var token []byte
@@ -190,9 +216,6 @@ func (m *Management) List(ctx context.Context, req *managementv1.ListRequest) (*
 			res, err := m.describe(ctx, b, e.GetExecution().GetWorkflowId())
 			if err != nil {
 				continue // gone between list and describe
-			}
-			if !labelsMatch(sel.GetLabels(), res) {
-				continue
 			}
 			resp.Resources = append(resp.Resources, res)
 		}
@@ -360,11 +383,12 @@ func (m *Management) ListSecrets(ctx context.Context, _ *managementv1.ListSecret
 
 // describeOut mirrors temporal-entity's DescribeOut with raw halves.
 type describeOut struct {
-	Phase             string          `json:"phase"`
-	Spec              json.RawMessage `json:"spec"`
-	State             json.RawMessage `json:"state"`
-	PendingCommands   int32           `json:"pendingCommands"`
-	MarkedForDeletion bool            `json:"markedForDeletion"`
+	Phase             string            `json:"phase"`
+	Spec              json.RawMessage   `json:"spec"`
+	State             json.RawMessage   `json:"state"`
+	Labels            map[string]string `json:"labels"`
+	PendingCommands   int32             `json:"pendingCommands"`
+	MarkedForDeletion bool              `json:"markedForDeletion"`
 }
 
 func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowId string) (*managementv1.Resource, error) {
@@ -388,26 +412,55 @@ func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowI
 		Owner:             state.Owner,
 		Spec:              out.Spec,
 		State:             out.State,
+		Labels:            out.Labels,
 		PendingCommands:   out.PendingCommands,
 		MarkedForDeletion: out.MarkedForDeletion,
 	}, nil
 }
 
-// labelsMatch filters by the record's spec labels.
-func labelsMatch(want map[string]string, res *managementv1.Resource) bool {
-	if len(want) == 0 {
-		return true
+// labelQueryTerms renders a label selector as visibility terms over the
+// EntityLabels keyword list: one AND per pair. Values with quotes are
+// rejected — they cannot be escaped in a visibility query.
+func labelQueryTerms(labels map[string]string) (string, error) {
+	var out strings.Builder
+	for k, v := range labels {
+		pair := k + "=" + v
+		if strings.ContainsAny(pair, `'"`) {
+			return "", fmt.Errorf("label %q: quotes are not allowed", pair)
+		}
+		fmt.Fprintf(&out, " AND EntityLabels IN ('%s')", pair)
 	}
-	var spec struct {
-		Labels map[string]string `json:"labels"`
+	return out.String(), nil
+}
+
+// labelPairs renders labels as sorted "k=v" keywords.
+func labelPairs(labels map[string]string) []string {
+	out := make([]string, 0, len(labels))
+	for k, v := range labels {
+		out = append(out, k+"="+v)
 	}
-	_ = json.Unmarshal(res.GetSpec(), &spec)
-	for k, v := range want {
-		if spec.Labels[k] != v {
-			return false
+	sort.Strings(out)
+	return out
+}
+
+// labelsFromSearchAttrs decodes the EntityLabels keyword list back into
+// a map.
+func labelsFromSearchAttrs(sa *common.SearchAttributes) map[string]string {
+	payload := sa.GetIndexedFields()["EntityLabels"]
+	if payload == nil {
+		return nil
+	}
+	var pairs []string
+	if err := converter.GetDefaultDataConverter().FromPayload(payload, &pairs); err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		if k, v, ok := strings.Cut(pair, "="); ok {
+			out[k] = v
 		}
 	}
-	return true
+	return out
 }
 
 func stripPrefix(s, prefix string) string {

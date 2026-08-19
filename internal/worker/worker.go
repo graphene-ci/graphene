@@ -38,12 +38,12 @@ import (
 // Deps is everything the worker needs — one worker per NAMESPACE, its
 // client bound to the namespace's Temporal namespace.
 type Deps struct {
-	Namespace    string
-	Client       client.Client
-	Registry     *agents.Registry
-	AgentOps     *ops.AgentOps
-	ArtifactOps  *ops.ArtifactOps
-	ExternalGRPC string
+	Namespace   string
+	Client      client.Client
+	Registry    *agents.Registry
+	AgentOps    *ops.AgentOps
+	ArtifactOps *ops.ArtifactOps
+	External    string
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
@@ -184,6 +184,23 @@ func (s *Worker) selectAgents(ctx context.Context, sel wire.AgentSelector) ([]id
 	return out, nil
 }
 
+// recordLabels validates the user's labels and adds the system markers:
+// graphene.io/run is the creating run, taken from the calling workflow.
+func recordLabels(ctx context.Context, user map[string]string) (map[string]string, error) {
+	if err := wire.ValidateUserLabels(user); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(user)+1)
+	for k, v := range user {
+		out[k] = v
+	}
+	if activity.IsActivity(ctx) {
+		wfId := activity.GetInfo(ctx).WorkflowExecution.ID
+		out[wire.LabelRun] = strings.TrimPrefix(wfId, "run/")
+	}
+	return out, nil
+}
+
 func labelsMatch(want, have map[string]string) bool {
 	for k, v := range want {
 		if have[k] != v {
@@ -249,7 +266,11 @@ func interruptFromContext(ctx context.Context) <-chan any {
 func (s *Worker) declareAgent(ctx context.Context, agentId id.AgentId, spec pipeline.AgentSpec) (pipeline.AgentState, error) {
 	machines := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(agentId)
-	if _, err := machines.CreateOrAttach(ctx, rid, spec); err != nil {
+	labels, err := recordLabels(ctx, spec.Labels)
+	if err != nil {
+		return pipeline.AgentState{}, err
+	}
+	if _, err := machines.CreateOrAttach(ctx, rid, spec, entclient.WithLabels(labels)); err != nil {
 		return pipeline.AgentState{}, err
 	}
 	for {
@@ -283,7 +304,11 @@ func (s *Worker) declareAgent(ctx context.Context, agentId id.AgentId, spec pipe
 func (s *Worker) declareArtifact(ctx context.Context, artifactId id.ArtifactId, spec pipeline.ArtifactSpec) (pipeline.ArtifactState, error) {
 	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(artifactId)
-	if _, err := artifacts.CreateOrAttach(ctx, rid, spec); err != nil {
+	labels, err := recordLabels(ctx, spec.Labels)
+	if err != nil {
+		return pipeline.ArtifactState{}, err
+	}
+	if _, err := artifacts.CreateOrAttach(ctx, rid, spec, entclient.WithLabels(labels)); err != nil {
 		return pipeline.ArtifactState{}, err
 	}
 	for {
@@ -447,7 +472,7 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 	}
 	env := map[string]string{
 		wire.EnvRole:      "machine",
-		wire.EnvAddress:   s.deps.ExternalGRPC,
+		wire.EnvAddress:   s.deps.External,
 		wire.EnvNamespace: s.deps.Namespace,
 		wire.EnvRunId:     string(req.RunId),
 		wire.EnvAgentId:   string(req.AgentId),
