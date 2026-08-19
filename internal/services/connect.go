@@ -19,7 +19,7 @@ import (
 // protocols on one implementation — no per-protocol adapters. Auth is
 // the same bearer space; the middleware also carries the namespace
 // header into the gRPC metadata the services read.
-func MountConnect(mux *http.ServeMux, m *Management, authn *auth.Authenticator) {
+func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Authenticator) {
 	opts := connect.WithInterceptors(statusCodes{})
 	mount := func(pattern string, handler http.Handler) {
 		mux.Handle(pattern, withBearer(handler, authn))
@@ -28,6 +28,7 @@ func MountConnect(mux *http.ServeMux, m *Management, authn *auth.Authenticator) 
 	mount(managementv1connect.NewResourcesAPIHandler(m, opts))
 	mount(managementv1connect.NewNamespacesAPIHandler(m, opts))
 	mount(managementv1connect.NewSecretsAPIHandler(m, opts))
+	mount(managementv1connect.NewObserveAPIHandler(o, opts))
 }
 
 // withBearer authenticates every request and mirrors the namespace

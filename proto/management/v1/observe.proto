@@ -1,0 +1,109 @@
+// The five dimensions of any entity — state, events, logs, metrics,
+// trace — behind ONE surface. State and events come from the plane of
+// truth (Temporal: describes and workflow histories) and are complete
+// by construction; logs, metrics, and traces come from the telemetry
+// plane (OTel backend behind the collector) and are as complete as
+// delivery was. Refs address anything: "run/x", "agent/vm-1",
+// "vpc.network/net", "artifact/r".
+syntax = "proto3";
+
+package graphene.management.v1;
+
+import "proto/management/v1/resources.proto";
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+service ObserveAPI {
+  // State is dimension 1: the full current record.
+  rpc State(ObserveStateRequest) returns (ObserveStateResponse);
+  // Events is dimension 2: the entity's own history, translated —
+  // classification without omission (raw carries everything).
+  rpc Events(EventsRequest) returns (stream Event);
+  // Logs is dimension 3 (telemetry plane).
+  rpc Logs(LogsRequest) returns (stream LogRecord);
+  // Metrics is dimension 4 (telemetry plane).
+  rpc Metrics(MetricsRequest) returns (MetricsResponse);
+  // Trace is dimension 5 (telemetry plane).
+  rpc Trace(TraceRequest) returns (TraceResponse);
+}
+
+message ObserveStateRequest {
+  string ref = 1;
+}
+
+message ObserveStateResponse {
+  // Status is the workflow execution status (runs and entities alike).
+  string status = 1;
+  // Resource is the full record for entity refs (describe); unset for
+  // plain runs.
+  Resource resource = 2;
+}
+
+message EventsRequest {
+  string ref = 1;
+  // Resume: emit only events after this history event id.
+  int64 after_event_id = 2;
+  // Follow keeps the stream open for new events until the workflow
+  // closes (or forever, for a living entity).
+  bool follow = 3;
+  // ActivityId slices the stream to one activity execution.
+  string activity_id = 4;
+}
+
+message Event {
+  // EventId is the stable cursor: the Temporal history event id.
+  int64 event_id = 1;
+  int64 time_unix_nano = 2;
+  // Kind classifies for rendering: run-started, activity-scheduled,
+  // activity-completed, activity-failed, command-received,
+  // internal-<type>, ... Nothing is omitted — unclassified history
+  // events pass through as internal-*.
+  string kind = 3;
+  // Subject: the activity/command name the event is about.
+  string subject = 4;
+  // Agent executing it, when the task queue names one.
+  string agent = 5;
+  string status = 6;
+  string error = 7;
+  int32 attempt = 8;
+  // Input/result payloads as JSON — history is secret-free by
+  // construction (secrets travel as names), so nothing is stripped.
+  bytes input = 9;
+  bytes result = 10;
+  // Raw is the entire history event (protojson) for drill-down.
+  bytes raw = 11;
+}
+
+message LogsRequest {
+  string ref = 1;
+  bool follow = 2;
+  int64 since_unix_nano = 3;
+}
+
+message LogRecord {
+  int64 time_unix_nano = 1;
+  string severity = 2;
+  string body = 3;
+  map<string, string> attributes = 4;
+}
+
+message MetricsRequest {
+  string ref = 1;
+  int64 start_unix_nano = 2;
+  int64 end_unix_nano = 3;
+}
+
+message MetricsResponse {
+  // Series is backend-shaped JSON; the contract firms up with the
+  // chosen backend.
+  bytes series = 1;
+}
+
+message TraceRequest {
+  string ref = 1;
+}
+
+message TraceResponse {
+  // Trace is the span tree as JSON.
+  bytes trace = 1;
+}
