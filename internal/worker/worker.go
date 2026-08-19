@@ -119,12 +119,23 @@ func (s *Worker) standCascade(ctx context.Context, held string) error {
 }
 
 // PublishManifest records what a pipeline binary is (lazy entity, dedup
-// by content inside).
-func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage) error {
+// by content inside). A non-empty image also updates the pipeline's
+// current worker image — that is what a push records.
+func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image string) error {
 	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
 	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
-		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw})
+		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw, Image: image})
 	return err
+}
+
+// GetPipeline reads the pipeline record's state.
+func (s *Worker) GetPipeline(ctx context.Context, pipelineId string) (pipelineflow.State, error) {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	desc, err := pipelines.Describe(ctx, entity.ResourceID(pipelineId))
+	if err != nil {
+		return pipelineflow.State{}, err
+	}
+	return desc.State, nil
 }
 
 // PublishCapability writes a capability onto an agent's record — also

@@ -53,15 +53,28 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return nil, err
 	}
-	runId, err := id.ParseRunId(req.GetRunId())
+	workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
+		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, err
 	}
-	if req.GetPipeline() == "" {
-		return nil, status.Error(codes.InvalidArgument, "pipeline is required")
+	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}), nil
+}
+
+// startRunCore is the start logic shared by both doors: the management
+// plane and the pipeline binary's own worker-plane RunsAPI.
+func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
+	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string,
+) (string, string, error) {
+	runId, err := id.ParseRunId(runIdRaw)
+	if err != nil {
+		return "", "", status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := wire.ValidateUserLabels(req.GetLabels()); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	if pipelineName == "" {
+		return "", "", status.Error(codes.InvalidArgument, "pipeline is required")
+	}
+	if err := wire.ValidateUserLabels(labels); err != nil {
+		return "", "", status.Error(codes.InvalidArgument, err.Error())
 	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
@@ -69,32 +82,32 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 		// A run id names ONE run: starting it twice attaches, never forks.
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 	}
-	if len(req.GetLabels()) > 0 {
+	if len(labels) > 0 {
 		// The run carries its labels in the same EntityLabels attribute
 		// resources use — one label language across the system.
 		opts.TypedSearchAttributes = temporal.NewSearchAttributes(
-			entdefine.SearchAttrLabels.ValueSet(labelPairs(req.GetLabels())),
+			entdefine.SearchAttrLabels.ValueSet(labelPairs(labels)),
 		)
 	}
 	var args []any
-	if len(req.GetParams()) > 0 {
-		args = append(args, json.RawMessage(req.GetParams()))
+	if len(params) > 0 {
+		args = append(args, json.RawMessage(params))
 	}
-	run, err := b.Client.ExecuteWorkflow(ctx, opts, req.GetPipeline(), args...)
+	run, err := b.Client.ExecuteWorkflow(ctx, opts, pipelineName, args...)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return "", "", status.Error(codes.Internal, err.Error())
 	}
-	if req.GetImage() != "" {
-		if err := b.Runner.Start(ctx, runId, req.GetImage()); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+	if image != "" {
+		if err := b.Runner.Start(ctx, runId, image); err != nil {
+			return "", "", status.Error(codes.Internal, err.Error())
 		}
 	}
-	m.Log.Info("run started",
+	log.Info("run started",
 		xlog.String("namespace", b.Namespace),
 		xlog.Any("run", runId),
-		xlog.String("pipeline", req.GetPipeline()),
-		xlog.Bool("managed", req.GetImage() != ""))
-	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()}), nil
+		xlog.String("pipeline", pipelineName),
+		xlog.Bool("managed", image != ""))
+	return run.GetID(), run.GetRunID(), nil
 }
 
 // GetRun reports the run's status.
