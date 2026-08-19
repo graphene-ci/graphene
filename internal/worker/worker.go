@@ -26,6 +26,8 @@ import (
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/ops"
+	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/standflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
@@ -44,6 +46,8 @@ type Deps struct {
 	AgentOps    *ops.AgentOps
 	ArtifactOps *ops.ArtifactOps
 	External    string
+	// StandTick is how often stands check their holdings for expiry.
+	StandTick time.Duration
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
@@ -56,19 +60,30 @@ type Worker struct {
 	deps        Deps
 	agentDef    *entdefine.Definition[pipeline.AgentSpec, agentflow.State]
 	artifactDef *entdefine.Definition[pipeline.ArtifactSpec, artifact.State]
+	standDef    *entdefine.Definition[standflow.Spec, standflow.State]
+	pipelineDef *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
 }
 
 // New builds and registers everything; Run starts polling.
 func New(deps Deps) (*Worker, error) {
 	w := worker.New(deps.Client, wire.ServerQueue, worker.Options{})
+	standTick := deps.StandTick
+	if standTick == 0 {
+		standTick = 30 * time.Second
+	}
 	s := &Worker{
 		w:           w,
 		deps:        deps,
 		agentDef:    agentflow.Definition(agentflow.Options{}),
 		artifactDef: artifact.Definition(),
+		standDef:    standflow.New(standTick),
+		pipelineDef: pipelineflow.New(),
 	}
 
-	if err := errors.Join(s.agentDef.Register(w), s.artifactDef.Register(w)); err != nil {
+	if err := errors.Join(
+		s.agentDef.Register(w), s.artifactDef.Register(w),
+		s.standDef.Register(w), s.pipelineDef.Register(w),
+	); err != nil {
 		return nil, err
 	}
 
@@ -90,7 +105,26 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.selectAgents, activity.RegisterOptions{Name: wire.SelectAgentsActivity})
 	w.RegisterActivityWithOptions(s.publishCapability, activity.RegisterOptions{Name: wire.PublishCapabilityActivity})
 	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
+	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
 	return s, nil
+}
+
+// standCascade is the stand's teardown arm: subtree first, then the
+// resource itself.
+func (s *Worker) standCascade(ctx context.Context, held string) error {
+	if err := s.CascadeDelete(ctx, ref.OwnerRef(held)); err != nil {
+		return err
+	}
+	return s.DeleteOne(ctx, held)
+}
+
+// PublishManifest records what a pipeline binary is (lazy entity, dedup
+// by content inside).
+func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage) error {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
+		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw})
+	return err
 }
 
 // PublishCapability writes a capability onto an agent's record — also
@@ -223,6 +257,27 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 	if !ok {
 		return fmt.Errorf("resource ref %q: want kind/id", req.Resource)
 	}
+	standId, toStand := strings.CutPrefix(string(req.NewOwner), "stand/")
+	if req.Keep > 0 && !toStand {
+		return fmt.Errorf("KeepFor is a stand-stay bound; owner %q is not a stand", req.NewOwner)
+	}
+	if err := s.transferCmd(ctx, kind, resource, req); err != nil {
+		return err
+	}
+	if toStand {
+		// The stand LIVES the handover: its own timer enforces the
+		// keep, its history records it.
+		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
+		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
+			standflow.Spec{PipelineId: standId},
+			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep})
+		return err
+	}
+	return nil
+}
+
+// transferCmd lands transfer-owner on the resource itself.
+func (s *Worker) transferCmd(ctx context.Context, kind, resource string, req wire.TransferResourceRequest) error {
 	cmd := ownership.TransferCmd{NewOwner: req.NewOwner, Keep: req.Keep}
 	switch entity.KindName(kind) {
 	case agentflow.Kind:
@@ -507,12 +562,71 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 }
 
 // runCleanup is the guaranteed teardown of a finished run: delete every
-// resource the run owns, then stop its containers on every machine.
+// resource the run owns, then stop its containers on every machine —
+// EXCEPT where entities still live on the executor's queue (a
+// stand-held docker resource keeps its machine executor alive; the
+// reaper collects it when the last record dies).
 func (s *Worker) runCleanup(ctx context.Context, runId id.RunId) error {
 	if err := s.deleteResource(ctx, ref.RunOwner(runId)); err != nil {
 		return err
 	}
-	return s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, runId)
+	return s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, runId, func(agentId id.AgentId) bool {
+		return s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, runId))
+	})
+}
+
+// ReapExecutors collects machine executors whose run is over AND whose
+// queue carries no live entities any more — the counterpart of "the
+// executor lives while its records do": when the stand's cascade kills
+// the last docker record, this tick stops the container.
+func (s *Worker) ReapExecutors(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		for agentId, runs := range s.deps.Registry.RunContainers(s.deps.Namespace) {
+			for _, runId := range runs {
+				if s.runOpen(ctx, runId) {
+					continue
+				}
+				if s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, runId)) {
+					continue
+				}
+				s.deps.Log.Info("reaping executor",
+					xlog.Any("agent", agentId), xlog.Any("run", runId))
+				if err := s.deps.Registry.StopContainer(ctx, s.deps.Namespace, agentId, runId); err != nil {
+					s.deps.Log.Error("executor reap", xlog.Err(err))
+				}
+			}
+		}
+	}
+}
+
+// runOpen reports whether the run workflow is still running.
+func (s *Worker) runOpen(ctx context.Context, runId id.RunId) bool {
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, "run/"+string(runId), "")
+	if err != nil {
+		return true // unknown — do not reap on doubt
+	}
+	return desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING
+}
+
+// queueHasLiveEntities reports whether any open entity workflow still
+// serves its lifecycle from this task queue.
+func (s *Worker) queueHasLiveEntities(ctx context.Context, queue string) bool {
+	resp, err := s.deps.Client.CountWorkflow(ctx, &workflowservice.CountWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("TaskQueue = '%s' AND ExecutionStatus = 'Running' AND EntityKind IS NOT NULL", queue),
+	})
+	if err != nil {
+		// When visibility cannot answer, keep the executor — losing an
+		// executor under a live record is worse than a late reap.
+		return true
+	}
+	return resp.GetCount() > 0
 }
 
 // agentUserData renders the install script for a machine.

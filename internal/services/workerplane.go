@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,8 +18,12 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/secrets"
+	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
+	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
 )
 
@@ -28,6 +33,8 @@ type WorkerPlane struct {
 	workerplanev1.UnimplementedSecretsAPIServer
 	workerplanev1.UnimplementedCapabilitiesAPIServer
 	workerplanev1.UnimplementedBlobsAPIServer
+	workerplanev1.UnimplementedEventsAPIServer
+	workerplanev1.UnimplementedManifestAPIServer
 
 	Bundles *nsbundle.Manager
 	Secrets *secrets.Namespaced
@@ -155,4 +162,53 @@ func (w *WorkerPlane) GetBlob(req *workerplanev1.GetBlobRequest, stream workerpl
 			return status.Error(codes.Internal, readErr.Error())
 		}
 	}
+}
+
+// Emit puts a domain event into an entity's history — the plane of
+// truth: a milestone, not a log line.
+func (w *WorkerPlane) Emit(ctx context.Context, req *workerplanev1.EmitRequest) (*workerplanev1.EmitResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetRef() == "" || req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ref and name are required")
+	}
+	note := map[string]json.RawMessage{
+		"name": mustJSON(req.GetName()),
+	}
+	if len(req.GetPayload()) > 0 {
+		if !json.Valid(req.GetPayload()) {
+			return nil, status.Error(codes.InvalidArgument, "payload must be JSON")
+		}
+		note["payload"] = req.GetPayload()
+	}
+	if err := b.Client.SignalWorkflow(ctx, req.GetRef(), "", entity.NoteSignalName, note); err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &workerplanev1.EmitResponse{}, nil
+}
+
+// PublishManifest records what a pipeline binary is.
+func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.PublishManifestRequest) (*workerplanev1.PublishManifestResponse, error) {
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	var m manifestpb.Manifest
+	if err := protojson.Unmarshal(req.GetManifest(), &m); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "manifest: "+err.Error())
+	}
+	if m.GetPipelineId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "manifest has no pipeline id")
+	}
+	if err := b.Worker.PublishManifest(ctx, m.GetPipelineId(), req.GetManifest()); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &workerplanev1.PublishManifestResponse{}, nil
+}
+
+func mustJSON(s string) json.RawMessage {
+	raw, _ := json.Marshal(s)
+	return raw
 }

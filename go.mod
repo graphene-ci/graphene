@@ -12,8 +12,8 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
-	github.com/graphene-ci/pipeline v0.0.0-20260819132357-ae2f98fdb3a4
-	github.com/graphene-ci/temporal-entity v0.0.0-20260819090436-ae248ff4d338
+	github.com/graphene-ci/pipeline v0.0.0-20260819145323-92543c77ae54
+	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/soheilhy/cmux v0.1.5
@@ -27,8 +27,11 @@ require (
 )
 
 require (
+	cel.dev/expr v0.25.2 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/cbroglie/mustache v1.4.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
@@ -46,6 +49,8 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
+	github.com/google/cel-go v0.30.0 // indirect
+	github.com/gopherex/schemapb/go v0.0.0-20260805100557-b08e53066d63 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -88,6 +93,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.temporal.io/sdk/contrib/opentelemetry v0.8.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
+	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
