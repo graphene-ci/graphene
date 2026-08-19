@@ -1,6 +1,7 @@
 package services
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,13 +31,11 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
-// Management serves the management plane.
+// Management serves the management plane — connect-native: the
+// generated connect handlers speak the connect, gRPC, and gRPC-Web
+// protocols themselves, so this one implementation is the whole
+// surface (mounted on the door's HTTP half by MountConnect).
 type Management struct {
-	managementv1.UnimplementedRunsAPIServer
-	managementv1.UnimplementedResourcesAPIServer
-	managementv1.UnimplementedNamespacesAPIServer
-	managementv1.UnimplementedSecretsAPIServer
-
 	Bundles *nsbundle.Manager
 	// Base is a namespace-agnostic client for cluster admin calls.
 	Base    client.Client
@@ -48,7 +47,8 @@ type Management struct {
 
 // StartRun starts the run workflow; with an image the run is MANAGED —
 // the server launches the worker container itself.
-func (m *Management) StartRun(ctx context.Context, req *managementv1.StartRunRequest) (*managementv1.StartRunResponse, error) {
+func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managementv1.StartRunRequest]) (*connect.Response[managementv1.StartRunResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -94,11 +94,12 @@ func (m *Management) StartRun(ctx context.Context, req *managementv1.StartRunReq
 		xlog.Any("run", runId),
 		xlog.String("pipeline", req.GetPipeline()),
 		xlog.Bool("managed", req.GetImage() != ""))
-	return &managementv1.StartRunResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()}, nil
+	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()}), nil
 }
 
 // GetRun reports the run's status.
-func (m *Management) GetRun(ctx context.Context, req *managementv1.GetRunRequest) (*managementv1.GetRunResponse, error) {
+func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managementv1.GetRunRequest]) (*connect.Response[managementv1.GetRunResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -107,13 +108,14 @@ func (m *Management) GetRun(ctx context.Context, req *managementv1.GetRunRequest
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &managementv1.GetRunResponse{
+	return connect.NewResponse(&managementv1.GetRunResponse{
 		Status: desc.GetWorkflowExecutionInfo().GetStatus().String(),
-	}, nil
+	}), nil
 }
 
 // RunResult waits for the run and returns its typed result as JSON.
-func (m *Management) RunResult(ctx context.Context, req *managementv1.RunResultRequest) (*managementv1.RunResultResponse, error) {
+func (m *Management) RunResult(ctx context.Context, creq *connect.Request[managementv1.RunResultRequest]) (*connect.Response[managementv1.RunResultResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -122,11 +124,12 @@ func (m *Management) RunResult(ctx context.Context, req *managementv1.RunResultR
 	if err := b.Client.GetWorkflow(ctx, "run/"+req.GetRunId(), "").Get(ctx, &out); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	return &managementv1.RunResultResponse{Result: out}, nil
+	return connect.NewResponse(&managementv1.RunResultResponse{Result: out}), nil
 }
 
 // CancelRun asks the run to stop; the guaranteed-teardown path runs.
-func (m *Management) CancelRun(ctx context.Context, req *managementv1.CancelRunRequest) (*managementv1.CancelRunResponse, error) {
+func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[managementv1.CancelRunRequest]) (*connect.Response[managementv1.CancelRunResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -134,11 +137,12 @@ func (m *Management) CancelRun(ctx context.Context, req *managementv1.CancelRunR
 	if err := b.Client.CancelWorkflow(ctx, "run/"+req.GetRunId(), ""); err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &managementv1.CancelRunResponse{}, nil
+	return connect.NewResponse(&managementv1.CancelRunResponse{}), nil
 }
 
 // ListRuns lists the namespace's runs.
-func (m *Management) ListRuns(ctx context.Context, req *managementv1.ListRunsRequest) (*managementv1.ListRunsResponse, error) {
+func (m *Management) ListRuns(ctx context.Context, creq *connect.Request[managementv1.ListRunsRequest]) (*connect.Response[managementv1.ListRunsResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -172,7 +176,7 @@ func (m *Management) ListRuns(ctx context.Context, req *managementv1.ListRunsReq
 		}
 		token = page.GetNextPageToken()
 		if len(token) == 0 {
-			return resp, nil
+			return connect.NewResponse(resp), nil
 		}
 	}
 }
@@ -180,7 +184,8 @@ func (m *Management) ListRuns(ctx context.Context, req *managementv1.ListRunsReq
 // --- ResourcesAPI ---
 
 // List returns the resources matching the selector.
-func (m *Management) List(ctx context.Context, req *managementv1.ListRequest) (*managementv1.ListResponse, error) {
+func (m *Management) List(ctx context.Context, creq *connect.Request[managementv1.ListRequest]) (*connect.Response[managementv1.ListResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -221,13 +226,14 @@ func (m *Management) List(ctx context.Context, req *managementv1.ListRequest) (*
 		}
 		token = page.GetNextPageToken()
 		if len(token) == 0 {
-			return resp, nil
+			return connect.NewResponse(resp), nil
 		}
 	}
 }
 
 // Get describes one resource.
-func (m *Management) Get(ctx context.Context, req *managementv1.GetRequest) (*managementv1.GetResponse, error) {
+func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1.GetRequest]) (*connect.Response[managementv1.GetResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -236,11 +242,12 @@ func (m *Management) Get(ctx context.Context, req *managementv1.GetRequest) (*ma
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &managementv1.GetResponse{Resource: res}, nil
+	return connect.NewResponse(&managementv1.GetResponse{Resource: res}), nil
 }
 
 // Tree returns the ownership subtree under an owner.
-func (m *Management) Tree(ctx context.Context, req *managementv1.TreeRequest) (*managementv1.TreeResponse, error) {
+func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv1.TreeRequest]) (*connect.Response[managementv1.TreeResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -249,7 +256,7 @@ func (m *Management) Tree(ctx context.Context, req *managementv1.TreeRequest) (*
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &managementv1.TreeResponse{Roots: roots}, nil
+	return connect.NewResponse(&managementv1.TreeResponse{Roots: roots}), nil
 }
 
 func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef) ([]*managementv1.TreeNode, error) {
@@ -276,7 +283,8 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 }
 
 // Delete tears the resource down with its subtree, deepest first.
-func (m *Management) Delete(ctx context.Context, req *managementv1.DeleteRequest) (*managementv1.DeleteResponse, error) {
+func (m *Management) Delete(ctx context.Context, creq *connect.Request[managementv1.DeleteRequest]) (*connect.Response[managementv1.DeleteResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -287,11 +295,12 @@ func (m *Management) Delete(ctx context.Context, req *managementv1.DeleteRequest
 	if err := b.Worker.DeleteOne(ctx, req.GetRef()); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &managementv1.DeleteResponse{}, nil
+	return connect.NewResponse(&managementv1.DeleteResponse{}), nil
 }
 
 // Transfer gives the resource to a new owner.
-func (m *Management) Transfer(ctx context.Context, req *managementv1.TransferRequest) (*managementv1.TransferResponse, error) {
+func (m *Management) Transfer(ctx context.Context, creq *connect.Request[managementv1.TransferRequest]) (*connect.Response[managementv1.TransferResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -303,11 +312,12 @@ func (m *Management) Transfer(ctx context.Context, req *managementv1.TransferReq
 	}); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &managementv1.TransferResponse{}, nil
+	return connect.NewResponse(&managementv1.TransferResponse{}), nil
 }
 
 // Invoke sends an entity command by wire identity.
-func (m *Management) Invoke(ctx context.Context, req *managementv1.InvokeRequest) (*managementv1.InvokeResponse, error) {
+func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managementv1.InvokeRequest]) (*connect.Response[managementv1.InvokeResponse], error) {
+	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return nil, err
@@ -316,25 +326,26 @@ func (m *Management) Invoke(ctx context.Context, req *managementv1.InvokeRequest
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	return &managementv1.InvokeResponse{Result: out}, nil
+	return connect.NewResponse(&managementv1.InvokeResponse{Result: out}), nil
 }
 
 // --- NamespacesAPI ---
 
 // CreateNamespace registers a namespace with the graphene search
 // attributes and starts its runtime bundle.
-func (m *Management) CreateNamespace(ctx context.Context, req *managementv1.CreateNamespaceRequest) (*managementv1.CreateNamespaceResponse, error) {
+func (m *Management) CreateNamespace(ctx context.Context, creq *connect.Request[managementv1.CreateNamespaceRequest]) (*connect.Response[managementv1.CreateNamespaceResponse], error) {
+	req := creq.Msg
 	if _, err := scope(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if err := m.Bundles.CreateNamespace(ctx, m.Base, req.GetName(), req.GetRetentionDays()); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &managementv1.CreateNamespaceResponse{}, nil
+	return connect.NewResponse(&managementv1.CreateNamespaceResponse{}), nil
 }
 
 // ListNamespaces lists the registered namespaces.
-func (m *Management) ListNamespaces(ctx context.Context, _ *managementv1.ListNamespacesRequest) (*managementv1.ListNamespacesResponse, error) {
+func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[managementv1.ListNamespacesRequest]) (*connect.Response[managementv1.ListNamespacesResponse], error) {
 	if _, err := scope(ctx, auth.RoleAdmin); err != nil {
 		return nil, err
 	}
@@ -342,13 +353,14 @@ func (m *Management) ListNamespaces(ctx context.Context, _ *managementv1.ListNam
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &managementv1.ListNamespacesResponse{Names: names}, nil
+	return connect.NewResponse(&managementv1.ListNamespacesResponse{Names: names}), nil
 }
 
 // --- SecretsAPI (management) ---
 
 // SetSecret stores a value; it never comes back through this plane.
-func (m *Management) SetSecret(ctx context.Context, req *managementv1.SetSecretRequest) (*managementv1.SetSecretResponse, error) {
+func (m *Management) SetSecret(ctx context.Context, creq *connect.Request[managementv1.SetSecretRequest]) (*connect.Response[managementv1.SetSecretResponse], error) {
+	req := creq.Msg
 	namespace, err := scope(ctx, auth.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -357,26 +369,27 @@ func (m *Management) SetSecret(ctx context.Context, req *managementv1.SetSecretR
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
 	m.Secrets.Set(namespace, req.GetName(), req.GetValue())
-	return &managementv1.SetSecretResponse{}, nil
+	return connect.NewResponse(&managementv1.SetSecretResponse{}), nil
 }
 
 // DeleteSecret forgets a name.
-func (m *Management) DeleteSecret(ctx context.Context, req *managementv1.DeleteSecretRequest) (*managementv1.DeleteSecretResponse, error) {
+func (m *Management) DeleteSecret(ctx context.Context, creq *connect.Request[managementv1.DeleteSecretRequest]) (*connect.Response[managementv1.DeleteSecretResponse], error) {
+	req := creq.Msg
 	namespace, err := scope(ctx, auth.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
 	m.Secrets.Delete(namespace, req.GetName())
-	return &managementv1.DeleteSecretResponse{}, nil
+	return connect.NewResponse(&managementv1.DeleteSecretResponse{}), nil
 }
 
 // ListSecrets lists names — never values.
-func (m *Management) ListSecrets(ctx context.Context, _ *managementv1.ListSecretsRequest) (*managementv1.ListSecretsResponse, error) {
+func (m *Management) ListSecrets(ctx context.Context, _ *connect.Request[managementv1.ListSecretsRequest]) (*connect.Response[managementv1.ListSecretsResponse], error) {
 	namespace, err := scope(ctx, auth.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
-	return &managementv1.ListSecretsResponse{Names: m.Secrets.List(namespace)}, nil
+	return connect.NewResponse(&managementv1.ListSecretsResponse{Names: m.Secrets.List(namespace)}), nil
 }
 
 // --- helpers ---
