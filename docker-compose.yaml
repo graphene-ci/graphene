@@ -1,9 +1,10 @@
 # The graphene installation: the server and everything it stands on.
-# Temporal, minio, and the registry are INTERNAL — the server is the
-# single door (gRPC :7233, HTTP :7280, ConnectRPC :7281 for browsers).
-# Agents connect from outside to GRAPHENE_SERVER_EXTERNAL_GRPC — set it
-# to your host's address for machines beyond localhost, and replace the
-# dev tokens.
+# Temporal, minio, and the registry are INTERNAL — the server is ONE
+# door on :7233 (gRPC, the browser ConnectRPC surface, probes, and the
+# registry proxy split by content on the same port). Agents connect
+# from outside to GRAPHENE_SERVER_EXTERNAL — set it to your host's
+# address for machines beyond localhost, and replace the dev tokens.
+# TLS: put a proxy in front (caddy: reverse_proxy h2c://host:7233).
 services:
   postgres:
     image: postgres:16-alpine
@@ -105,13 +106,10 @@ services:
     # The WHOLE configuration is environment: the dotted YAML path
     # uppercased under the GRAPHENE prefix (see internal/config).
     environment:
-      GRAPHENE_SERVER_GRPC: ":7233"
-      GRAPHENE_SERVER_HTTP: ":7280"
-      GRAPHENE_SERVER_CONNECT: ":7281"
-      # Agents and workers OUTSIDE this host dial these — set to the
+      GRAPHENE_SERVER_LISTEN: ":7233"
+      # Agents and workers OUTSIDE this host dial this — set to the
       # host's real address for machines beyond localhost.
-      GRAPHENE_SERVER_EXTERNAL_GRPC: "127.0.0.1:7233"
-      GRAPHENE_SERVER_EXTERNAL_HTTP: "http://127.0.0.1:7280"
+      GRAPHENE_SERVER_EXTERNAL: "127.0.0.1:7233"
       GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
       GRAPHENE_TEMPORAL_NAMESPACE: "default"
       GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
@@ -130,13 +128,11 @@ services:
       # The managed contour launches run-worker containers on this host.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      # The doors: gRPC (agents, workers, Temporal proxy), HTTP (probes,
-      # registry proxy), ConnectRPC (management API for browsers).
-      # Managed run containers run with host networking and reach the
-      # gRPC door through the published port (externalGrpc).
+      # THE door: gRPC (agents, workers, Temporal proxy, worker and
+      # management planes), ConnectRPC for browsers, probes, and the
+      # registry proxy — one port. Managed run containers run with host
+      # networking and reach it through the published port (external).
       - "7233:7233"
-      - "7280:7280"
-      - "7281:7281"
     # Root for the docker socket; the binary itself needs nothing else.
     user: "0:0"
     networks: [graphene]

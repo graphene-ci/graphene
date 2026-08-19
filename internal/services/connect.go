@@ -2,28 +2,32 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/graphene/pkg/proto/management/v1/managementv1connect"
 )
 
-// ConnectHandler mounts the management plane for browsers: ConnectRPC
-// serves the connect, gRPC-web, and gRPC protocols on one HTTP handler.
-// Auth is the same bearer space; the middleware also carries the
-// namespace header into the gRPC metadata the services read.
-func ConnectHandler(m *Management, authn *auth.Authenticator) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle(managementv1connect.NewRunsAPIHandler(runsConnect{m}))
-	mux.Handle(managementv1connect.NewResourcesAPIHandler(resourcesConnect{m}))
-	mux.Handle(managementv1connect.NewNamespacesAPIHandler(namespacesConnect{m}))
-	mux.Handle(managementv1connect.NewSecretsAPIHandler(secretsConnect{m}))
-	return withBearer(mux, authn)
+// MountConnect mounts the management plane for browsers onto the door's
+// HTTP mux: ConnectRPC serves the connect, gRPC-web, and JSON protocols
+// under the services' own path prefixes. Auth is the same bearer space;
+// the middleware also carries the namespace header into the gRPC
+// metadata the services read.
+func MountConnect(mux *http.ServeMux, m *Management, authn *auth.Authenticator) {
+	mount := func(pattern string, handler http.Handler) {
+		mux.Handle(pattern, withBearer(handler, authn))
+	}
+	mount(managementv1connect.NewRunsAPIHandler(runsConnect{m}))
+	mount(managementv1connect.NewResourcesAPIHandler(resourcesConnect{m}))
+	mount(managementv1connect.NewNamespacesAPIHandler(namespacesConnect{m}))
+	mount(managementv1connect.NewSecretsAPIHandler(secretsConnect{m}))
 }
 
 // withBearer authenticates every request and mirrors the namespace
@@ -49,9 +53,20 @@ func withBearer(next http.Handler, authn *auth.Authenticator) http.Handler {
 func adapt[Req, Res any](ctx context.Context, req *connect.Request[Req], fn func(context.Context, *Req) (*Res, error)) (*connect.Response[Res], error) {
 	res, err := fn(ctx, req.Msg)
 	if err != nil {
-		return nil, err
+		return nil, asConnectError(err)
 	}
 	return connect.NewResponse(res), nil
+}
+
+// asConnectError translates the shared impl's gRPC status into the
+// matching connect code, so browsers see invalid_argument — not
+// unknown.
+func asConnectError(err error) error {
+	s, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+	return connect.NewError(connect.Code(s.Code()), errors.New(s.Message()))
 }
 
 type runsConnect struct{ m *Management }

@@ -5,16 +5,27 @@ installation: Postgres, Temporal (with the graphene search attributes
 registered by a one-shot container), minio, a docker registry stored in
 minio, and the server.
 
-The server is the DOOR: gRPC `:7233` (agents, workers, the Temporal
-proxy, the worker plane), HTTP `:7280` (probes, the registry proxy),
-and ConnectRPC `:7281` (the management API for browsers — plain JSON
-POSTs to `/graphene.management.v1.<Service>/<Method>` with a bearer
-token). Temporal, minio, and the registry stay internal to the compose
-network.
+The server is ONE door on `:7233`, split by content on the same
+listener: gRPC (agents, workers, the Temporal proxy, the worker and
+management planes), the ConnectRPC browser surface (plain JSON POSTs to
+`/graphene.management.v1.<Service>/<Method>` with a bearer token),
+`/healthz` probes, and the `/v2` registry proxy. Temporal, minio, and
+the registry stay internal to the compose network.
+
+TLS terminates in front of the door; the proxy speaks unencrypted
+HTTP/2 to it, which carries every protocol at once. With caddy:
+
+```
+graphene.example.com {
+    reverse_proxy h2c://127.0.0.1:7233
+}
+```
+
+and set `GRAPHENE_SERVER_EXTERNAL` to the proxy's address.
 
 The whole server configuration is environment variables — the dotted
 YAML path uppercased under the `GRAPHENE` prefix
-(`server.external_grpc` → `GRAPHENE_SERVER_EXTERNAL_GRPC`); a YAML file
+(`server.external` → `GRAPHENE_SERVER_EXTERNAL`); a YAML file
 (`GRAPHENE_SERVER_CONFIG`) works too and the environment overlays it.
 Before exposing the door anywhere: replace the dev tokens and set the
 external addresses to the host's real ones.

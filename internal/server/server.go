@@ -1,8 +1,10 @@
 // Package server is the composition root of the graphene control plane:
-// one gRPC door (agent sessions + grpc.health.v1 + Temporal proxy), one
-// HTTP door (runs API + probes + registry proxy), the server worker with
-// the system entity flows, the stand sweeper, the managed-run reaper,
-// and the infra health runners. Every goroutine starts here, under one
+// ONE door (cmux splits the single listener by content: gRPC for agent
+// sessions, grpc.health.v1, the Temporal proxy, and the worker and
+// management planes; plain HTTP for the ConnectRPC browser surface,
+// probes, and the registry proxy), the server worker with the system
+// entity flows, the stand sweeper, the managed-run reaper, and the
+// infra health runners. Every goroutine starts here, under one
 // xshutdown manager that drains and cleans up in order.
 package server
 
@@ -12,11 +14,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gopherex/xlog"
 	grpcprobe "github.com/gopherex/xprobe/pkg/transport/grpc"
 	"github.com/gopherex/xshutdown"
+	"github.com/soheilhy/cmux"
 	"go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -79,7 +83,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Registry:         registry,
 		Secrets:          secretStore,
 		Blobs:            blobStore,
-		ExternalGRPC:     cfg.ExternalGRPC,
+		External:         cfg.External,
 		RunTokenFor:      func(ns string) string { return runTokenFor(cfg, ns) },
 		UserDataFor:      userDataBuilder(cfg),
 		SweepEvery:       time.Duration(cfg.SweepSeconds) * time.Second,
@@ -134,53 +138,61 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	managementv1.RegisterNamespacesAPIServer(grpcServer, management)
 	managementv1.RegisterSecretsAPIServer(grpcServer, management)
 
+	// The plain-HTTP half of the door: the ConnectRPC management
+	// surface (its own path prefixes), with probes and the registry
+	// proxy behind everything else. Unencrypted HTTP/2 stays on so a
+	// TLS proxy in front can speak h2c for every protocol at once.
+	rootMux := http.NewServeMux()
+	services.MountConnect(rootMux, management, authn)
+	rootMux.Handle("/", httpapi.New(httpapi.Deps{
+		Auth:             authn,
+		RegistryUpstream: cfg.RegistryUpstream,
+		Health:           health.HTTPMux(),
+		Log:              log.With(xlog.String("component", "http")),
+	}))
+	httpProtocols := new(http.Protocols)
+	httpProtocols.SetHTTP1(true)
+	httpProtocols.SetUnencryptedHTTP2(true)
 	httpServer := &http.Server{
-		Addr: cfg.ListenHTTP,
-		Handler: httpapi.New(httpapi.Deps{
-			Auth:             authn,
-			RegistryUpstream: cfg.RegistryUpstream,
-			Health:           health.HTTPMux(),
-			Log:              log.With(xlog.String("component", "http")),
-		}),
+		Handler:           rootMux,
+		Protocols:         httpProtocols,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// The browser port: the management plane over ConnectRPC
-	// (connect + gRPC-web + gRPC on one handler; unencrypted HTTP/2 for
-	// the gRPC protocol without TLS).
-	connectProtocols := new(http.Protocols)
-	connectProtocols.SetHTTP1(true)
-	connectProtocols.SetUnencryptedHTTP2(true)
-	connectServer := &http.Server{
-		Addr:              cfg.ListenConnect,
-		Handler:           services.ConnectHandler(management, authn),
-		Protocols:         connectProtocols,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	grpcListener, err := net.Listen("tcp", cfg.ListenGRPC)
+	// ONE listener; cmux splits it by content. gRPC is matched by its
+	// content-type header (the SendSettings variant, so clients that
+	// wait for the server preface don't hang); everything else is HTTP.
+	rootListener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		return err
 	}
-	log.Info("serving",
-		xlog.String("grpc", grpcListener.Addr().String()),
-		xlog.String("http", cfg.ListenHTTP),
-		xlog.String("connect", cfg.ListenConnect))
+	mux := cmux.New(rootListener)
+	grpcListener := mux.MatchWithWriters(
+		cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
+	httpListener := mux.Match(cmux.Any())
+	log.Info("serving", xlog.String("door", rootListener.Addr().String()))
 
-	fatal := make(chan error, 2)
+	// closing suppresses the accept errors every listener close causes.
+	var closing atomic.Bool
+	fatal := make(chan error, 3)
+	report := func(err error) {
+		if err != nil && !closing.Load() {
+			fatal <- err
+		}
+	}
 	stop.Go(func(context.Context) {
 		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			fatal <- fmt.Errorf("grpc door: %w", err)
+			report(fmt.Errorf("grpc door: %w", err))
 		}
 	})
 	stop.Go(func(context.Context) {
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatal <- fmt.Errorf("http door: %w", err)
+		if err := httpServer.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			report(fmt.Errorf("http door: %w", err))
 		}
 	})
 	stop.Go(func(context.Context) {
-		if err := connectServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatal <- fmt.Errorf("connect port: %w", err)
+		if err := mux.Serve(); err != nil {
+			report(fmt.Errorf("door: %w", err))
 		}
 	})
 	stop.Go(health.Run)
@@ -192,13 +204,14 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	case err := <-fatal:
 		cause = err
 	}
-	// The doors must close BEFORE Stop drains: Serve/ListenAndServe are
-	// tracked goroutines that only return when their server stops.
-	grpcServer.GracefulStop()
+	// The door must close BEFORE Stop drains: the Serve goroutines are
+	// tracked and only return when their server stops.
+	closing.Store(true)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	_ = httpServer.Shutdown(shutdownCtx)
-	_ = connectServer.Shutdown(shutdownCtx)
 	cancel()
+	grpcServer.Stop()
+	_ = rootListener.Close()
 	if err := stop.Stop(); err != nil {
 		return errors.Join(cause, err)
 	}
@@ -283,6 +296,6 @@ UNIT
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
-`, cfg.ExternalGRPC, token, agentId, cfg.ListenHTTP), nil
+`, cfg.External, token, agentId, cfg.External), nil
 	}
 }

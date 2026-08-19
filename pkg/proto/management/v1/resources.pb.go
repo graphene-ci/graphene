@@ -156,8 +156,11 @@ type Resource struct {
 	State             []byte `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
 	PendingCommands   int32  `protobuf:"varint,7,opt,name=pending_commands,json=pendingCommands,proto3" json:"pending_commands,omitempty"`
 	MarkedForDeletion bool   `protobuf:"varint,8,opt,name=marked_for_deletion,json=markedForDeletion,proto3" json:"marked_for_deletion,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Labels are the record's markers — metric-label semantics; keys
+	// under "graphene.io/" are written by the system.
+	Labels        map[string]string `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Resource) Reset() {
@@ -244,6 +247,13 @@ func (x *Resource) GetMarkedForDeletion() bool {
 		return x.MarkedForDeletion
 	}
 	return false
+}
+
+func (x *Resource) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
 }
 
 type ListResponse struct {
@@ -827,7 +837,7 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"K\n" +
 	"\vListRequest\x12<\n" +
-	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\"\xe1\x01\n" +
+	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\"\xe2\x02\n" +
 	"\bResource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -836,7 +846,11 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x04spec\x18\x05 \x01(\fR\x04spec\x12\x14\n" +
 	"\x05state\x18\x06 \x01(\fR\x05state\x12)\n" +
 	"\x10pending_commands\x18\a \x01(\x05R\x0fpendingCommands\x12.\n" +
-	"\x13marked_for_deletion\x18\b \x01(\bR\x11markedForDeletion\"N\n" +
+	"\x13marked_for_deletion\x18\b \x01(\bR\x11markedForDeletion\x12D\n" +
+	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"N\n" +
 	"\fListResponse\x12>\n" +
 	"\tresources\x18\x01 \x03(\v2 .graphene.management.v1.ResourceR\tresources\"\x1e\n" +
 	"\n" +
@@ -887,7 +901,7 @@ func file_proto_management_v1_resources_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_resources_proto_rawDescData
 }
 
-var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_proto_management_v1_resources_proto_goTypes = []any{
 	(*Selector)(nil),         // 0: graphene.management.v1.Selector
 	(*ListRequest)(nil),      // 1: graphene.management.v1.ListRequest
@@ -905,32 +919,34 @@ var file_proto_management_v1_resources_proto_goTypes = []any{
 	(*InvokeRequest)(nil),    // 13: graphene.management.v1.InvokeRequest
 	(*InvokeResponse)(nil),   // 14: graphene.management.v1.InvokeResponse
 	nil,                      // 15: graphene.management.v1.Selector.LabelsEntry
+	nil,                      // 16: graphene.management.v1.Resource.LabelsEntry
 }
 var file_proto_management_v1_resources_proto_depIdxs = []int32{
 	15, // 0: graphene.management.v1.Selector.labels:type_name -> graphene.management.v1.Selector.LabelsEntry
 	0,  // 1: graphene.management.v1.ListRequest.selector:type_name -> graphene.management.v1.Selector
-	2,  // 2: graphene.management.v1.ListResponse.resources:type_name -> graphene.management.v1.Resource
-	2,  // 3: graphene.management.v1.GetResponse.resource:type_name -> graphene.management.v1.Resource
-	2,  // 4: graphene.management.v1.TreeNode.resource:type_name -> graphene.management.v1.Resource
-	7,  // 5: graphene.management.v1.TreeNode.children:type_name -> graphene.management.v1.TreeNode
-	7,  // 6: graphene.management.v1.TreeResponse.roots:type_name -> graphene.management.v1.TreeNode
-	1,  // 7: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
-	4,  // 8: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
-	6,  // 9: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
-	9,  // 10: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
-	11, // 11: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
-	13, // 12: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
-	3,  // 13: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
-	5,  // 14: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
-	8,  // 15: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
-	10, // 16: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
-	12, // 17: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
-	14, // 18: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
-	13, // [13:19] is the sub-list for method output_type
-	7,  // [7:13] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	16, // 2: graphene.management.v1.Resource.labels:type_name -> graphene.management.v1.Resource.LabelsEntry
+	2,  // 3: graphene.management.v1.ListResponse.resources:type_name -> graphene.management.v1.Resource
+	2,  // 4: graphene.management.v1.GetResponse.resource:type_name -> graphene.management.v1.Resource
+	2,  // 5: graphene.management.v1.TreeNode.resource:type_name -> graphene.management.v1.Resource
+	7,  // 6: graphene.management.v1.TreeNode.children:type_name -> graphene.management.v1.TreeNode
+	7,  // 7: graphene.management.v1.TreeResponse.roots:type_name -> graphene.management.v1.TreeNode
+	1,  // 8: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
+	4,  // 9: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
+	6,  // 10: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
+	9,  // 11: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
+	11, // 12: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
+	13, // 13: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
+	3,  // 14: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
+	5,  // 15: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
+	8,  // 16: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
+	10, // 17: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
+	12, // 18: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
+	14, // 19: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_resources_proto_init() }
@@ -944,7 +960,7 @@ func file_proto_management_v1_resources_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_resources_proto_rawDesc), len(file_proto_management_v1_resources_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
