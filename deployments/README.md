@@ -1,9 +1,15 @@
 # Deployments
 
-`docker compose up -d` at the repository root brings up a whole
-installation: Postgres, Temporal (with the graphene search attributes
-registered by a one-shot container), minio, a docker registry stored in
-minio, and the server.
+The compose file at the repository root is the POLYGON: a complete
+demo/dev installation in one command. Production delivery is a
+separate stage (helm, a real Temporal cluster, external S3 and
+telemetry) and deliberately not this file.
+
+`docker compose up -d` brings up: Temporal (dev server, search
+attributes registered by its start flags), minio, a docker registry
+stored in minio, SigNoz (the whole telemetry plane in one image — UI
+on :8080, first login admin@graphene.local / Graphene-dev-1!), and the
+server.
 
 The server is ONE door on `:7233`, split by content on the same
 listener: gRPC (agents, workers, the Temporal proxy, the worker and
@@ -31,8 +37,13 @@ Before exposing the door anywhere: replace the dev tokens and set the
 external addresses to the host's real ones.
 
 Blobs live in minio (`blobs.backend: s3`); a single-node file backend
-(`file`) exists for development. The registry uses minio's S3 API as its
-storage driver — one stateful store for everything but Postgres.
+(`file`) exists for development. The registry uses minio's S3 API as
+its storage driver.
+
+Telemetry: workers and agents export OTLP to the door; the server
+stamps the caller's namespace and forwards to SigNoz
+(`otel.endpoint`). Dimensions 3-5 of every entity (logs, metrics,
+traces, correlated by the graphene.* attributes) live there.
 
 The managed contour launches run-worker containers on this host through
 the mounted docker socket.
