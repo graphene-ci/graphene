@@ -38,7 +38,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
-	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
 )
@@ -133,10 +132,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	workerplanev1.RegisterSecretsAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterCapabilitiesAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterBlobsAPIServer(grpcServer, workerPlane)
-	managementv1.RegisterRunsAPIServer(grpcServer, management)
-	managementv1.RegisterResourcesAPIServer(grpcServer, management)
-	managementv1.RegisterNamespacesAPIServer(grpcServer, management)
-	managementv1.RegisterSecretsAPIServer(grpcServer, management)
 
 	// The plain-HTTP half of the door: the ConnectRPC management
 	// surface (its own path prefixes), with probes and the registry
