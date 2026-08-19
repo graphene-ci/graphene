@@ -147,6 +147,9 @@ func (m *Management) ListRuns(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return nil, err
 	}
+	if err := noQuotes(req.GetStatus()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	query := `WorkflowId STARTS_WITH "run/"`
 	if req.GetStatus() != "" {
 		query += fmt.Sprintf(" AND ExecutionStatus = '%s'", req.GetStatus())
@@ -191,6 +194,9 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 		return nil, err
 	}
 	sel := req.GetSelector()
+	if err := noQuotes(sel.GetKind(), sel.GetPhase(), sel.GetOwner()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	query := `EntityKind IS NOT NULL`
 	if sel.GetKind() != "" {
 		query = fmt.Sprintf("EntityKind = '%s'", sel.GetKind())
@@ -438,12 +444,23 @@ func labelQueryTerms(labels map[string]string) (string, error) {
 	var out strings.Builder
 	for k, v := range labels {
 		pair := k + "=" + v
-		if strings.ContainsAny(pair, `'"`) {
-			return "", fmt.Errorf("label %q: quotes are not allowed", pair)
+		if err := noQuotes(pair); err != nil {
+			return "", err
 		}
 		fmt.Fprintf(&out, " AND EntityLabels IN ('%s')", pair)
 	}
 	return out.String(), nil
+}
+
+// noQuotes guards every value interpolated into a visibility query:
+// quotes cannot be escaped there, so they are refused outright.
+func noQuotes(values ...string) error {
+	for _, v := range values {
+		if strings.ContainsAny(v, `'"`) {
+			return fmt.Errorf("%q: quotes are not allowed in a selector", v)
+		}
+	}
+	return nil
 }
 
 // labelPairs renders labels as sorted "k=v" keywords.
