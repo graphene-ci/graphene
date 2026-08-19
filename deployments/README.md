@@ -7,9 +7,9 @@ telemetry) and deliberately not this file.
 
 `docker compose up -d` brings up: Temporal (dev server, search
 attributes registered by its start flags), minio, a docker registry
-stored in minio, SigNoz (the whole telemetry plane in one image — UI
-on :8080, first login admin@graphene.local / Graphene-dev-1!), and the
-server.
+stored in minio, the Victoria telemetry stack (victoriametrics :8428,
+victorialogs :9428, victoriatraces :10428 — each with its own web UI),
+and the server.
 
 The server is ONE door on `:7233`, split by content on the same
 listener: gRPC (agents, workers, the Temporal proxy, the worker and
@@ -41,9 +41,13 @@ Blobs live in minio (`blobs.backend: s3`); a single-node file backend
 its storage driver.
 
 Telemetry: workers and agents export OTLP to the door; the server
-stamps the caller's namespace and forwards to SigNoz
-(`otel.endpoint`). Dimensions 3-5 of every entity (logs, metrics,
-traces, correlated by the graphene.* attributes) live there.
+stamps the caller's namespace and forwards each signal to its backend
+(`otel.traces/logs/metrics` — OTLP/HTTP ingest URLs, no collector in
+between). The Victoria stack is chosen for its STANDARD query
+surfaces: PromQL (metrics), the Jaeger API (traces); logs are the one
+signal without a de-facto standard — that access is isolated behind a
+driver. Dimensions 3-5 of every entity live here, correlated by the
+graphene.* attributes.
 
 The managed contour launches run-worker containers on this host through
 the mounted docker socket.

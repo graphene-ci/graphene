@@ -75,9 +75,12 @@ type File struct {
 	} `mapstructure:"secrets"`
 
 	Otel struct {
-		// Endpoint is the otel collector's OTLP gRPC address the door
-		// forwards telemetry to; empty accepts and drops.
-		Endpoint string `mapstructure:"endpoint"`
+		// The OTLP gRPC addresses the door forwards each signal to —
+		// the backends speak OTLP directly, no collector needed. Empty
+		// accepts and drops that signal.
+		Traces  string `mapstructure:"traces"`
+		Logs    string `mapstructure:"logs"`
+		Metrics string `mapstructure:"metrics"`
 	} `mapstructure:"otel"`
 
 	Log struct {
@@ -112,7 +115,9 @@ type Config struct {
 	BlobDir          string
 	BlobS3           S3
 	RegistryUpstream string
-	OtelEndpoint     string
+	OtelTraces       string
+	OtelLogs         string
+	OtelMetrics      string
 
 	AgentHeartbeat        time.Duration
 	AgentHeartbeatSeconds int
@@ -176,7 +181,9 @@ func Resolve(f File) (Config, error) {
 			UseSSL:    f.Blobs.S3.UseSSL,
 		},
 		RegistryUpstream:      f.Registry.Upstream,
-		OtelEndpoint:          f.Otel.Endpoint,
+		OtelTraces:            f.Otel.Traces,
+		OtelLogs:              f.Otel.Logs,
+		OtelMetrics:           f.Otel.Metrics,
 		AgentHeartbeatSeconds: f.Intervals.AgentHeartbeatSeconds,
 		SweepSeconds:          f.Intervals.SweepSeconds,
 		ReapSeconds:           f.Intervals.ReapSeconds,
