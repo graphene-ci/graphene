@@ -81,12 +81,12 @@ github.com/gopherex/xshutdown v1.0.0 h1:oXj0J3iNW+bOzyDbtVBS/p17b3U26loDuIxx2S1E
 github.com/gopherex/xshutdown v1.0.0/go.mod h1:VP9PHNALDhbpRtqDS67qP+M1PQKjj2MgokukD01KQUA=
 github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f h1:hfP1GgUHkqCiIk9fIUTPqsQQTd4TrkgW1Krch7CEYPs=
 github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f/go.mod h1:EPqbsOQt96Pyw8gE40QRd+t3bpX6W1AVNT/9s00Ggkk=
-github.com/graphene-ci/pipeline v0.0.0-20260819160743-d9e9984e907c h1:JPu91VB1Ki2U5plXxi5YX3q3NopIwiTnKCD71vyMgT0=
-github.com/graphene-ci/pipeline v0.0.0-20260819160743-d9e9984e907c/go.mod h1:PFI4Y/GOOvMG98YTdELuJ1WmMKsf3gfySPCKcZ7TL1A=
+github.com/graphene-ci/pipeline v0.0.0-20260819191640-1aec0254e3b7 h1:AowpOwIwInDQwggQWPvGSH0XTnVQABzm8W53a4agsfk=
+github.com/graphene-ci/pipeline v0.0.0-20260819191640-1aec0254e3b7/go.mod h1:B4io/q2MtaANCCliClT6V7MtDSa+Ahln+kBa+//jAJ4=
 github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5 h1:LE1Z4SSdddDn8hA+ec/uSGlUGHsjJVE/+j1HKNriC8M=
 github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
-github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 h1:sGm2vDRFUrQJO/Veii4h4zG2vvqG6uWNkBHSTqXOZk0=
-github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2/go.mod h1:wd1YpapPLivG6nQgbf7ZkG1hhSOXDhhn4MLTknx2aAc=
+github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 h1:B+8ClL/kCQkRiU82d9xajRPKYMrB7E0MbtzWVi1K4ns=
+github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3/go.mod h1:NbCUVmiS4foBGBHOYlCT25+YmGpJ32dZPi75pGEUpj4=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=

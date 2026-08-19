@@ -12,7 +12,7 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
-	github.com/graphene-ci/pipeline v0.0.0-20260819160743-d9e9984e907c
+	github.com/graphene-ci/pipeline v0.0.0-20260819191640-1aec0254e3b7
 	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/siderolabs/grpc-proxy v0.5.2
@@ -54,7 +54,7 @@ require (
 	github.com/google/cel-go v0.30.0 // indirect
 	github.com/google/go-containerregistry v0.21.9 // indirect
 	github.com/gopherex/schemapb/go v0.0.0-20260805100557-b08e53066d63 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
