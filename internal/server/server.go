@@ -25,6 +25,10 @@ import (
 	"google.golang.org/grpc"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/auth"
@@ -114,6 +118,12 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Secrets: secretStore,
 		Log:     log.With(xlog.String("component", "management")),
 	}
+	otlp := &services.OTLP{
+		Endpoint: cfg.OtelEndpoint,
+		Log:      log.With(xlog.String("component", "otlp")),
+	}
+	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
+
 	workerPlane := &services.WorkerPlane{
 		Bundles: bundles,
 		Secrets: secretStore,
@@ -132,6 +142,11 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	workerplanev1.RegisterSecretsAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterCapabilitiesAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterBlobsAPIServer(grpcServer, workerPlane)
+	// The standard OTLP surface behind the same door: exporters in
+	// workers and agents point at the address they already know.
+	coltracepb.RegisterTraceServiceServer(grpcServer, otlp)
+	collogspb.RegisterLogsServiceServer(grpcServer, otlp.OTLPLogs())
+	colmetricspb.RegisterMetricsServiceServer(grpcServer, otlp.OTLPMetrics())
 
 	// The plain-HTTP half of the door: the ConnectRPC management
 	// surface (its own path prefixes), with probes and the registry
