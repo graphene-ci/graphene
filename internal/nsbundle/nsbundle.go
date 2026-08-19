@@ -1,6 +1,6 @@
 // Package nsbundle runs one runtime bundle per NAMESPACE: a Temporal
 // client bound to the namespace, the server worker with the system
-// flows, the managed-run reaper, and the stand sweeper. A graphene
+// flows, and the managed-run reaper. A graphene
 // namespace is symmetric to a Temporal namespace — creating one
 // registers it in Temporal with the graphene search attributes; a
 // bundle starts lazily on first use.
@@ -28,7 +28,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/managed"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/secrets"
-	"github.com/graphene-ci/graphene/internal/sweeper"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/pipeline/pkg/id"
 )
@@ -122,6 +121,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		AgentOps:    agentOps,
 		ArtifactOps: artifactOps,
 		External:    m.deps.External,
+		StandTick:   m.deps.SweepEvery,
 		RunToken:    m.deps.RunTokenFor(namespace),
 		Log:         log.With(xlog.String("component", "worker")),
 	})
@@ -131,7 +131,6 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 	}
 	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
 		log.With(xlog.String("component", "managed")))
-	sweep := sweeper.New(c, w, log.With(xlog.String("component", "sweeper")))
 
 	b := &Bundle{Namespace: namespace, Client: c, Worker: w, Runner: runner}
 	go func() {
@@ -139,8 +138,11 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 			log.Error("namespace worker died", xlog.Err(err))
 		}
 	}()
-	go sweep.Tick(m.ctx, m.deps.SweepEvery)
+	// Stand TTLs are the stands' OWN timers now — no sweeper loop.
 	go runner.Tick(m.ctx, m.deps.ReapEvery)
+	// Machine executors live while their records do; this collects them
+	// when the last record dies after the run is gone.
+	go w.ReapExecutors(m.ctx, m.deps.ReapEvery)
 	log.Info("namespace bundle started")
 	return b, nil
 }

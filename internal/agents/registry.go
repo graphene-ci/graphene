@@ -223,9 +223,33 @@ func (s *session) send(msg *agentpb.SessionResponse) error {
 	return s.stream.Send(msg)
 }
 
+// RunContainers lists the (agent × run) containers the namespace's
+// agents currently report.
+func (r *Registry) RunContainers(namespace string) map[id.AgentId][]id.RunId {
+	r.mu.Lock()
+	sessions := make([]*session, 0, len(r.agents))
+	for key, s := range r.agents {
+		if key.namespace == namespace {
+			sessions = append(sessions, s)
+		}
+	}
+	r.mu.Unlock()
+	out := map[id.AgentId][]id.RunId{}
+	for _, s := range sessions {
+		s.containersMu.Lock()
+		for runId := range s.containers {
+			out[s.agentId] = append(out[s.agentId], runId)
+		}
+		s.containersMu.Unlock()
+	}
+	return out
+}
+
 // StopRunContainers stops the run's container on every machine that has
-// one — the teardown half of the run cleanup.
-func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runId id.RunId) error {
+// one — the teardown half of the run cleanup. THE EXECUTOR LIVES WHILE
+// ITS RECORDS DO: keep decides per (agent × run) whether the container
+// may go — a stand-held docker resource keeps its executor alive.
+func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runId id.RunId, keep func(agentId id.AgentId) bool) error {
 	r.mu.Lock()
 	sessions := make([]*session, 0, len(r.agents))
 	for key, s := range r.agents {
@@ -240,6 +264,9 @@ func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runI
 		_, has := s.containers[runId]
 		s.containersMu.Unlock()
 		if !has {
+			continue
+		}
+		if keep != nil && keep(s.agentId) {
 			continue
 		}
 		if err := r.StopContainer(ctx, namespace, s.agentId, runId); err != nil {

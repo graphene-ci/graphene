@@ -160,6 +160,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	workerplanev1.RegisterSecretsAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterCapabilitiesAPIServer(grpcServer, workerPlane)
 	workerplanev1.RegisterBlobsAPIServer(grpcServer, workerPlane)
+	workerplanev1.RegisterEventsAPIServer(grpcServer, workerPlane)
+	workerplanev1.RegisterManifestAPIServer(grpcServer, workerPlane)
 	// The standard OTLP surface behind the same door: exporters in
 	// workers and agents point at the address they already know.
 	coltracepb.RegisterTraceServiceServer(grpcServer, otlp)
