@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/gopherex/xlog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/telemetry"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -28,7 +30,12 @@ type Observe struct {
 	Bundles *nsbundle.Manager
 	// Management supplies the entity describe path State reuses.
 	Management *Management
-	Log        *xlog.Logger
+	// The telemetry read drivers; nil means that dimension has no
+	// backend configured.
+	LogsBackend    telemetry.Logs
+	MetricsBackend telemetry.Metrics
+	TracesBackend  telemetry.Traces
+	Log            *xlog.Logger
 }
 
 // State returns dimension 1: execution status plus, for entity refs,
@@ -89,20 +96,92 @@ func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1
 	return nil
 }
 
-// Logs, Metrics, and Trace await the telemetry backend decision; the
-// collector fan-out is already in place.
-func (o *Observe) Logs(context.Context, *connect.Request[managementv1.LogsRequest], *connect.ServerStream[managementv1.LogRecord]) error {
-	return connect.NewError(connect.CodeUnimplemented, errNoBackend)
+// Logs streams dimension 3 from the telemetry backend, oldest first;
+// follow keeps polling for new records until the client goes away.
+func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.LogsRequest], stream *connect.ServerStream[managementv1.LogRecord]) error {
+	if o.LogsBackend == nil {
+		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	req := creq.Msg
+	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return asConnectError(err)
+	}
+	sel := telemetry.SelectorFor(namespace, req.GetRef())
+	since := time.Time{}
+	if req.GetSinceUnixNano() > 0 {
+		since = time.Unix(0, req.GetSinceUnixNano())
+	}
+	for {
+		records, err := o.LogsBackend.Query(ctx, sel, since, 1000)
+		if err != nil {
+			return asConnectError(status.Error(codes.Unavailable, err.Error()))
+		}
+		for _, rec := range records {
+			if err := stream.Send(&managementv1.LogRecord{
+				TimeUnixNano: rec.Time.UnixNano(),
+				Severity:     rec.Severity,
+				Body:         rec.Body,
+				Attributes:   rec.Attributes,
+			}); err != nil {
+				return err
+			}
+			if rec.Time.After(since) {
+				since = rec.Time
+			}
+		}
+		if !req.GetFollow() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
-// Metrics — see Logs.
-func (o *Observe) Metrics(context.Context, *connect.Request[managementv1.MetricsRequest]) (*connect.Response[managementv1.MetricsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
+// Metrics returns dimension 4: the backend's standard PromQL range
+// response for every series of the entity.
+func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv1.MetricsRequest]) (*connect.Response[managementv1.MetricsResponse], error) {
+	if o.MetricsBackend == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	req := creq.Msg
+	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	end := time.Now()
+	if req.GetEndUnixNano() > 0 {
+		end = time.Unix(0, req.GetEndUnixNano())
+	}
+	start := end.Add(-time.Hour)
+	if req.GetStartUnixNano() > 0 {
+		start = time.Unix(0, req.GetStartUnixNano())
+	}
+	series, err := o.MetricsBackend.Series(ctx, telemetry.SelectorFor(namespace, req.GetRef()), start, end)
+	if err != nil {
+		return nil, asConnectError(status.Error(codes.Unavailable, err.Error()))
+	}
+	return connect.NewResponse(&managementv1.MetricsResponse{Series: series}), nil
 }
 
-// Trace — see Logs.
-func (o *Observe) Trace(context.Context, *connect.Request[managementv1.TraceRequest]) (*connect.Response[managementv1.TraceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
+// Trace returns dimension 5: standard Jaeger JSON of the entity's
+// traces.
+func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.TraceRequest]) (*connect.Response[managementv1.TraceResponse], error) {
+	if o.TracesBackend == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	trace, err := o.TracesBackend.Search(ctx, telemetry.SelectorFor(namespace, creq.Msg.GetRef()), 20)
+	if err != nil {
+		return nil, asConnectError(status.Error(codes.Unavailable, err.Error()))
+	}
+	return connect.NewResponse(&managementv1.TraceResponse{Trace: trace}), nil
 }
 
 var errNoBackend = fmt.Errorf("no telemetry backend is configured behind the collector yet")

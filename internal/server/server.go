@@ -41,6 +41,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/services"
+	"github.com/graphene-ci/graphene/internal/telemetry"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
@@ -122,6 +123,16 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Bundles:    bundles,
 		Management: management,
 		Log:        log.With(xlog.String("component", "observe")),
+	}
+	telemetryHTTP := &http.Client{Timeout: 30 * time.Second}
+	if cfg.QueryLogs != "" {
+		observe.LogsBackend = &telemetry.LogsQL{Base: cfg.QueryLogs, Client: telemetryHTTP}
+	}
+	if cfg.QueryMetrics != "" {
+		observe.MetricsBackend = &telemetry.PromQL{Base: cfg.QueryMetrics, Client: telemetryHTTP}
+	}
+	if cfg.QueryTraces != "" {
+		observe.TracesBackend = &telemetry.Jaeger{Base: cfg.QueryTraces, Client: telemetryHTTP}
 	}
 	otlp := &services.OTLP{
 		Traces:  cfg.OtelTraces,

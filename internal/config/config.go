@@ -75,12 +75,21 @@ type File struct {
 	} `mapstructure:"secrets"`
 
 	Otel struct {
-		// The OTLP gRPC addresses the door forwards each signal to —
+		// The OTLP/HTTP ingest URLs the door forwards each signal to —
 		// the backends speak OTLP directly, no collector needed. Empty
 		// accepts and drops that signal.
 		Traces  string `mapstructure:"traces"`
 		Logs    string `mapstructure:"logs"`
 		Metrics string `mapstructure:"metrics"`
+		// Query names the read side ObserveAPI proxies — STANDARD
+		// surfaces: a PromQL base URL for metrics, a Jaeger API base
+		// URL for traces; logs are the one signal without a de-facto
+		// standard (LogsQL base URL, isolated behind a driver).
+		Query struct {
+			Metrics string `mapstructure:"metrics"`
+			Logs    string `mapstructure:"logs"`
+			Traces  string `mapstructure:"traces"`
+		} `mapstructure:"query"`
 	} `mapstructure:"otel"`
 
 	Log struct {
@@ -118,6 +127,9 @@ type Config struct {
 	OtelTraces       string
 	OtelLogs         string
 	OtelMetrics      string
+	QueryMetrics     string
+	QueryLogs        string
+	QueryTraces      string
 
 	AgentHeartbeat        time.Duration
 	AgentHeartbeatSeconds int
@@ -184,6 +196,9 @@ func Resolve(f File) (Config, error) {
 		OtelTraces:            f.Otel.Traces,
 		OtelLogs:              f.Otel.Logs,
 		OtelMetrics:           f.Otel.Metrics,
+		QueryMetrics:          f.Otel.Query.Metrics,
+		QueryLogs:             f.Otel.Query.Logs,
+		QueryTraces:           f.Otel.Query.Traces,
 		AgentHeartbeatSeconds: f.Intervals.AgentHeartbeatSeconds,
 		SweepSeconds:          f.Intervals.SweepSeconds,
 		ReapSeconds:           f.Intervals.ReapSeconds,
