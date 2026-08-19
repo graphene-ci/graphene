@@ -3,14 +3,18 @@
 # real Temporal cluster, external S3/telemetry) and deliberately not
 # this file.
 #
-# Temporal (dev server), minio, the registry, and signoz are INTERNAL —
+# Temporal (dev server), minio, and the registry are INTERNAL —
 # the server is ONE door on :7233 (gRPC, the browser ConnectRPC
 # surface, probes, and the registry proxy split by content). Agents
 # connect from outside to GRAPHENE_SERVER_EXTERNAL — set it to your
 # host's address for machines beyond localhost, and replace the dev
 # tokens. TLS: put a proxy in front (caddy: reverse_proxy
-# h2c://host:7233). SigNoz UI is published on :8080 — the telemetry
-# plane of every run, agent, and resource.
+# h2c://host:7233).
+#
+# Telemetry is the Victoria stack — chosen for its STANDARD query
+# surfaces (PromQL for metrics, the Jaeger API for traces), so nothing
+# of ours couples to a vendor: victoriametrics :8428, victorialogs
+# :9428, victoriatraces :10428 — each has its own web UI on that port.
 services:
   temporal:
     image: temporalio/temporal:latest
@@ -93,39 +97,35 @@ services:
         condition: service_completed_successfully
     networks: [graphene]
 
-  # The telemetry plane in one image: OTLP in, ClickHouse under,
-  # SigNoz UI out. Dimensions 3-5 (logs, metrics, traces) of every
-  # entity live here, correlated by the graphene.* attributes.
-  signoz:
-    image: signoz/signoz-standalone:latest
-    privileged: true
+  # Dimensions 3-5 (metrics, logs, traces) of every entity live in the
+  # Victoria stack, correlated by the graphene.* attributes. Each is a
+  # single binary that ingests OTLP directly (the server forwards) and
+  # answers a STANDARD query surface: PromQL, LogsQL, the Jaeger API.
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    command: ["--storageDataPath=/storage"]
     volumes:
-      - signoz-clickhouse:/var/lib/clickhouse
-      - signoz-data:/var/lib/signoz
-      # v0.0.4 image bug: units want a clickhouse user the image never
-      # creates — declare it via sysusers, and chown the volumes before
-      # every clickhouse start (tmpfiles does not run in this boot).
-      - ./deployments/signoz/clickhouse-sysusers.conf:/etc/sysusers.d/clickhouse.conf:ro
-      - ./deployments/signoz/clickhouse-override.conf:/etc/systemd/system/signoz-telemetrystore-clickhouse-0-0.service.d/override.conf:ro
-      - ./deployments/signoz/clickhouse-override.conf:/etc/systemd/system/signoz-telemetrykeeper-clickhousekeeper-0.service.d/override.conf:ro
+      - vm-data:/storage
     ports:
-      # The SigNoz UI — the polygon's observability window.
-      - "8080:8080"
+      - "8428:8428"
     networks: [graphene]
 
-  # One-shot: SigNoz refuses telemetry until its first user/org exists —
-  # register the polygon admin so ingestion opens without a manual step.
-  # (Change the credentials along with the tokens before exposing.)
-  signoz-bootstrap:
-    image: curlimages/curl:latest
-    command:
-      - sh
-      - -c
-      - |
-        until curl -s -o /dev/null http://signoz:8080/; do sleep 3; done
-        curl -s -X POST http://signoz:8080/api/v1/register           -H 'Content-Type: application/json'           -d '{"email":"admin@graphene.local","password":"Graphene-dev-1!","name":"graphene","orgName":"graphene"}'           || true
-    depends_on: [signoz]
-    restart: "no"
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    command: ["--storageDataPath=/storage"]
+    volumes:
+      - vl-data:/storage
+    ports:
+      - "9428:9428"
+    networks: [graphene]
+
+  victoriatraces:
+    image: victoriametrics/victoria-traces:latest
+    command: ["--storageDataPath=/storage"]
+    volumes:
+      - vt-data:/storage
+    ports:
+      - "10428:10428"
     networks: [graphene]
 
   graphene-server:
@@ -142,7 +142,9 @@ services:
       GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
       GRAPHENE_TEMPORAL_NAMESPACE: "default"
       GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
-      GRAPHENE_OTEL_ENDPOINT: "signoz:4317"
+      GRAPHENE_OTEL_TRACES: "http://victoriatraces:10428/insert/opentelemetry/v1/traces"
+      GRAPHENE_OTEL_LOGS: "http://victorialogs:9428/insert/opentelemetry/v1/logs"
+      GRAPHENE_OTEL_METRICS: "http://victoriametrics:8428/opentelemetry/v1/metrics"
       GRAPHENE_BLOBS_BACKEND: "s3"
       GRAPHENE_BLOBS_S3_ENDPOINT: "minio:9000"
       GRAPHENE_BLOBS_S3_BUCKET: "graphene-blobs"
@@ -177,8 +179,9 @@ services:
 volumes:
   temporal-data:
   minio-data:
-  signoz-clickhouse:
-  signoz-data:
+  vm-data:
+  vl-data:
+  vt-data:
 
 networks:
   graphene:

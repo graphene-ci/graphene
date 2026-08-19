@@ -1,8 +1,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gopherex/xlog"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -10,8 +14,7 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/graphene-ci/graphene/internal/auth"
 )
@@ -20,48 +23,82 @@ import (
 // traces, logs, and metrics with the STANDARD OTLP gRPC protocol to
 // the same address they already dial, authenticated by the same token.
 // The server stamps the caller's namespace onto every resource (a
-// client cannot lie about it) and forwards to the collector. No
-// collector configured — accepted and dropped: telemetry must never
-// fail a run.
+// client cannot lie about it) and forwards each signal to its backend
+// over OTLP/HTTP — the backends speak OTLP themselves, so the server
+// IS the collector. A signal without a backend is accepted and
+// dropped: telemetry must never fail a run.
 type OTLP struct {
 	coltracepb.UnimplementedTraceServiceServer
 	collogspb.UnimplementedLogsServiceServer
 	colmetricspb.UnimplementedMetricsServiceServer
 
-	// Endpoint is the collector's OTLP gRPC address; empty drops.
-	Endpoint string
-	Log      *xlog.Logger
+	// Per-signal OTLP/HTTP ingest URLs (e.g. the Victoria stack:
+	// http://victoriatraces:10428/insert/opentelemetry/v1/traces).
+	// Empty drops that signal.
+	Traces  string
+	Logs    string
+	Metrics string
+	Log     *xlog.Logger
 
-	mu      sync.Mutex
-	conn    *grpc.ClientConn
-	trace   coltracepb.TraceServiceClient
-	logs    collogspb.LogsServiceClient
-	metrics colmetricspb.MetricsServiceClient
-	warned  bool
+	client *http.Client
+
+	mu     sync.Mutex
+	warned map[string]bool
 }
 
-func (o *OTLP) clients() (coltracepb.TraceServiceClient, collogspb.LogsServiceClient, colmetricspb.MetricsServiceClient, bool) {
+// forward posts one OTLP protobuf payload to a backend.
+func (o *OTLP) forward(ctx context.Context, signal, url string, msg proto.Message) {
+	if url == "" {
+		o.warnOnce(signal)
+		return
+	}
+	raw, err := proto.Marshal(msg)
+	if err != nil {
+		o.Log.Error("telemetry marshal", xlog.String("signal", signal), xlog.Err(err))
+		return
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(sendCtx, http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		o.Log.Error("telemetry request", xlog.String("signal", signal), xlog.Err(err))
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	resp, err := o.httpClient().Do(req)
+	if err != nil {
+		o.Log.Warn("telemetry backend unreachable", xlog.String("signal", signal), xlog.Err(err))
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		o.Log.Warn("telemetry backend refused",
+			xlog.String("signal", signal),
+			xlog.String("status", resp.Status),
+			xlog.String("body", string(body)))
+	}
+}
+
+func (o *OTLP) httpClient() *http.Client {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.Endpoint == "" {
-		if !o.warned {
-			o.warned = true
-			o.Log.Warn("no otel collector configured — telemetry is accepted and dropped")
-		}
-		return nil, nil, nil, false
+	if o.client == nil {
+		o.client = &http.Client{Timeout: 15 * time.Second}
 	}
-	if o.conn == nil {
-		conn, err := grpc.NewClient(o.Endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			o.Log.Error("otel collector dial", xlog.Err(err))
-			return nil, nil, nil, false
-		}
-		o.conn = conn
-		o.trace = coltracepb.NewTraceServiceClient(conn)
-		o.logs = collogspb.NewLogsServiceClient(conn)
-		o.metrics = colmetricspb.NewMetricsServiceClient(conn)
+	return o.client
+}
+
+func (o *OTLP) warnOnce(signal string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.warned == nil {
+		o.warned = map[string]bool{}
 	}
-	return o.trace, o.logs, o.metrics, true
+	if !o.warned[signal] {
+		o.warned[signal] = true
+		o.Log.Warn("no backend configured — signal is accepted and dropped", xlog.String("signal", signal))
+	}
 }
 
 // Export forwards traces.
@@ -73,15 +110,12 @@ func (o *OTLP) Export(ctx context.Context, req *coltracepb.ExportTraceServiceReq
 	for _, rs := range req.GetResourceSpans() {
 		stampNamespace(rs.GetResource(), namespace)
 	}
-	trace, _, _, ok := o.clients()
-	if !ok {
-		return &coltracepb.ExportTraceServiceResponse{}, nil
-	}
-	return trace.Export(ctx, req)
+	o.forward(ctx, "traces", o.Traces, req)
+	return &coltracepb.ExportTraceServiceResponse{}, nil
 }
 
-// exportLogs forwards logs (method name collides across the three
-// generated services, so the log and metric halves live on aliases).
+// otlpLogs carries the logs half (the Export method name collides
+// across the three generated services).
 type otlpLogs struct{ *OTLP }
 
 // OTLPLogs exposes the logs service.
@@ -95,11 +129,8 @@ func (o otlpLogs) Export(ctx context.Context, req *collogspb.ExportLogsServiceRe
 	for _, rl := range req.GetResourceLogs() {
 		stampNamespace(rl.GetResource(), namespace)
 	}
-	_, logs, _, ok := o.clients()
-	if !ok {
-		return &collogspb.ExportLogsServiceResponse{}, nil
-	}
-	return logs.Export(ctx, req)
+	o.forward(ctx, "logs", o.Logs, req)
+	return &collogspb.ExportLogsServiceResponse{}, nil
 }
 
 type otlpMetrics struct{ *OTLP }
@@ -115,22 +146,12 @@ func (o otlpMetrics) Export(ctx context.Context, req *colmetricspb.ExportMetrics
 	for _, rm := range req.GetResourceMetrics() {
 		stampNamespace(rm.GetResource(), namespace)
 	}
-	_, _, metrics, ok := o.clients()
-	if !ok {
-		return &colmetricspb.ExportMetricsServiceResponse{}, nil
-	}
-	return metrics.Export(ctx, req)
+	o.forward(ctx, "metrics", o.Metrics, req)
+	return &colmetricspb.ExportMetricsServiceResponse{}, nil
 }
 
-// Close releases the collector connection.
-func (o *OTLP) Close() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.conn != nil {
-		_ = o.conn.Close()
-		o.conn = nil
-	}
-}
+// Close is kept for the composition root's symmetry.
+func (o *OTLP) Close() {}
 
 // stampNamespace upserts graphene.namespace on the resource — the
 // caller's token decides, never the payload.

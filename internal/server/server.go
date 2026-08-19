@@ -124,8 +124,10 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Log:        log.With(xlog.String("component", "observe")),
 	}
 	otlp := &services.OTLP{
-		Endpoint: cfg.OtelEndpoint,
-		Log:      log.With(xlog.String("component", "otlp")),
+		Traces:  cfg.OtelTraces,
+		Logs:    cfg.OtelLogs,
+		Metrics: cfg.OtelMetrics,
+		Log:     log.With(xlog.String("component", "otlp")),
 	}
 	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
 
