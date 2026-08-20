@@ -76,6 +76,16 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	if err := wire.ValidateUserLabels(labels); err != nil {
 		return "", "", status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Validate params against the published manifest — a bad submit
+	// fails at the door. No manifest (never pushed) — no gate. The
+	// validated form comes back duration-normalized for the workflow.
+	if st, err := b.Worker.GetPipeline(ctx, pipelineName); err == nil && len(st.Manifest) > 0 {
+		normalized, err := validateParams(st.Manifest, params)
+		if err != nil {
+			return "", "", status.Error(codes.InvalidArgument, err.Error())
+		}
+		params = normalized
+	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
 		TaskQueue: wire.RunQueue(runId),
