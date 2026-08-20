@@ -79,6 +79,16 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	}
 	stop.RegisterFnErr(func(context.Context) error { return closeProxy() })
 
+	// The telemetry half of the door — built before the bundles: the
+	// managed runner tails run containers into it.
+	otlp := &services.OTLP{
+		Traces:  cfg.OtelTraces,
+		Logs:    cfg.OtelLogs,
+		Metrics: cfg.OtelMetrics,
+		Log:     log.With(xlog.String("component", "otlp")),
+	}
+	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
+
 	// One runtime bundle per namespace: client, server worker, managed
 	// reaper, stand sweeper — started lazily, bounded by the manager ctx.
 	bundles := nsbundle.New(stop.Context(), nsbundle.Deps{
@@ -92,6 +102,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		UserDataFor:      userDataBuilder(cfg),
 		SweepEvery:       time.Duration(cfg.SweepSeconds) * time.Second,
 		ReapEvery:        time.Duration(cfg.ReapSeconds) * time.Second,
+		LogSink:          otlp.ForwardLogs,
 		Log:              log,
 	})
 	// The default namespace exists on every installation.
@@ -134,14 +145,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	if cfg.QueryTraces != "" {
 		observe.TracesBackend = &telemetry.Jaeger{Base: cfg.QueryTraces, Client: telemetryHTTP}
 	}
-	otlp := &services.OTLP{
-		Traces:  cfg.OtelTraces,
-		Logs:    cfg.OtelLogs,
-		Metrics: cfg.OtelMetrics,
-		Log:     log.With(xlog.String("component", "otlp")),
-	}
-	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
-
 	workerPlane := &services.WorkerPlane{
 		Bundles: bundles,
 		Secrets: secretStore,

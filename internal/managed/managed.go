@@ -40,13 +40,17 @@ type Runner struct {
 	externalGRPC string
 	runToken     string
 
-	mu   sync.Mutex
-	runs map[id.RunId]string // run -> container id
+	// sink receives tailed container output; nil disables tailing.
+	sink LogSink
+
+	mu    sync.Mutex
+	runs  map[id.RunId]string           // run -> container id
+	tails map[string]context.CancelFunc // container id -> tail stop
 }
 
 // New builds the runner over the host's docker daemon; an installation
 // without docker serves inplace runs only (Start returns the error).
-func New(namespace string, temporal client.Client, externalGRPC, runToken string, log *xlog.Logger) *Runner {
+func New(namespace string, temporal client.Client, externalGRPC, runToken string, sink LogSink, log *xlog.Logger) *Runner {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Warn("managed contour disabled: no docker", xlog.Err(err))
@@ -59,7 +63,9 @@ func New(namespace string, temporal client.Client, externalGRPC, runToken string
 		log:          log,
 		externalGRPC: externalGRPC,
 		runToken:     runToken,
+		sink:         sink,
 		runs:         map[id.RunId]string{},
+		tails:        map[string]context.CancelFunc{},
 	}
 }
 
@@ -128,6 +134,10 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	r.mu.Lock()
 	r.runs[runId] = created.ID
 	r.mu.Unlock()
+	// The orchestrator's stdout is dimension 3 of the run — tail it
+	// into the telemetry plane. Detached from the caller's ctx: the
+	// tail lives with the container, not with the StartRun call.
+	r.startTail(context.WithoutCancel(ctx), created.ID, runId)
 	r.log.Info("managed run container started", xlog.Any("run", runId), xlog.String("image", imageRef))
 	return nil
 }
@@ -163,8 +173,14 @@ func (r *Runner) Reap(ctx context.Context) {
 		}
 		over, err := r.runOver(ctx, runId)
 		if err != nil || !over {
+			// A living container the runner does not tail yet (found
+			// after a server restart) gets its tail reattached here.
+			if c.State == "running" {
+				r.startTail(context.WithoutCancel(ctx), c.ID, runId)
+			}
 			continue
 		}
+		r.stopTail(c.ID)
 		if err := r.docker.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil {
 			r.log.Error("reap run container", xlog.Any("run", runId), xlog.Err(err))
 			continue

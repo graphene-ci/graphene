@@ -101,6 +101,16 @@ func (o *OTLP) warnOnce(signal string) {
 	}
 }
 
+// ForwardLogs is the in-process door for the server's own tailers
+// (managed run containers): same namespace stamping, same backend —
+// no gRPC round-trip and no token, the caller IS the server.
+func (o *OTLP) ForwardLogs(ctx context.Context, namespace string, req *collogspb.ExportLogsServiceRequest) {
+	for _, rl := range req.GetResourceLogs() {
+		stampNamespace(rl.GetResource(), namespace)
+	}
+	o.forward(ctx, "logs", o.Logs, req)
+}
+
 // Export forwards traces.
 func (o *OTLP) Export(ctx context.Context, req *coltracepb.ExportTraceServiceRequest) (*coltracepb.ExportTraceServiceResponse, error) {
 	namespace, err := scope(ctx, auth.RoleRun, auth.RoleAgent, auth.RoleAdmin)
