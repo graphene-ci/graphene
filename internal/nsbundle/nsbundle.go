@@ -46,7 +46,10 @@ type Deps struct {
 	UserDataFor func(namespace string, agentId id.AgentId) (string, error)
 	SweepEvery  time.Duration
 	ReapEvery   time.Duration
-	Log         *xlog.Logger
+	// LogSink receives tailed run-container output (the server's OTLP
+	// collector); nil disables orchestrator log tailing.
+	LogSink managed.LogSink
+	Log     *xlog.Logger
 }
 
 // Bundle is one namespace's runtime.
@@ -130,7 +133,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		return nil, err
 	}
 	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
-		log.With(xlog.String("component", "managed")))
+		m.deps.LogSink, log.With(xlog.String("component", "managed")))
 
 	b := &Bundle{Namespace: namespace, Client: c, Worker: w, Runner: runner}
 	go func() {
