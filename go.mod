@@ -13,7 +13,7 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
-	github.com/graphene-ci/pipeline v0.0.0-20260820174447-b436590eaacb
+	github.com/graphene-ci/pipeline v0.0.0-20260821083339-879245c25aae
 	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/siderolabs/grpc-proxy v0.5.2

@@ -254,6 +254,17 @@ func (w *WorkerPlane) GetRun(ctx context.Context, req *workerplanev1.GetRunReque
 	return &workerplanev1.GetRunResponse{Status: desc.GetWorkflowExecutionInfo().GetStatus().String()}, nil
 }
 
+// WatchRun streams status transitions until a terminal one.
+func (w *WorkerPlane) WatchRun(req *workerplanev1.WatchRunRequest, stream workerplanev1.RunsAPI_WatchRunServer) error {
+	b, err := bundleFor(stream.Context(), w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	if err != nil {
+		return err
+	}
+	return watchRunCore(stream.Context(), b, req.GetRunId(), func(s string) error {
+		return stream.Send(&workerplanev1.WatchRunEvent{Status: s})
+	})
+}
+
 // RunResult waits for the run and returns its typed result as JSON.
 func (w *WorkerPlane) RunResult(ctx context.Context, req *workerplanev1.RunResultRequest) (*workerplanev1.RunResultResponse, error) {
 	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
