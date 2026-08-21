@@ -313,6 +313,7 @@ GRAPHENE_AGENT_SERVER=%s
 GRAPHENE_AGENT_TOKEN=%s
 GRAPHENE_AGENT_ID=%s
 GRAPHENE_AGENT_REGISTRY=%s
+GRAPHENE_AGENT_INSECURE=1
 EOF
 chmod 600 /etc/graphene-agent/env
 if [ ! -x /usr/local/bin/graphene-agent ]; then
@@ -346,7 +347,8 @@ RestartSec=2
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable --now graphene-agent
+  systemctl enable graphene-agent >/dev/null 2>&1 || true
+  systemctl restart graphene-agent
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
