@@ -29,8 +29,8 @@ var Version = "dev"
 func NewRoot() *cobra.Command {
 	f := &cmdutil.Factory{}
 	root := &cobra.Command{
-		Use:           "graphenectl",
-		Short:         "The control CLI of a graphene installation",
+		Use:   "graphenectl",
+		Short: "The control CLI of a graphene installation",
 		Long: `graphenectl manages an installation's RECORDS: resources with their
 five dimensions, runs, secrets, namespaces, connection contexts. The
 grammar is kubectl's — the verb first, the kind second; a target is
@@ -114,4 +114,3 @@ func hintFor(err error) string {
 	}
 	return ""
 }
-

@@ -21,7 +21,6 @@ import (
 
 // stdinIsTerminal reports whether a human is on the other end.
 
-
 // paramsSchemaOf pulls the params schema out of a pipeline record's
 // manifest; nil when there is none to ask about.
 func paramsSchemaOf(manifestJSON []byte) *schemapb.Schema {
@@ -106,4 +105,3 @@ func parseAnswer(line string) any {
 	}
 	return line
 }
-
