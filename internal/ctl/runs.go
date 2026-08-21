@@ -125,7 +125,8 @@ func runStart(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run start", flag.ExitOnError)
 	co := commonFlags(fs)
 	runId := fs.String("run-id", "", "run id (default: derived from the pipeline and time)")
-	params := fs.String("params", "", "typed params as JSON")
+	params := fs.String("params", "", "typed params as inline JSON")
+	paramsFile := fs.String("params-file", "", "typed params from a JSON/YAML file (- for stdin)")
 	image := fs.String("image", "", "worker image override (default: the pipeline record's)")
 	watch := fs.Bool("watch", false, "follow the run and exit with its outcome")
 	var labels labelFlag
@@ -148,6 +149,10 @@ func runStart(ctx context.Context, args []string) error {
 			*image = st.GetImage()
 		}
 	}
+	paramsJSON, err := jsonInput("params", *params, *paramsFile)
+	if err != nil {
+		return err
+	}
 	id := *runId
 	if id == "" {
 		id = fmt.Sprintf("%s-%s", pipelineId, time.Now().UTC().Format("20060102-150405"))
@@ -155,7 +160,7 @@ func runStart(ctx context.Context, args []string) error {
 	_, err = d.Runs.StartRun(ctx, connect.NewRequest(&managementv1.StartRunRequest{
 		RunId:    id,
 		Pipeline: pipelineId,
-		Params:   []byte(*params),
+		Params:   paramsJSON,
 		Image:    *image,
 		Labels:   labels.m,
 	}))

@@ -43,17 +43,18 @@ target is "<kind> <id>" or "kind/id"; a run is a record too (kind
   tree <owner-ref>
   delete   <kind> <id>
   transfer <kind> <id> <new-owner> [--keep 72h]
-  invoke   <kind> <id> <command> [--data JSON]
+  invoke   <kind> <id> <command> [--data JSON | --data-file f.yaml]
 
 runs — the lifecycle verbs live under run (kubectl rollout's stance):
-  run start <pipeline> [--run-id id] [--params JSON] [--image ref]
+  run start <pipeline> [--run-id id] [--params JSON | --params-file f.yaml]
+            [--image ref]
             [-l k=v] [--watch]
   run watch | result | cancel <run-id>
   run list [-p Status] [-l k=v] [-w]      (same as: get run)
 
 installation:
   pipeline show <pipeline-id>
-  secret set <name> [--value v]     (no --value: read from stdin)
+  secret set <name> [--value v | --value-file f]   (neither: stdin)
   secret list | delete <name>
   ns list | create <name> [--retention-days n]
 
