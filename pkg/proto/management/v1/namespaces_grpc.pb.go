@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NamespacesAPI_CreateNamespace_FullMethodName = "/graphene.management.v1.NamespacesAPI/CreateNamespace"
 	NamespacesAPI_ListNamespaces_FullMethodName  = "/graphene.management.v1.NamespacesAPI/ListNamespaces"
+	NamespacesAPI_Whoami_FullMethodName          = "/graphene.management.v1.NamespacesAPI/Whoami"
 )
 
 // NamespacesAPIClient is the client API for NamespacesAPI service.
@@ -37,6 +38,9 @@ type NamespacesAPIClient interface {
 	// search attributes) and makes it schedulable. Idempotent.
 	CreateNamespace(ctx context.Context, in *CreateNamespaceRequest, opts ...grpc.CallOption) (*CreateNamespaceResponse, error)
 	ListNamespaces(ctx context.Context, in *ListNamespacesRequest, opts ...grpc.CallOption) (*ListNamespacesResponse, error)
+	// Whoami answers who the caller's token is: role and namespace scope.
+	// Any authenticated principal may ask — this is login's handshake.
+	Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error)
 }
 
 type namespacesAPIClient struct {
@@ -67,6 +71,16 @@ func (c *namespacesAPIClient) ListNamespaces(ctx context.Context, in *ListNamesp
 	return out, nil
 }
 
+func (c *namespacesAPIClient) Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WhoamiResponse)
+	err := c.cc.Invoke(ctx, NamespacesAPI_Whoami_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NamespacesAPIServer is the server API for NamespacesAPI service.
 // All implementations must embed UnimplementedNamespacesAPIServer
 // for forward compatibility.
@@ -81,6 +95,9 @@ type NamespacesAPIServer interface {
 	// search attributes) and makes it schedulable. Idempotent.
 	CreateNamespace(context.Context, *CreateNamespaceRequest) (*CreateNamespaceResponse, error)
 	ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error)
+	// Whoami answers who the caller's token is: role and namespace scope.
+	// Any authenticated principal may ask — this is login's handshake.
+	Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error)
 	mustEmbedUnimplementedNamespacesAPIServer()
 }
 
@@ -96,6 +113,9 @@ func (UnimplementedNamespacesAPIServer) CreateNamespace(context.Context, *Create
 }
 func (UnimplementedNamespacesAPIServer) ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNamespaces not implemented")
+}
+func (UnimplementedNamespacesAPIServer) Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Whoami not implemented")
 }
 func (UnimplementedNamespacesAPIServer) mustEmbedUnimplementedNamespacesAPIServer() {}
 func (UnimplementedNamespacesAPIServer) testEmbeddedByValue()                       {}
@@ -154,6 +174,24 @@ func _NamespacesAPI_ListNamespaces_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NamespacesAPI_Whoami_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WhoamiRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NamespacesAPIServer).Whoami(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NamespacesAPI_Whoami_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NamespacesAPIServer).Whoami(ctx, req.(*WhoamiRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NamespacesAPI_ServiceDesc is the grpc.ServiceDesc for NamespacesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -168,6 +206,10 @@ var NamespacesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNamespaces",
 			Handler:    _NamespacesAPI_ListNamespaces_Handler,
+		},
+		{
+			MethodName: "Whoami",
+			Handler:    _NamespacesAPI_Whoami_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

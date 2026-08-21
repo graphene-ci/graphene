@@ -61,8 +61,8 @@ func resList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	rows := make([][]string, 0, len(resp.Msg.GetResources()))
 	for _, r := range resp.Msg.GetResources() {
@@ -90,8 +90,8 @@ func resGet(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	r := resp.Msg.GetResource()
 	fmt.Fprintf(out, "ref    %s\nphase  %s\nowner  %s\nlabels %s\n",
@@ -123,8 +123,8 @@ func resTree(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	fmt.Fprintln(out, pos[0])
 	for _, root := range resp.Msg.GetRoots() {
@@ -212,8 +212,8 @@ func resInvoke(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	fmt.Fprintln(out, string(resp.Msg.GetResult()))
 	return nil

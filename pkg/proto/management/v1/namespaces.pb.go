@@ -21,6 +21,96 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type WhoamiRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WhoamiRequest) Reset() {
+	*x = WhoamiRequest{}
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WhoamiRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WhoamiRequest) ProtoMessage() {}
+
+func (x *WhoamiRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WhoamiRequest.ProtoReflect.Descriptor instead.
+func (*WhoamiRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{0}
+}
+
+type WhoamiResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Role: admin | run | agent.
+	Role string `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	// Namespace the token is scoped to; "*" — every namespace.
+	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WhoamiResponse) Reset() {
+	*x = WhoamiResponse{}
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WhoamiResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WhoamiResponse) ProtoMessage() {}
+
+func (x *WhoamiResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WhoamiResponse.ProtoReflect.Descriptor instead.
+func (*WhoamiResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *WhoamiResponse) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *WhoamiResponse) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
 type CreateNamespaceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -32,7 +122,7 @@ type CreateNamespaceRequest struct {
 
 func (x *CreateNamespaceRequest) Reset() {
 	*x = CreateNamespaceRequest{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[0]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +134,7 @@ func (x *CreateNamespaceRequest) String() string {
 func (*CreateNamespaceRequest) ProtoMessage() {}
 
 func (x *CreateNamespaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[0]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,7 +147,7 @@ func (x *CreateNamespaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNamespaceRequest.ProtoReflect.Descriptor instead.
 func (*CreateNamespaceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{0}
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateNamespaceRequest) GetName() string {
@@ -82,7 +172,7 @@ type CreateNamespaceResponse struct {
 
 func (x *CreateNamespaceResponse) Reset() {
 	*x = CreateNamespaceResponse{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[1]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -94,7 +184,7 @@ func (x *CreateNamespaceResponse) String() string {
 func (*CreateNamespaceResponse) ProtoMessage() {}
 
 func (x *CreateNamespaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[1]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -107,7 +197,7 @@ func (x *CreateNamespaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNamespaceResponse.ProtoReflect.Descriptor instead.
 func (*CreateNamespaceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{1}
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{3}
 }
 
 type ListNamespacesRequest struct {
@@ -118,7 +208,7 @@ type ListNamespacesRequest struct {
 
 func (x *ListNamespacesRequest) Reset() {
 	*x = ListNamespacesRequest{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -130,7 +220,7 @@ func (x *ListNamespacesRequest) String() string {
 func (*ListNamespacesRequest) ProtoMessage() {}
 
 func (x *ListNamespacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -143,7 +233,7 @@ func (x *ListNamespacesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNamespacesRequest.ProtoReflect.Descriptor instead.
 func (*ListNamespacesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{2}
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{4}
 }
 
 type ListNamespacesResponse struct {
@@ -155,7 +245,7 @@ type ListNamespacesResponse struct {
 
 func (x *ListNamespacesResponse) Reset() {
 	*x = ListNamespacesResponse{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -167,7 +257,7 @@ func (x *ListNamespacesResponse) String() string {
 func (*ListNamespacesResponse) ProtoMessage() {}
 
 func (x *ListNamespacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -180,7 +270,7 @@ func (x *ListNamespacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNamespacesResponse.ProtoReflect.Descriptor instead.
 func (*ListNamespacesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{3}
+	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListNamespacesResponse) GetNames() []string {
@@ -194,17 +284,22 @@ var File_proto_management_v1_namespaces_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_namespaces_proto_rawDesc = "" +
 	"\n" +
-	"$proto/management/v1/namespaces.proto\x12\x16graphene.management.v1\"S\n" +
+	"$proto/management/v1/namespaces.proto\x12\x16graphene.management.v1\"\x0f\n" +
+	"\rWhoamiRequest\"B\n" +
+	"\x0eWhoamiResponse\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"S\n" +
 	"\x16CreateNamespaceRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0eretention_days\x18\x02 \x01(\x05R\rretentionDays\"\x19\n" +
 	"\x17CreateNamespaceResponse\"\x17\n" +
 	"\x15ListNamespacesRequest\".\n" +
 	"\x16ListNamespacesResponse\x12\x14\n" +
-	"\x05names\x18\x01 \x03(\tR\x05names2\xf4\x01\n" +
+	"\x05names\x18\x01 \x03(\tR\x05names2\xcd\x02\n" +
 	"\rNamespacesAPI\x12r\n" +
 	"\x0fCreateNamespace\x12..graphene.management.v1.CreateNamespaceRequest\x1a/.graphene.management.v1.CreateNamespaceResponse\x12o\n" +
-	"\x0eListNamespaces\x12-.graphene.management.v1.ListNamespacesRequest\x1a..graphene.management.v1.ListNamespacesResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\x0eListNamespaces\x12-.graphene.management.v1.ListNamespacesRequest\x1a..graphene.management.v1.ListNamespacesResponse\x12W\n" +
+	"\x06Whoami\x12%.graphene.management.v1.WhoamiRequest\x1a&.graphene.management.v1.WhoamiResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_namespaces_proto_rawDescOnce sync.Once
@@ -218,20 +313,24 @@ func file_proto_management_v1_namespaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_namespaces_proto_rawDescData
 }
 
-var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_management_v1_namespaces_proto_goTypes = []any{
-	(*CreateNamespaceRequest)(nil),  // 0: graphene.management.v1.CreateNamespaceRequest
-	(*CreateNamespaceResponse)(nil), // 1: graphene.management.v1.CreateNamespaceResponse
-	(*ListNamespacesRequest)(nil),   // 2: graphene.management.v1.ListNamespacesRequest
-	(*ListNamespacesResponse)(nil),  // 3: graphene.management.v1.ListNamespacesResponse
+	(*WhoamiRequest)(nil),           // 0: graphene.management.v1.WhoamiRequest
+	(*WhoamiResponse)(nil),          // 1: graphene.management.v1.WhoamiResponse
+	(*CreateNamespaceRequest)(nil),  // 2: graphene.management.v1.CreateNamespaceRequest
+	(*CreateNamespaceResponse)(nil), // 3: graphene.management.v1.CreateNamespaceResponse
+	(*ListNamespacesRequest)(nil),   // 4: graphene.management.v1.ListNamespacesRequest
+	(*ListNamespacesResponse)(nil),  // 5: graphene.management.v1.ListNamespacesResponse
 }
 var file_proto_management_v1_namespaces_proto_depIdxs = []int32{
-	0, // 0: graphene.management.v1.NamespacesAPI.CreateNamespace:input_type -> graphene.management.v1.CreateNamespaceRequest
-	2, // 1: graphene.management.v1.NamespacesAPI.ListNamespaces:input_type -> graphene.management.v1.ListNamespacesRequest
-	1, // 2: graphene.management.v1.NamespacesAPI.CreateNamespace:output_type -> graphene.management.v1.CreateNamespaceResponse
-	3, // 3: graphene.management.v1.NamespacesAPI.ListNamespaces:output_type -> graphene.management.v1.ListNamespacesResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	2, // 0: graphene.management.v1.NamespacesAPI.CreateNamespace:input_type -> graphene.management.v1.CreateNamespaceRequest
+	4, // 1: graphene.management.v1.NamespacesAPI.ListNamespaces:input_type -> graphene.management.v1.ListNamespacesRequest
+	0, // 2: graphene.management.v1.NamespacesAPI.Whoami:input_type -> graphene.management.v1.WhoamiRequest
+	3, // 3: graphene.management.v1.NamespacesAPI.CreateNamespace:output_type -> graphene.management.v1.CreateNamespaceResponse
+	5, // 4: graphene.management.v1.NamespacesAPI.ListNamespaces:output_type -> graphene.management.v1.ListNamespacesResponse
+	1, // 5: graphene.management.v1.NamespacesAPI.Whoami:output_type -> graphene.management.v1.WhoamiResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -248,7 +347,7 @@ func file_proto_management_v1_namespaces_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_namespaces_proto_rawDesc), len(file_proto_management_v1_namespaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -14,6 +14,18 @@ service NamespacesAPI {
   // search attributes) and makes it schedulable. Idempotent.
   rpc CreateNamespace(CreateNamespaceRequest) returns (CreateNamespaceResponse);
   rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse);
+  // Whoami answers who the caller's token is: role and namespace scope.
+  // Any authenticated principal may ask — this is login's handshake.
+  rpc Whoami(WhoamiRequest) returns (WhoamiResponse);
+}
+
+message WhoamiRequest {}
+
+message WhoamiResponse {
+  // Role: admin | run | agent.
+  string role = 1;
+  // Namespace the token is scoped to; "*" — every namespace.
+  string namespace = 2;
 }
 
 message CreateNamespaceRequest {

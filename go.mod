@@ -16,6 +16,7 @@ require (
 	github.com/graphene-ci/library/docker v0.0.0-20260819150826-a6ab5b685986
 	github.com/graphene-ci/pipeline v0.0.0-20260821094219-cb0c74cc32e2
 	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
+	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/soheilhy/cmux v0.1.5
@@ -59,6 +60,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect

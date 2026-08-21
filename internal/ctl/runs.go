@@ -60,8 +60,8 @@ func runList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	rows := make([][]string, 0, len(resp.Msg.GetRuns()))
 	for _, r := range resp.Msg.GetRuns() {
@@ -89,8 +89,8 @@ func runGet(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp.Msg)
+	if done, err := co.emit(resp.Msg); done || err != nil {
+		return err
 	}
 	fmt.Fprintln(out, resp.Msg.GetStatus())
 	return nil

@@ -68,8 +68,8 @@ func cmdSecret(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *co.output == "json" {
-			return printJSON(resp.Msg)
+		if done, err := co.emit(resp.Msg); done || err != nil {
+			return err
 		}
 		for _, name := range resp.Msg.GetNames() {
 			fmt.Fprintln(out, name)
@@ -121,8 +121,8 @@ func cmdNs(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *co.output == "json" {
-			return printJSON(resp.Msg)
+		if done, err := co.emit(resp.Msg); done || err != nil {
+			return err
 		}
 		for _, name := range resp.Msg.GetNames() {
 			fmt.Fprintln(out, name)

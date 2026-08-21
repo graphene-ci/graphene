@@ -35,6 +35,7 @@ type common struct {
 	output  *string
 	config  *string
 	ns      *string
+	jq      *string
 }
 
 // commonFlags registers the shared flags: the context pick, the config
@@ -46,6 +47,7 @@ func commonFlags(fs *flag.FlagSet) *common {
 		config:  fs.String("config", "", "config file (default: $"+cliconfig.EnvConfig+", else ~/.config/graphene/config.yaml)"),
 		ns:      fs.String("n", "", "namespace for this call (cluster-wide admin tokens)"),
 		output:  fs.String("o", "table", "output: table | json"),
+		jq:      fs.String("jq", "", "jq expression over the JSON form (implies -o json)"),
 	}
 }
 
