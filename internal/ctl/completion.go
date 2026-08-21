@@ -82,7 +82,7 @@ var (
 		"invoke":   {"--data", "--data-file"},
 		"events":   {"--follow"},
 		"logs":     {"--follow"},
-		"run":      {"--run-id", "--params", "--params-file", "--image", "--watch", "-l", "-p", "-w", "--chunk-size"},
+		"run":      {"--run-id", "--params", "--params-file", "--image", "--watch", "--plain", "--collapse", "--logs", "-l", "-p", "-w", "--chunk-size"},
 		"login":    {"--server", "--token", "--token-stdin", "--name", "--namespace", "--insecure", "--base-image"},
 		"ctx":      {"--server", "--token", "--token-stdin", "--namespace", "--insecure", "--base-image", "--use"},
 		"secret":   {"--value", "--value-file"},
@@ -165,7 +165,7 @@ func positionals(words []string) []string {
 		"--run-id": true, "--params": true, "--image": true, "--server": true,
 		"--token": true, "--name": true, "--namespace": true, "--base-image": true,
 		"--value": true, "--value-file": true, "--retention-days": true,
-		"--params-file": true, "--data-file": true, "--chunk-size": true,
+		"--params-file": true, "--data-file": true, "--chunk-size": true, "--logs": true,
 	}
 	var pos []string
 	skip := false

@@ -51,7 +51,11 @@ runs — the lifecycle verbs live under run (kubectl rollout's stance):
             [--image ref] [-l k=v] [--watch]
             (no params on a terminal: an interactive form from the
              pipeline's manifest asks field by field)
-  run watch | result | cancel <run-id>
+  run watch <run-id> [--plain] [--collapse] [--logs none|tail|all]
+      a live tree of the run's resources: phases, their history events
+      (⚡) and log tails (·), the run's own strip at the bottom; off a
+      terminal (or --plain) — an append-only feed
+  run result | cancel <run-id>
   run list [-p Status] [-l k=v] [-w]      (same as: get run)
 
 installation:
