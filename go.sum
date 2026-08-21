@@ -81,10 +81,10 @@ github.com/gopherex/xshutdown v1.0.0 h1:oXj0J3iNW+bOzyDbtVBS/p17b3U26loDuIxx2S1E
 github.com/gopherex/xshutdown v1.0.0/go.mod h1:VP9PHNALDhbpRtqDS67qP+M1PQKjj2MgokukD01KQUA=
 github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f h1:hfP1GgUHkqCiIk9fIUTPqsQQTd4TrkgW1Krch7CEYPs=
 github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f/go.mod h1:EPqbsOQt96Pyw8gE40QRd+t3bpX6W1AVNT/9s00Ggkk=
-github.com/graphene-ci/library/docker v0.0.0-20260819150826-a6ab5b685986 h1:LWZo48NuLOOpLbk1H48VAmVWRY/ZClyfZZRp6XbQncw=
-github.com/graphene-ci/library/docker v0.0.0-20260819150826-a6ab5b685986/go.mod h1:MNizWDaIcsZBcTlSgNYHuFvdkx4DbpRgy+zGIecPRvk=
-github.com/graphene-ci/pipeline v0.0.0-20260821101503-cc8e58db81c8 h1:6JO2Dt9pHovbR/lkFO5wCzuDTZld9ckIhvXka/QXy/k=
-github.com/graphene-ci/pipeline v0.0.0-20260821101503-cc8e58db81c8/go.mod h1:B4io/q2MtaANCCliClT6V7MtDSa+Ahln+kBa+//jAJ4=
+github.com/graphene-ci/library/docker v0.0.0-20260821104924-ebb9f51ea992 h1:q0NDj1rzu5bsd6kRh0GNx9yD+JJU7gc7OMcE+6lBegQ=
+github.com/graphene-ci/library/docker v0.0.0-20260821104924-ebb9f51ea992/go.mod h1:RyuftUnDCybXzrSvGQWFm/9De4wHAUYMa3aIOge1PGk=
+github.com/graphene-ci/pipeline v0.0.0-20260821104810-cf733b6878f1 h1:J9FuhGRfVh+JOSs8VcXZAooUKf684fiQxUB7Daq7/RA=
+github.com/graphene-ci/pipeline v0.0.0-20260821104810-cf733b6878f1/go.mod h1:B4io/q2MtaANCCliClT6V7MtDSa+Ahln+kBa+//jAJ4=
 github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5 h1:LE1Z4SSdddDn8hA+ec/uSGlUGHsjJVE/+j1HKNriC8M=
 github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
 github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 h1:B+8ClL/kCQkRiU82d9xajRPKYMrB7E0MbtzWVi1K4ns=
