@@ -145,6 +145,9 @@ func runStart(ctx context.Context, args []string) error {
 	paramsFile := fs.String("params-file", "", "typed params from a JSON/YAML file (- for stdin)")
 	image := fs.String("image", "", "worker image override (default: the pipeline record's)")
 	watch := fs.Bool("watch", false, "follow the run and exit with its outcome")
+	plain := fs.Bool("plain", false, "watch as an append-only feed (the non-TTY form)")
+	collapse := fs.Bool("collapse", false, "watch: fold ready resources to one line")
+	logsMode := fs.String("logs", logsTail, "watch logs per node: none | tail | all")
 	var labels labelFlag
 	fs.Var(&labels, "l", "run label k=v (repeatable)")
 	pos, err := parseMixed(fs, args)
@@ -196,12 +199,15 @@ func runStart(ctx context.Context, args []string) error {
 		fmt.Fprintln(out, id)
 		return nil
 	}
-	return watchToEnd(ctx, d, id)
+	return watchToEnd(ctx, d, id, watchOptions{plain: *plain, collapse: *collapse, logs: *logsMode})
 }
 
 func runWatch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run watch", flag.ExitOnError)
 	co := commonFlags(fs)
+	plain := fs.Bool("plain", false, "watch as an append-only feed (the non-TTY form)")
+	collapse := fs.Bool("collapse", false, "fold ready resources to one line")
+	logsMode := fs.String("logs", logsTail, "logs per node: none | tail | all")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -213,25 +219,24 @@ func runWatch(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return watchToEnd(ctx, d, pos[0])
+	return watchToEnd(ctx, d, pos[0], watchOptions{plain: *plain, collapse: *collapse, logs: *logsMode})
 }
 
-// watchToEnd follows the watch stream to a terminal status, prints the
-// result on success, and mirrors the outcome in the error.
-func watchToEnd(ctx context.Context, d *door, runId string) error {
-	last := ""
-	stream, err := d.Runs.WatchRun(ctx, connect.NewRequest(&managementv1.WatchRunRequest{RunId: runId}))
+// watchToEnd runs the rich watch (a plain feed off a terminal) to a
+// terminal status, prints the result on success, and mirrors the
+// outcome in the error.
+func watchToEnd(ctx context.Context, d *door, runId string, opts watchOptions) error {
+	switch opts.logs {
+	case logsNone, logsTail, logsAll:
+	default:
+		return fmt.Errorf("--logs %q: want none, tail or all", opts.logs)
+	}
+	if !stdoutIsTerminal() {
+		opts.plain = true
+	}
+	last, err := richWatch(ctx, d, runId, opts)
 	if err != nil {
 		return err
-	}
-	for stream.Receive() {
-		if s := stream.Msg().GetStatus(); s != last {
-			fmt.Fprintf(os.Stderr, "run %s: %s\n", runId, s)
-			last = s
-		}
-	}
-	if err := stream.Err(); err != nil {
-		return fmt.Errorf("watch: %w", err)
 	}
 	switch last {
 	case "Completed":

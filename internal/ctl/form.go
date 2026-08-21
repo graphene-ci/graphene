@@ -25,6 +25,11 @@ func stdinIsTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
+// stdoutIsTerminal decides between the live panel and the plain feed.
+func stdoutIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
 // paramsSchemaOf pulls the params schema out of a pipeline record's
 // manifest; nil when there is none to ask about.
 func paramsSchemaOf(manifestJSON []byte) *schemapb.Schema {
