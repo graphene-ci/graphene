@@ -6,6 +6,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,13 +29,16 @@ import (
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/standflow"
+	"github.com/graphene-ci/graphene/internal/triggerflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
+	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 	"github.com/graphene-ci/pipeline/pkg/ref"
 	"github.com/graphene-ci/pipeline/pkg/wire"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Deps is everything the worker needs — one worker per NAMESPACE, its
@@ -54,6 +58,10 @@ type Deps struct {
 	Log      *xlog.Logger
 }
 
+// RunStarter starts one run — wired by the bundle after the managed
+// runner exists (the same path the management door uses).
+type RunStarter func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string) error
+
 // Worker is the assembled server worker.
 type Worker struct {
 	w           worker.Worker
@@ -62,7 +70,14 @@ type Worker struct {
 	artifactDef *entdefine.Definition[pipeline.ArtifactSpec, artifact.State]
 	standDef    *entdefine.Definition[standflow.Spec, standflow.State]
 	pipelineDef *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
+	triggerDef  *entdefine.Definition[triggerflow.Spec, triggerflow.State]
+
+	startRun RunStarter
 }
+
+// SetRunStarter wires the start path for trigger-driven runs; called by
+// the bundle once the managed runner exists.
+func (s *Worker) SetRunStarter(fn RunStarter) { s.startRun = fn }
 
 // New builds and registers everything; Run starts polling.
 func New(deps Deps) (*Worker, error) {
@@ -77,12 +92,14 @@ func New(deps Deps) (*Worker, error) {
 		agentDef:    agentflow.Definition(agentflow.Options{}),
 		artifactDef: artifact.Definition(),
 		standDef:    standflow.New(standTick),
-		pipelineDef: pipelineflow.New(),
+		pipelineDef: pipelineflow.New(standTick),
+		triggerDef:  triggerflow.New(standTick),
 	}
 
 	if err := errors.Join(
 		s.agentDef.Register(w), s.artifactDef.Register(w),
 		s.standDef.Register(w), s.pipelineDef.Register(w),
+		s.triggerDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -106,7 +123,80 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.publishCapability, activity.RegisterOptions{Name: wire.PublishCapabilityActivity})
 	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
 	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
+	// The trigger contour: the arbiter's arms and the firing path.
+	w.RegisterActivityWithOptions(s.triggerFire, activity.RegisterOptions{Name: triggerflow.FireActivity})
+	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
+	w.RegisterActivityWithOptions(s.countRuns, activity.RegisterOptions{Name: pipelineflow.CountActivity})
+	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
 	return s, nil
+}
+
+// triggerFire lands one firing on the pipeline record — the arbiter.
+func (s *Worker) triggerFire(ctx context.Context, req triggerflow.FireRequest) error {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(req.PipelineId),
+		pipelineflow.Spec{}, pipelineflow.FireCmd{Trigger: req.Trigger, Params: req.Params, Event: req.Event})
+	return err
+}
+
+// autoStartRun starts a trigger-decided run: the image from the
+// pipeline record, the webhook body merged into the reserved "event"
+// params field.
+func (s *Worker) autoStartRun(ctx context.Context, req pipelineflow.StartReq) (string, error) {
+	if s.startRun == nil {
+		return "", fmt.Errorf("run starter is not wired yet")
+	}
+	st, err := s.GetPipeline(ctx, req.PipelineId)
+	if err != nil {
+		return "", err
+	}
+	params := req.Params
+	if len(req.Event) > 0 {
+		merged := map[string]json.RawMessage{}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &merged); err != nil {
+				return "", fmt.Errorf("trigger params: %w", err)
+			}
+		}
+		merged["event"] = req.Event
+		if params, err = json.Marshal(merged); err != nil {
+			return "", err
+		}
+	}
+	runId := fmt.Sprintf("%s-%s-%s", req.PipelineId, req.Trigger,
+		time.Now().UTC().Format("20060102-150405"))
+	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, nil); err != nil {
+		return "", err
+	}
+	return runId, nil
+}
+
+// countRuns counts the pipeline's running runs via visibility.
+func (s *Worker) countRuns(ctx context.Context, pipelineId string) (int64, error) {
+	resp, err := s.deps.Client.CountWorkflow(ctx, &workflowservice.CountWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("WorkflowType = %q AND ExecutionStatus = 'Running'", pipelineId),
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetCount(), nil
+}
+
+// cancelRuns cancels every running run of the pipeline (the
+// cancel-previous policy); teardown still runs on each.
+func (s *Worker) cancelRuns(ctx context.Context, pipelineId string) error {
+	list, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("WorkflowType = %q AND ExecutionStatus = 'Running'", pipelineId),
+	})
+	if err != nil {
+		return err
+	}
+	for _, ex := range list.GetExecutions() {
+		if err := s.deps.Client.CancelWorkflow(ctx, ex.GetExecution().GetWorkflowId(), ""); err != nil {
+			s.deps.Log.Warn("cancel-previous", xlog.String("workflow", ex.GetExecution().GetWorkflowId()), xlog.Err(err))
+		}
+	}
+	return nil
 }
 
 // standCascade is the stand's teardown arm: subtree first, then the
@@ -122,10 +212,93 @@ func (s *Worker) standCascade(ctx context.Context, held string) error {
 // by content inside). A non-empty image also updates the pipeline's
 // current worker image — that is what a push records.
 func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image string) error {
+	var m manifestpb.Manifest
+	if err := protojson.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+	if err := validateTriggers(&m); err != nil {
+		return err
+	}
 	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
 	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
-		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw, Image: image})
-	return err
+		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw, Image: image, Concurrency: m.GetConcurrency()})
+	if err != nil {
+		return err
+	}
+	return s.reconcileTriggers(ctx, pipelineId, m.GetTriggers())
+}
+
+// validateTriggers rejects declarations the pipeline cannot serve: a
+// webhook needs the reserved "event" params field to land its body in.
+func validateTriggers(m *manifestpb.Manifest) error {
+	hasEvent := false
+	for _, f := range m.GetParamsSchema().GetFields() {
+		if f.GetName() == "event" {
+			hasEvent = true
+		}
+	}
+	for _, t := range m.GetTriggers() {
+		if t.GetKind() == "webhook" && !hasEvent {
+			return fmt.Errorf("webhook trigger %q: the params type needs an `event json.RawMessage` field for the request body", t.GetName())
+		}
+	}
+	return nil
+}
+
+// reconcileTriggers makes the trigger records match the declarations:
+// create the new, delete the vanished, recreate the changed (a spec is
+// immutable — the firing history restarts with it).
+func (s *Worker) reconcileTriggers(ctx context.Context, pipelineId string, declared []*manifestpb.Trigger) error {
+	triggers := entclient.Bind(s.triggerDef, s.deps.Client, wire.ServerQueue)
+	want := map[entity.ResourceID]triggerflow.Spec{}
+	for _, t := range declared {
+		want[triggerflow.Id(pipelineId, t.GetName())] = triggerflow.Spec{
+			PipelineId: pipelineId,
+			Kind:       t.GetKind(),
+			Name:       t.GetName(),
+			Spec:       t.GetSpec(),
+			SecretName: t.GetSecretName(),
+			Params:     t.GetParams(),
+		}
+	}
+	// The existing records of this pipeline, by the ownership mirror.
+	list, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("%s = 'trigger' AND %s = %q AND ExecutionStatus = 'Running'",
+			entdefine.SearchAttrKind.GetName(), wire.SearchAttrOwner.GetName(), "pipeline/"+pipelineId),
+	})
+	if err != nil {
+		return err
+	}
+	existing := map[entity.ResourceID]bool{}
+	for _, ex := range list.GetExecutions() {
+		rid := entity.ResourceID(strings.TrimPrefix(ex.GetExecution().GetWorkflowId(), string(triggerflow.Kind)+"/"))
+		existing[rid] = true
+		spec, ok := want[rid]
+		if !ok {
+			// Vanished from the code — the next push unapplies it.
+			if err := triggers.Delete(ctx, rid); err != nil {
+				return fmt.Errorf("trigger %s: %w", rid, err)
+			}
+			continue
+		}
+		desc, err := triggers.Describe(ctx, rid)
+		if err == nil && !specEqual(desc.Spec, spec) {
+			// Changed: recreate (specs are immutable).
+			if err := triggers.Delete(ctx, rid); err != nil {
+				return fmt.Errorf("trigger %s: %w", rid, err)
+			}
+			existing[rid] = false
+		}
+	}
+	for rid, spec := range want {
+		if existing[rid] {
+			continue
+		}
+		if _, err := triggers.CreateOrAttach(ctx, rid, spec); err != nil {
+			return fmt.Errorf("trigger %s: %w", rid, err)
+		}
+	}
+	return nil
 }
 
 // GetPipeline reads the pipeline record's state.
@@ -643,4 +816,29 @@ func (s *Worker) queueHasLiveEntities(ctx context.Context, queue string) bool {
 // agentUserData renders the install script for a machine.
 func (s *Worker) agentUserData(_ context.Context, agentId id.AgentId) (string, error) {
 	return s.deps.AgentOps.UserData(agentId)
+}
+
+// DescribeTrigger reads a trigger declaration; the door checks the
+// webhook's secret against it before delivering.
+func (s *Worker) DescribeTrigger(ctx context.Context, pipelineId, name string) (triggerflow.Spec, error) {
+	triggers := entclient.Bind(s.triggerDef, s.deps.Client, wire.ServerQueue)
+	desc, err := triggers.Describe(ctx, triggerflow.Id(pipelineId, name))
+	if err != nil {
+		return triggerflow.Spec{}, err
+	}
+	return desc.Spec, nil
+}
+
+// DeliverHook lands one verified webhook delivery on the trigger
+// record — the firing and its outcome belong to THAT history.
+func (s *Worker) DeliverHook(ctx context.Context, pipelineId, name string, event json.RawMessage) error {
+	triggers := entclient.Bind(s.triggerDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.Exec(ctx, triggers, triggerflow.Id(pipelineId, name), triggerflow.HookCmd{Event: event})
+	return err
+}
+
+// specEqual compares trigger declarations (RawMessage forbids ==).
+func specEqual(a, b triggerflow.Spec) bool {
+	return a.PipelineId == b.PipelineId && a.Kind == b.Kind && a.Name == b.Name &&
+		a.Spec == b.Spec && a.SecretName == b.SecretName && bytes.Equal(a.Params, b.Params)
 }

@@ -49,7 +49,11 @@ type Deps struct {
 	// LogSink receives tailed run-container output (the server's OTLP
 	// collector); nil disables orchestrator log tailing.
 	LogSink managed.LogSink
-	Log     *xlog.Logger
+	// MakeRunStarter builds the run-start path for trigger firings —
+	// wired by the server so the worker shares the management door's
+	// start logic (validation, labels, the managed contour).
+	MakeRunStarter func(*Bundle) worker.RunStarter
+	Log            *xlog.Logger
 }
 
 // Bundle is one namespace's runtime.
@@ -136,6 +140,11 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		m.deps.LogSink, log.With(xlog.String("component", "managed")))
 
 	b := &Bundle{Namespace: namespace, Client: c, Worker: w, Runner: runner}
+	if m.deps.MakeRunStarter != nil {
+		// Trigger-driven starts go through the same door logic as the
+		// management plane; the starter needs the whole bundle.
+		w.SetRunStarter(m.deps.MakeRunStarter(b))
+	}
 	go func() {
 		if err := w.Run(m.ctx); err != nil && m.ctx.Err() == nil {
 			log.Error("namespace worker died", xlog.Err(err))

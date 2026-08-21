@@ -14,6 +14,8 @@ import (
 	"github.com/gopherex/xlog"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/secrets"
 )
 
 // Deps is everything the HTTP door needs.
@@ -22,7 +24,11 @@ type Deps struct {
 	RegistryUpstream string
 	// Health serves /healthz/liveness and /healthz/readiness.
 	Health http.Handler
-	Log    *xlog.Logger
+	// Bundles and Secrets serve the webhook door (/hooks/...); nil
+	// disables it.
+	Bundles *nsbundle.Manager
+	Secrets *secrets.Namespaced
+	Log     *xlog.Logger
 }
 
 // New builds the HTTP handler.
@@ -35,6 +41,11 @@ func New(deps Deps) http.Handler {
 	})
 	if deps.Health != nil {
 		mux.Handle("/healthz/", deps.Health)
+	}
+	if deps.Bundles != nil && deps.Secrets != nil {
+		// The webhook door: authenticated by the trigger's own secret,
+		// not the installation's tokens.
+		mux.HandleFunc("POST /hooks/{ns}/{pipeline}/{trigger}", deps.hooks)
 	}
 	if deps.RegistryUpstream != "" {
 		proxy, err := registryProxy(deps.RegistryUpstream)
