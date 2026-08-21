@@ -41,7 +41,7 @@ func cmdRes(ctx context.Context, args []string) error {
 
 func resList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res list", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	kind := fs.String("k", "", "kind filter")
 	phase := fs.String("p", "", "phase filter")
 	owner := fs.String("owner", "", "owner ref filter")
@@ -51,7 +51,7 @@ func resList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func resList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	rows := make([][]string, 0, len(resp.Msg.GetResources()))
@@ -74,7 +74,7 @@ func resList(ctx context.Context, args []string) error {
 
 func resGet(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res get", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func resGet(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: res get <ref>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func resGet(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	r := resp.Msg.GetResource()
@@ -107,7 +107,7 @@ func resGet(ctx context.Context, args []string) error {
 
 func resTree(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res tree", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -115,7 +115,7 @@ func resTree(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: res tree <owner>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func resTree(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	fmt.Fprintln(out, pos[0])
@@ -143,7 +143,7 @@ func printTree(node *managementv1.TreeNode, indent string) {
 
 func resDelete(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res delete", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func resDelete(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: res delete <ref>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func resDelete(ctx context.Context, args []string) error {
 
 func resTransfer(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res transfer", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	keep := fs.Duration("keep", 0, "TTL under the new owner (stands only); 0 keeps until deleted")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
@@ -173,7 +173,7 @@ func resTransfer(ctx context.Context, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: res transfer <ref> <new-owner>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func resTransfer(ctx context.Context, args []string) error {
 
 func resInvoke(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("res invoke", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	data := fs.String("data", "", "command payload as JSON")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
@@ -200,7 +200,7 @@ func resInvoke(ctx context.Context, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: res invoke <ref> <command>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func resInvoke(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	fmt.Fprintln(out, string(resp.Msg.GetResult()))

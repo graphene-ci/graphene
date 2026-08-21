@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -28,22 +29,60 @@ type door struct {
 	Ns        managementv1connect.NamespacesAPIClient
 }
 
-// commonFlags registers the flags every command shares and returns
-// getters for them.
-func commonFlags(fs *flag.FlagSet) (ctxName *string, output *string) {
-	ctxName = fs.String("context", "", "connection context name")
-	output = fs.String("o", "table", "output: table | json")
-	return
+// common carries the flags every command shares.
+type common struct {
+	ctxName *string
+	output  *string
+	config  *string
+	ns      *string
 }
 
-// dial resolves the context and builds the clients. The connect plane
-// of the door is its HTTP/1.1 half (cmux routes raw HTTP/2 to gRPC),
-// which serves connect's server streams fine.
-func dial(ctxName string) (*door, error) {
-	cc, name, err := cliconfig.Resolve(ctxName)
+// commonFlags registers the shared flags: the context pick, the config
+// file override (kubeconfig-style), the per-call namespace, and the
+// output form.
+func commonFlags(fs *flag.FlagSet) *common {
+	return &common{
+		ctxName: fs.String("context", "", "connection context name"),
+		config:  fs.String("config", "", "config file (default: $"+cliconfig.EnvConfig+", else ~/.config/graphene/config.yaml)"),
+		ns:      fs.String("n", "", "namespace for this call (cluster-wide admin tokens)"),
+		output:  fs.String("o", "table", "output: table | json"),
+	}
+}
+
+// resolve applies the config override and picks the context, then lays
+// the per-call namespace on top.
+func (c *common) resolve() (cliconfig.Context, error) {
+	if *c.config != "" {
+		// The whole resolution chain reads the file through Path() —
+		// the override IS the environment variable, set for this
+		// process only.
+		if err := os.Setenv(cliconfig.EnvConfig, *c.config); err != nil {
+			return cliconfig.Context{}, err
+		}
+	}
+	cc, _, err := cliconfig.Resolve(*c.ctxName)
+	if err != nil {
+		return cliconfig.Context{}, err
+	}
+	if *c.ns != "" {
+		cc.Namespace = *c.ns
+	}
+	return cc, nil
+}
+
+// dial resolves and connects.
+func (c *common) dial() (*door, error) {
+	cc, err := c.resolve()
 	if err != nil {
 		return nil, err
 	}
+	return dialContext(cc)
+}
+
+// dialContext builds the clients over a resolved context. The connect
+// plane of the door is its HTTP/1.1 half (cmux routes raw HTTP/2 to
+// gRPC), which serves connect's server streams fine.
+func dialContext(cc cliconfig.Context) (*door, error) {
 	scheme := "https"
 	if cc.Insecure {
 		scheme = "http"
@@ -61,7 +100,6 @@ func dial(ctxName string) (*door, error) {
 		Secrets:   managementv1connect.NewSecretsAPIClient(client, base, auth),
 		Ns:        managementv1connect.NewNamespacesAPIClient(client, base, auth),
 	}
-	_ = name
 	return d, nil
 }
 

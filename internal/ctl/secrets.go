@@ -22,7 +22,7 @@ func cmdSecret(ctx context.Context, args []string) error {
 	switch word {
 	case "set":
 		fs := flag.NewFlagSet("secret set", flag.ExitOnError)
-		ctxName, _ := commonFlags(fs)
+		co := commonFlags(fs)
 		value := fs.String("value", "", "secret value (omit to read from stdin)")
 		pos, err := parseMixed(fs, rest)
 		if err != nil {
@@ -42,7 +42,7 @@ func cmdSecret(ctx context.Context, args []string) error {
 		if v == "" {
 			return fmt.Errorf("empty secret value")
 		}
-		d, err := dial(*ctxName)
+		d, err := co.dial()
 		if err != nil {
 			return err
 		}
@@ -55,12 +55,12 @@ func cmdSecret(ctx context.Context, args []string) error {
 		return nil
 	case "list":
 		fs := flag.NewFlagSet("secret list", flag.ExitOnError)
-		ctxName, output := commonFlags(fs)
+		co := commonFlags(fs)
 		_, err := parseMixed(fs, rest)
 		if err != nil {
 			return err
 		}
-		d, err := dial(*ctxName)
+		d, err := co.dial()
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func cmdSecret(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *output == "json" {
+		if *co.output == "json" {
 			return printJSON(resp.Msg)
 		}
 		for _, name := range resp.Msg.GetNames() {
@@ -77,7 +77,7 @@ func cmdSecret(ctx context.Context, args []string) error {
 		return nil
 	case "delete":
 		fs := flag.NewFlagSet("secret delete", flag.ExitOnError)
-		ctxName, _ := commonFlags(fs)
+		co := commonFlags(fs)
 		pos, err := parseMixed(fs, rest)
 		if err != nil {
 			return err
@@ -85,7 +85,7 @@ func cmdSecret(ctx context.Context, args []string) error {
 		if len(pos) != 1 {
 			return fmt.Errorf("usage: secret delete <name>")
 		}
-		d, err := dial(*ctxName)
+		d, err := co.dial()
 		if err != nil {
 			return err
 		}
@@ -108,12 +108,12 @@ func cmdNs(ctx context.Context, args []string) error {
 	switch word {
 	case "list":
 		fs := flag.NewFlagSet("ns list", flag.ExitOnError)
-		ctxName, output := commonFlags(fs)
+		co := commonFlags(fs)
 		_, err := parseMixed(fs, rest)
 		if err != nil {
 			return err
 		}
-		d, err := dial(*ctxName)
+		d, err := co.dial()
 		if err != nil {
 			return err
 		}
@@ -121,7 +121,7 @@ func cmdNs(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *output == "json" {
+		if *co.output == "json" {
 			return printJSON(resp.Msg)
 		}
 		for _, name := range resp.Msg.GetNames() {
@@ -130,7 +130,7 @@ func cmdNs(ctx context.Context, args []string) error {
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("ns create", flag.ExitOnError)
-		ctxName, _ := commonFlags(fs)
+		co := commonFlags(fs)
 		retention := fs.Int("retention-days", 0, "workflow retention (0 — the server default)")
 		pos, err := parseMixed(fs, rest)
 		if err != nil {
@@ -139,7 +139,7 @@ func cmdNs(ctx context.Context, args []string) error {
 		if len(pos) != 1 {
 			return fmt.Errorf("usage: ns create <name>")
 		}
-		d, err := dial(*ctxName)
+		d, err := co.dial()
 		if err != nil {
 			return err
 		}

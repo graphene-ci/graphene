@@ -23,7 +23,7 @@ func cmdPipeline(ctx context.Context, args []string) error {
 		return fmt.Errorf("pipeline %q: want show", word)
 	}
 	fs := flag.NewFlagSet("pipeline show", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, rest)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func cmdPipeline(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: pipeline show <pipeline-id>")
 	}
-	cc, _, err := cliconfig.Resolve(*ctxName)
+	cc, err := co.resolve()
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func cmdPipeline(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp)
 	}
 	fmt.Fprintf(out, "pipeline %s\nimage    %s\ndigest   %s\n", pos[0], resp.GetImage(), resp.GetDigest())

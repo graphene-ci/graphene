@@ -14,7 +14,7 @@ import (
 // refPrefix ("run/") lets the run command take bare ids.
 func observeDimension(ctx context.Context, dim string, args []string, refPrefix string) error {
 	fs := flag.NewFlagSet(dim, flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	follow := fs.Bool("follow", false, "keep streaming new entries")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
@@ -24,7 +24,7 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 		return fmt.Errorf("usage: %s <ref>", dim)
 	}
 	ref := refPrefix + pos[0]
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 		}
 		for stream.Receive() {
 			ev := stream.Msg()
-			if *output == "json" {
+			if *co.output == "json" {
 				if err := printJSON(ev); err != nil {
 					return err
 				}
@@ -63,7 +63,7 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 		}
 		for stream.Receive() {
 			rec := stream.Msg()
-			if *output == "json" {
+			if *co.output == "json" {
 				if err := printJSON(rec); err != nil {
 					return err
 				}
