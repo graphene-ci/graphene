@@ -3,7 +3,6 @@ module github.com/graphene-ci/graphene
 go 1.26.5
 
 require (
-	buf.build/go/protoyaml v0.7.0
 	connectrpc.com/connect v1.20.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/google/uuid v1.6.0
@@ -29,11 +28,10 @@ require (
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250425153114-8976f5be98c1.1 // indirect
-	buf.build/go/protovalidate v0.12.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
@@ -100,6 +98,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.temporal.io/sdk/contrib/opentelemetry v0.8.1 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/mod v0.38.0 // indirect
