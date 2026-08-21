@@ -154,10 +154,18 @@ func TestFullContour(t *testing.T) {
 	defer stop(runWorker)
 
 	// Start the run through the server API — the only door.
+	// The library-kind leg needs the host's docker daemon — the volume
+	// entity's lifecycle activities run against it.
+	if exec.Command("docker", "version").Run() != nil {
+		t.Skip("integration contour needs a docker daemon (the library-kind leg)")
+	}
+	volumeName := "graphene-e2e-" + runId
+	t.Cleanup(func() { _ = exec.Command("docker", "volume", "rm", "-f", volumeName).Run() })
 	paramsJSON, _ := json.Marshal(map[string]any{
-		"agentId":   agentId,
-		"markerDir": markerDir,
-		"keep":      3 * time.Second,
+		"agentId":    agentId,
+		"markerDir":  markerDir,
+		"keep":       3 * time.Second,
+		"volumeName": volumeName,
 	})
 	params := base64.StdEncoding.EncodeToString(paramsJSON)
 	// The run starts through the CONNECT port — the browser-facing
@@ -267,6 +275,13 @@ func TestFullContour(t *testing.T) {
 		return len(left) == 0
 	})
 
+	// The library kind lived the entity life: the docker volume was
+	// really made on the machine, its record joined the tree, and the
+	// stand's cascade removed both the record and the volume.
+	awaitTrue(ctx, t, "stand TTL cascade of the docker volume", func() bool {
+		return exec.Command("docker", "volume", "inspect", volumeName).Run() != nil
+	})
+
 	// Cleanup stopped the machine container: the agent's state drains.
 	awaitTrue(ctx, t, "machine container stopped", func() bool {
 		entries, err := os.ReadDir(filepath.Join(agentData, "state"))
@@ -369,7 +384,13 @@ func awaitStatus(ctx context.Context, t *testing.T, doorAddr, want string) {
 			return false
 		}
 		if status.Status == "Failed" || status.Status == "Terminated" {
-			t.Fatalf("run reached %s", status.Status)
+			// Surface the workflow's own error before dying.
+			resBody, _ := json.Marshal(map[string]string{"runId": runId})
+			resResp := doJSON(ctx, t, http.MethodPost,
+				"http://"+doorAddr+"/graphene.management.v1.RunsAPI/RunResult", adminToken, resBody)
+			raw, _ := io.ReadAll(resResp.Body)
+			_ = resResp.Body.Close()
+			t.Fatalf("run reached %s: %s", status.Status, raw)
 		}
 		return status.Status == want
 	})

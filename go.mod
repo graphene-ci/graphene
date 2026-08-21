@@ -1,6 +1,6 @@
 module github.com/graphene-ci/graphene
 
-go 1.25.7
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
@@ -13,6 +13,7 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
+	github.com/graphene-ci/library/docker v0.0.0-20260819150826-a6ab5b685986
 	github.com/graphene-ci/pipeline v0.0.0-20260821083339-879245c25aae
 	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
 	github.com/minio/minio-go/v7 v7.3.0
@@ -29,6 +30,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.2 // indirect
+	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
@@ -37,7 +39,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
-	github.com/containerd/log v0.1.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/cli v29.6.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
@@ -64,9 +65,7 @@ require (
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/sys/atomicwriter v0.1.0 // indirect
-	github.com/moby/term v0.5.2 // indirect
-	github.com/morikuni/aec v1.1.0 // indirect
+	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
 	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -88,7 +87,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0 // indirect
 	go.opentelemetry.io/otel/log v0.21.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
