@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -80,6 +81,94 @@ func table(header []string, rows [][]string) {
 		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 	_ = w.Flush()
+}
+
+// watchRow is one list entry under watch: the table cells and the
+// message for -o json / --jq.
+type watchRow struct {
+	cols []string
+	msg  proto.Message
+}
+
+// watchList polls fetch and prints CHANGES, kubectl-style: the first
+// snapshot in full, then only rows that appeared, changed, or went
+// away (marked deleted). Runs until the context ends.
+func watchList(ctx context.Context, co *common, header []string, fetch func() (map[string]watchRow, error)) error {
+	widths := make([]int, len(header))
+	for i, h := range header {
+		widths[i] = len(h)
+	}
+	line := func(cols []string) {
+		parts := make([]string, len(cols))
+		for i, c := range cols {
+			if i < len(widths) {
+				if len(c) > widths[i] {
+					widths[i] = len(c)
+				}
+				parts[i] = fmt.Sprintf("%-*s", widths[i], c)
+			} else {
+				parts[i] = c
+			}
+		}
+		fmt.Fprintln(out, strings.TrimRight(strings.Join(parts, "  "), " "))
+	}
+	emitOrLine := func(row watchRow, extra string) error {
+		if *co.jq != "" || *co.output == "json" {
+			_, err := co.emit(row.msg)
+			return err
+		}
+		cols := row.cols
+		if extra != "" {
+			cols = append(append([]string{}, cols...), extra)
+		}
+		line(cols)
+		return nil
+	}
+
+	prev := map[string]watchRow{}
+	first := true
+	for {
+		cur, err := fetch()
+		if err != nil {
+			return err
+		}
+		if first {
+			// Size the columns on the first frame; print the header for
+			// the table form only.
+			for _, row := range cur {
+				for i, c := range row.cols {
+					if i < len(widths) && len(c) > widths[i] {
+						widths[i] = len(c)
+					}
+				}
+			}
+			if *co.jq == "" && *co.output != "json" {
+				line(header)
+			}
+			first = false
+		}
+		for key, row := range cur {
+			old, seen := prev[key]
+			if !seen || strings.Join(old.cols, "\x00") != strings.Join(row.cols, "\x00") {
+				if err := emitOrLine(row, ""); err != nil {
+					return err
+				}
+			}
+		}
+		for key, old := range prev {
+			if _, still := cur[key]; !still {
+				if err := emitOrLine(old, "deleted"); err != nil {
+					return err
+				}
+			}
+		}
+		prev = cur
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // labelsCell renders labels compactly for a table cell.

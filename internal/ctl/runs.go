@@ -44,6 +44,7 @@ func runList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run list", flag.ExitOnError)
 	co := commonFlags(fs)
 	status := fs.String("status", "", "status filter (Running, Completed, ...)")
+	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
 	_, err := parseMixed(fs, args)
@@ -54,17 +55,40 @@ func runList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
-		Status: *status, Labels: labels.m,
-	}))
+	list := func() (*managementv1.ListRunsResponse, error) {
+		resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
+			Status: *status, Labels: labels.m,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	if *watch {
+		return watchList(ctx, co, []string{"RUN", "PIPELINE", "STATUS", "LABELS"}, func() (map[string]watchRow, error) {
+			msg, err := list()
+			if err != nil {
+				return nil, err
+			}
+			rows := make(map[string]watchRow, len(msg.GetRuns()))
+			for _, r := range msg.GetRuns() {
+				rows[r.GetRunId()] = watchRow{
+					cols: []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), labelsCell(r.GetLabels())},
+					msg:  r,
+				}
+			}
+			return rows, nil
+		})
+	}
+	msg, err := list()
 	if err != nil {
 		return err
 	}
-	if done, err := co.emit(resp.Msg); done || err != nil {
+	if done, err := co.emit(msg); done || err != nil {
 		return err
 	}
-	rows := make([][]string, 0, len(resp.Msg.GetRuns()))
-	for _, r := range resp.Msg.GetRuns() {
+	rows := make([][]string, 0, len(msg.GetRuns()))
+	for _, r := range msg.GetRuns() {
 		rows = append(rows, []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), labelsCell(r.GetLabels())})
 	}
 	table([]string{"RUN", "PIPELINE", "STATUS", "LABELS"}, rows)
