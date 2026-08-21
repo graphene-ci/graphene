@@ -45,6 +45,7 @@ func resList(ctx context.Context, args []string) error {
 	kind := fs.String("k", "", "kind filter")
 	phase := fs.String("p", "", "phase filter")
 	owner := fs.String("owner", "", "owner ref filter")
+	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
 	_, err := parseMixed(fs, args)
@@ -55,17 +56,40 @@ func resList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
-		Selector: &managementv1.Selector{Kind: *kind, Phase: *phase, Owner: *owner, Labels: labels.m},
-	}))
+	list := func() (*managementv1.ListResponse, error) {
+		resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
+			Selector: &managementv1.Selector{Kind: *kind, Phase: *phase, Owner: *owner, Labels: labels.m},
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+	if *watch {
+		return watchList(ctx, co, []string{"REF", "PHASE", "OWNER", "LABELS"}, func() (map[string]watchRow, error) {
+			msg, err := list()
+			if err != nil {
+				return nil, err
+			}
+			rows := make(map[string]watchRow, len(msg.GetResources()))
+			for _, r := range msg.GetResources() {
+				rows[r.GetRef()] = watchRow{
+					cols: []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())},
+					msg:  r,
+				}
+			}
+			return rows, nil
+		})
+	}
+	msg, err := list()
 	if err != nil {
 		return err
 	}
-	if done, err := co.emit(resp.Msg); done || err != nil {
+	if done, err := co.emit(msg); done || err != nil {
 		return err
 	}
-	rows := make([][]string, 0, len(resp.Msg.GetResources()))
-	for _, r := range resp.Msg.GetResources() {
+	rows := make([][]string, 0, len(msg.GetResources()))
+	for _, r := range msg.GetResources() {
 		rows = append(rows, []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())})
 	}
 	table([]string{"REF", "PHASE", "OWNER", "LABELS"}, rows)
