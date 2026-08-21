@@ -1,10 +1,15 @@
 package ctl
 
+// The record verbs, kubectl's grammar: the verb first, the kind
+// second. A target is "<kind> <id>" or "kind/id"; a run is a record
+// too (kind "run").
+
 import (
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,61 +17,79 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
-// cmdRes is the record surface: listing, the five dimensions, the tree,
-// and the lifecycle verbs.
-func cmdRes(ctx context.Context, args []string) error {
-	word, rest, err := need(args, "list, get, tree, delete, transfer, invoke, events, logs, metrics, trace")
-	if err != nil {
-		return err
+// targetRef reads one record target from the positionals: either
+// "kind/id" in one word or "<kind> <id>" in two. Returns the ref and
+// the leftover positionals.
+func targetRef(pos []string) (string, []string, error) {
+	if len(pos) == 0 {
+		return "", nil, fmt.Errorf("want a target: \"<kind> <id>\" or \"kind/id\"")
 	}
-	switch word {
-	case "list":
-		return resList(ctx, rest)
-	case "get":
-		return resGet(ctx, rest)
-	case "tree":
-		return resTree(ctx, rest)
-	case "delete":
-		return resDelete(ctx, rest)
-	case "transfer":
-		return resTransfer(ctx, rest)
-	case "invoke":
-		return resInvoke(ctx, rest)
-	case "events", "logs", "metrics", "trace":
-		return observeDimension(ctx, word, rest, "")
-	default:
-		return fmt.Errorf("res %q: unknown verb", word)
+	if strings.Contains(pos[0], "/") {
+		return pos[0], pos[1:], nil
 	}
+	if len(pos) < 2 {
+		return "", nil, fmt.Errorf("want a target: \"%s <id>\" or \"%s/<id>\"", pos[0], pos[0])
+	}
+	return pos[0] + "/" + pos[1], pos[2:], nil
 }
 
-func resList(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res list", flag.ExitOnError)
+// cmdGet lists a kind or shows one record: get all|<kind> [id].
+func cmdGet(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("get", flag.ExitOnError)
 	co := commonFlags(fs)
-	kind := fs.String("k", "", "kind filter")
-	phase := fs.String("p", "", "phase filter")
-	owner := fs.String("owner", "", "owner ref filter")
+	phase := fs.String("p", "", "phase filter (lists)")
+	owner := fs.String("owner", "", "owner ref filter (lists)")
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
-	_, err := parseMixed(fs, args)
+	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
 	}
+	switch {
+	case len(pos) == 0:
+		return fmt.Errorf("usage: get all|<kind> [id]")
+	case len(pos) == 1 && !strings.Contains(pos[0], "/"):
+		kind := pos[0]
+		if kind == "run" {
+			return runListWith(ctx, co, "", labels.m, *watch)
+		}
+		if kind == "all" {
+			kind = ""
+		}
+		return resListWith(ctx, co, kind, *phase, *owner, labels.m, *watch)
+	default:
+		ref, rest, err := targetRef(pos)
+		if err != nil {
+			return err
+		}
+		if len(rest) != 0 {
+			return fmt.Errorf("get: unexpected arguments after the target: %v", rest)
+		}
+		if strings.HasPrefix(ref, "run/") {
+			return runGetOne(ctx, co, strings.TrimPrefix(ref, "run/"))
+		}
+		return resGetOne(ctx, co, ref)
+	}
+}
+
+func resListWith(ctx context.Context, co *common, kind, phase, owner string, labels map[string]string, watch bool) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
 	list := func() (*managementv1.ListResponse, error) {
 		resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
-			Selector: &managementv1.Selector{Kind: *kind, Phase: *phase, Owner: *owner, Labels: labels.m},
+			Selector: &managementv1.Selector{Kind: kind, Phase: phase, Owner: owner, Labels: labels},
 		}))
 		if err != nil {
 			return nil, err
 		}
 		return resp.Msg, nil
 	}
-	if *watch {
-		return watchList(ctx, co, []string{"REF", "PHASE", "OWNER", "LABELS"}, func() (map[string]watchRow, error) {
+	header := []string{"REF", "PHASE", "OWNER", "LABELS"}
+	if watch {
+		return watchList(ctx, co, header, func() (map[string]watchRow, error) {
 			msg, err := list()
 			if err != nil {
 				return nil, err
@@ -92,25 +115,16 @@ func resList(ctx context.Context, args []string) error {
 	for _, r := range msg.GetResources() {
 		rows = append(rows, []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())})
 	}
-	table([]string{"REF", "PHASE", "OWNER", "LABELS"}, rows)
+	table(header, rows)
 	return nil
 }
 
-func resGet(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res get", flag.ExitOnError)
-	co := commonFlags(fs)
-	pos, err := parseMixed(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: res get <ref>")
-	}
+func resGetOne(ctx context.Context, co *common, ref string) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
-	resp, err := d.Resources.Get(ctx, connect.NewRequest(&managementv1.GetRequest{Ref: pos[0]}))
+	resp, err := d.Resources.Get(ctx, connect.NewRequest(&managementv1.GetRequest{Ref: ref}))
 	if err != nil {
 		return err
 	}
@@ -129,28 +143,29 @@ func resGet(ctx context.Context, args []string) error {
 	return nil
 }
 
-func resTree(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res tree", flag.ExitOnError)
+func cmdTree(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("tree", flag.ExitOnError)
 	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: res tree <owner>")
+	ref, rest, err := targetRef(pos)
+	if err != nil || len(rest) != 0 {
+		return fmt.Errorf("usage: tree <owner-ref>")
 	}
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
-	resp, err := d.Resources.Tree(ctx, connect.NewRequest(&managementv1.TreeRequest{Owner: pos[0]}))
+	resp, err := d.Resources.Tree(ctx, connect.NewRequest(&managementv1.TreeRequest{Owner: ref}))
 	if err != nil {
 		return err
 	}
 	if done, err := co.emit(resp.Msg); done || err != nil {
 		return err
 	}
-	fmt.Fprintln(out, pos[0])
+	fmt.Fprintln(out, ref)
 	for _, root := range resp.Msg.GetRoots() {
 		printTree(root, "  ")
 	}
@@ -165,72 +180,75 @@ func printTree(node *managementv1.TreeNode, indent string) {
 	}
 }
 
-func resDelete(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res delete", flag.ExitOnError)
+func cmdDelete(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: res delete <ref>")
+	ref, rest, err := targetRef(pos)
+	if err != nil || len(rest) != 0 {
+		return fmt.Errorf("usage: delete <kind> <id>")
 	}
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
-	if _, err := d.Resources.Delete(ctx, connect.NewRequest(&managementv1.DeleteRequest{Ref: pos[0]})); err != nil {
+	if _, err := d.Resources.Delete(ctx, connect.NewRequest(&managementv1.DeleteRequest{Ref: ref})); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s: deletion signaled\n", pos[0])
+	fmt.Fprintf(out, "%s: deletion signaled\n", ref)
 	return nil
 }
 
-func resTransfer(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res transfer", flag.ExitOnError)
+func cmdTransfer(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("transfer", flag.ExitOnError)
 	co := commonFlags(fs)
 	keep := fs.Duration("keep", 0, "TTL under the new owner (stands only); 0 keeps until deleted")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 2 {
-		return fmt.Errorf("usage: res transfer <ref> <new-owner>")
+	ref, rest, err := targetRef(pos)
+	if err != nil || len(rest) != 1 {
+		return fmt.Errorf("usage: transfer <kind> <id> <new-owner>")
 	}
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
 	_, err = d.Resources.Transfer(ctx, connect.NewRequest(&managementv1.TransferRequest{
-		Ref:         pos[0],
-		NewOwner:    pos[1],
+		Ref:         ref,
+		NewOwner:    rest[0],
 		KeepSeconds: int64(*keep / time.Second),
 	}))
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s -> %s\n", pos[0], pos[1])
+	fmt.Fprintf(out, "%s -> %s\n", ref, rest[0])
 	return nil
 }
 
-func resInvoke(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("res invoke", flag.ExitOnError)
+func cmdInvoke(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("invoke", flag.ExitOnError)
 	co := commonFlags(fs)
 	data := fs.String("data", "", "command payload as JSON")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 2 {
-		return fmt.Errorf("usage: res invoke <ref> <command>")
+	ref, rest, err := targetRef(pos)
+	if err != nil || len(rest) != 1 {
+		return fmt.Errorf("usage: invoke <kind> <id> <command>")
 	}
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
 	resp, err := d.Resources.Invoke(ctx, connect.NewRequest(&managementv1.InvokeRequest{
-		Ref:     pos[0],
-		Command: pos[1],
+		Ref:     ref,
+		Command: rest[0],
 		Payload: []byte(*data),
 	}))
 	if err != nil {
