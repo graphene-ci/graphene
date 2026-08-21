@@ -106,7 +106,7 @@ token keeps your --namespace pick.`,
 	fl.StringVar(&token, "token", "", "access token (prefer --token-stdin)")
 	fl.BoolVar(&tokenStdin, "token-stdin", false, "read the token from stdin")
 	fl.StringVar(&name, "name", "", "context name (default: the server's host)")
-	fl.StringVar(&namespace, "login-namespace", "", "namespace to work in (default: the token's own scope)")
+	fl.StringVar(&namespace, "namespace", "", "namespace to work in (default: the token's own scope)")
 	fl.BoolVar(&insecure, "insecure", false, "plaintext connection (dev contours)")
 	fl.StringVar(&baseImage, "base-image", "", "base image override for self-built workers")
 	return cmd
@@ -262,7 +262,7 @@ func newSet() *cobra.Command {
 			if changed("token") || changed("token-stdin") {
 				cc.Token = token
 			}
-			if changed("set-namespace") {
+			if changed("namespace") {
 				cc.Namespace = namespace
 			}
 			if changed("insecure") {
@@ -295,7 +295,7 @@ func newSet() *cobra.Command {
 	fl.StringVar(&server, "server", "", "the installation's door, host:port")
 	fl.StringVar(&token, "token", "", "access token (prefer --token-stdin)")
 	fl.BoolVar(&tokenStdin, "token-stdin", false, "read the token from stdin")
-	fl.StringVar(&namespace, "set-namespace", "", "namespace the context works in")
+	fl.StringVar(&namespace, "namespace", "", "namespace the context works in")
 	fl.BoolVar(&insecure, "insecure", false, "plaintext connection (dev contours)")
 	fl.StringVar(&baseImage, "base-image", "", "base image override for self-built workers")
 	fl.BoolVar(&use, "use", false, "also make it the current context")
