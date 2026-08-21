@@ -136,6 +136,44 @@ func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managemen
 	}), nil
 }
 
+// WatchRun streams status transitions until a terminal one.
+func (m *Management) WatchRun(ctx context.Context, creq *connect.Request[managementv1.WatchRunRequest], stream *connect.ServerStream[managementv1.WatchRunEvent]) error {
+	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return err
+	}
+	return watchRunCore(ctx, b, creq.Msg.GetRunId(), func(s string) error {
+		return stream.Send(&managementv1.WatchRunEvent{Status: s})
+	})
+}
+
+// watchRunCore polls the run's status and pushes every transition into
+// send, ending on a terminal status. Shared by both doors.
+func watchRunCore(ctx context.Context, b *nsbundle.Bundle, runId string, send func(status string) error) error {
+	last := ""
+	for {
+		desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
+		if err != nil {
+			return status.Error(codes.NotFound, err.Error())
+		}
+		s := desc.GetWorkflowExecutionInfo().GetStatus()
+		if name := s.String(); name != last {
+			if err := send(name); err != nil {
+				return err
+			}
+			last = name
+		}
+		if s != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 // RunResult waits for the run and returns its typed result as JSON.
 func (m *Management) RunResult(ctx context.Context, creq *connect.Request[managementv1.RunResultRequest]) (*connect.Response[managementv1.RunResultResponse], error) {
 	req := creq.Msg

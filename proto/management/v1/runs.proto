@@ -10,6 +10,9 @@ option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;man
 service RunsAPI {
   rpc StartRun(StartRunRequest) returns (StartRunResponse);
   rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  // WatchRun streams the run's status transitions until a terminal
+  // one; the first message carries the current status immediately.
+  rpc WatchRun(WatchRunRequest) returns (stream WatchRunEvent);
   // Result waits for the run to finish and returns its typed result as
   // JSON.
   rpc RunResult(RunResultRequest) returns (RunResultResponse);
@@ -43,6 +46,14 @@ message GetRunRequest {
 }
 
 message GetRunResponse {
+  string status = 1;
+}
+
+message WatchRunRequest {
+  string run_id = 1;
+}
+
+message WatchRunEvent {
   string status = 1;
 }
 

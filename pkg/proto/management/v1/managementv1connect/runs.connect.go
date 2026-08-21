@@ -37,6 +37,8 @@ const (
 	RunsAPIStartRunProcedure = "/graphene.management.v1.RunsAPI/StartRun"
 	// RunsAPIGetRunProcedure is the fully-qualified name of the RunsAPI's GetRun RPC.
 	RunsAPIGetRunProcedure = "/graphene.management.v1.RunsAPI/GetRun"
+	// RunsAPIWatchRunProcedure is the fully-qualified name of the RunsAPI's WatchRun RPC.
+	RunsAPIWatchRunProcedure = "/graphene.management.v1.RunsAPI/WatchRun"
 	// RunsAPIRunResultProcedure is the fully-qualified name of the RunsAPI's RunResult RPC.
 	RunsAPIRunResultProcedure = "/graphene.management.v1.RunsAPI/RunResult"
 	// RunsAPICancelRunProcedure is the fully-qualified name of the RunsAPI's CancelRun RPC.
@@ -49,6 +51,9 @@ const (
 type RunsAPIClient interface {
 	StartRun(context.Context, *connect.Request[v1.StartRunRequest]) (*connect.Response[v1.StartRunResponse], error)
 	GetRun(context.Context, *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error)
+	// WatchRun streams the run's status transitions until a terminal
+	// one; the first message carries the current status immediately.
+	WatchRun(context.Context, *connect.Request[v1.WatchRunRequest]) (*connect.ServerStreamForClient[v1.WatchRunEvent], error)
 	// Result waits for the run to finish and returns its typed result as
 	// JSON.
 	RunResult(context.Context, *connect.Request[v1.RunResultRequest]) (*connect.Response[v1.RunResultResponse], error)
@@ -81,6 +86,12 @@ func NewRunsAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 			connect.WithSchema(runsAPIMethods.ByName("GetRun")),
 			connect.WithClientOptions(opts...),
 		),
+		watchRun: connect.NewClient[v1.WatchRunRequest, v1.WatchRunEvent](
+			httpClient,
+			baseURL+RunsAPIWatchRunProcedure,
+			connect.WithSchema(runsAPIMethods.ByName("WatchRun")),
+			connect.WithClientOptions(opts...),
+		),
 		runResult: connect.NewClient[v1.RunResultRequest, v1.RunResultResponse](
 			httpClient,
 			baseURL+RunsAPIRunResultProcedure,
@@ -106,6 +117,7 @@ func NewRunsAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 type runsAPIClient struct {
 	startRun  *connect.Client[v1.StartRunRequest, v1.StartRunResponse]
 	getRun    *connect.Client[v1.GetRunRequest, v1.GetRunResponse]
+	watchRun  *connect.Client[v1.WatchRunRequest, v1.WatchRunEvent]
 	runResult *connect.Client[v1.RunResultRequest, v1.RunResultResponse]
 	cancelRun *connect.Client[v1.CancelRunRequest, v1.CancelRunResponse]
 	listRuns  *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
@@ -119,6 +131,11 @@ func (c *runsAPIClient) StartRun(ctx context.Context, req *connect.Request[v1.St
 // GetRun calls graphene.management.v1.RunsAPI.GetRun.
 func (c *runsAPIClient) GetRun(ctx context.Context, req *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error) {
 	return c.getRun.CallUnary(ctx, req)
+}
+
+// WatchRun calls graphene.management.v1.RunsAPI.WatchRun.
+func (c *runsAPIClient) WatchRun(ctx context.Context, req *connect.Request[v1.WatchRunRequest]) (*connect.ServerStreamForClient[v1.WatchRunEvent], error) {
+	return c.watchRun.CallServerStream(ctx, req)
 }
 
 // RunResult calls graphene.management.v1.RunsAPI.RunResult.
@@ -140,6 +157,9 @@ func (c *runsAPIClient) ListRuns(ctx context.Context, req *connect.Request[v1.Li
 type RunsAPIHandler interface {
 	StartRun(context.Context, *connect.Request[v1.StartRunRequest]) (*connect.Response[v1.StartRunResponse], error)
 	GetRun(context.Context, *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error)
+	// WatchRun streams the run's status transitions until a terminal
+	// one; the first message carries the current status immediately.
+	WatchRun(context.Context, *connect.Request[v1.WatchRunRequest], *connect.ServerStream[v1.WatchRunEvent]) error
 	// Result waits for the run to finish and returns its typed result as
 	// JSON.
 	RunResult(context.Context, *connect.Request[v1.RunResultRequest]) (*connect.Response[v1.RunResultResponse], error)
@@ -168,6 +188,12 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 		connect.WithSchema(runsAPIMethods.ByName("GetRun")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runsAPIWatchRunHandler := connect.NewServerStreamHandler(
+		RunsAPIWatchRunProcedure,
+		svc.WatchRun,
+		connect.WithSchema(runsAPIMethods.ByName("WatchRun")),
+		connect.WithHandlerOptions(opts...),
+	)
 	runsAPIRunResultHandler := connect.NewUnaryHandler(
 		RunsAPIRunResultProcedure,
 		svc.RunResult,
@@ -192,6 +218,8 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 			runsAPIStartRunHandler.ServeHTTP(w, r)
 		case RunsAPIGetRunProcedure:
 			runsAPIGetRunHandler.ServeHTTP(w, r)
+		case RunsAPIWatchRunProcedure:
+			runsAPIWatchRunHandler.ServeHTTP(w, r)
 		case RunsAPIRunResultProcedure:
 			runsAPIRunResultHandler.ServeHTTP(w, r)
 		case RunsAPICancelRunProcedure:
@@ -213,6 +241,10 @@ func (UnimplementedRunsAPIHandler) StartRun(context.Context, *connect.Request[v1
 
 func (UnimplementedRunsAPIHandler) GetRun(context.Context, *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.GetRun is not implemented"))
+}
+
+func (UnimplementedRunsAPIHandler) WatchRun(context.Context, *connect.Request[v1.WatchRunRequest], *connect.ServerStream[v1.WatchRunEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.WatchRun is not implemented"))
 }
 
 func (UnimplementedRunsAPIHandler) RunResult(context.Context, *connect.Request[v1.RunResultRequest]) (*connect.Response[v1.RunResultResponse], error) {
