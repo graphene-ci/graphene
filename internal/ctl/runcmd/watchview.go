@@ -314,7 +314,6 @@ func firstLine(s string) string {
 	return s
 }
 
-
 // panelRenderer redraws a block of lines in place.
 type panelRenderer struct {
 	lastLines int
@@ -409,4 +408,3 @@ func phaseWord(phase string) string {
 	}
 	return phase
 }
-

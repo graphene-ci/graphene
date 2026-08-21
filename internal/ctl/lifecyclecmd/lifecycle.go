@@ -167,9 +167,9 @@ its run; --keep bounds the stay — the stand's own timer collects it.`,
 func NewInvoke(f *cmdutil.Factory) *cobra.Command {
 	var data, dataFile string
 	cmd := &cobra.Command{
-		Use:   "invoke <kind> <id> <command>",
-		Short: "Send one of the record's own commands",
-		Args:  cobra.RangeArgs(2, 3),
+		Use:               "invoke <kind> <id> <command>",
+		Short:             "Send one of the record's own commands",
+		Args:              cobra.RangeArgs(2, 3),
 		ValidArgsFunction: targetCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref, rest, err := cmdutil.TargetRef(args)
