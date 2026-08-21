@@ -340,6 +340,19 @@ if [ ! -x /usr/local/bin/graphene-agent ]; then
   fi
   chmod 755 /usr/local/bin/graphene-agent
 fi
+# The container runtime the agent drives; best-effort via the distro's
+# package manager when absent.
+if ! command -v runc >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y -qq runc >/dev/null 2>&1 || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q runc >/dev/null 2>&1 || true
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q runc >/dev/null 2>&1 || true
+  fi
+  command -v runc >/dev/null 2>&1 || echo "WARNING: runc is still missing — machine activities will not run" >&2
+fi
 if command -v systemctl >/dev/null 2>&1; then
   cat > /etc/systemd/system/graphene-agent.service <<'UNIT'
 [Unit]
