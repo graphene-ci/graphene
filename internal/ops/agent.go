@@ -74,7 +74,11 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 		User:            install.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.FixedHostKey(hostKey),
-		Timeout:         30 * time.Second,
+		// Negotiate the ALGORITHM of the pinned key — otherwise the
+		// server may present a different key type and the pin
+		// mismatches spuriously.
+		HostKeyAlgorithms: []string{hostKey.Type()},
+		Timeout:           30 * time.Second,
 	}
 	raw, err := (&net.Dialer{Timeout: sshCfg.Timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
