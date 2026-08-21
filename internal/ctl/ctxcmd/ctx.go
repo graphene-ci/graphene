@@ -9,13 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/pipeline/pkg/cliconfig"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
-	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
 // nameCompletion completes context names from the local file.
@@ -39,16 +37,28 @@ func NewLogin(f *cmdutil.Factory) *cobra.Command {
 		tokenStdin, insecure                      bool
 	)
 	cmd := &cobra.Command{
-		Use:   "login --server host:port --token-stdin",
+		Use:   "login [--server host:port] [--token-stdin]",
 		Short: "Verify a token, save the context, and switch to it",
 		Long: `Login verifies the server and the token with a handshake BEFORE
-writing anything, then saves the context and makes it current. A
-namespaced token pins the context to its own namespace; a cluster-wide
-token keeps your --namespace pick.`,
+writing anything, then saves the context and makes it current. On a
+terminal it asks only for the MISSING pieces — the token through
+hidden input, plaintext only after an explicit yes. A namespaced token
+pins the context to its own namespace; a cluster-wide token asks (or
+keeps your --namespace pick).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			interactive := cmdutil.StdinIsTerminal()
 			if server == "" {
-				return fmt.Errorf("login needs --server host:port")
+				if !interactive {
+					return fmt.Errorf("login needs --server host:port")
+				}
+				var err error
+				if server, err = promptLine("server (host:port)", ""); err != nil {
+					return err
+				}
+				if server == "" {
+					return fmt.Errorf("login needs a server")
+				}
 			}
 			if tokenStdin {
 				raw, err := io.ReadAll(os.Stdin)
@@ -56,9 +66,20 @@ token keeps your --namespace pick.`,
 					return err
 				}
 				token = strings.TrimSpace(string(raw))
+				// stdin is the token pipe — no prompts after this.
+				interactive = false
 			}
 			if token == "" {
-				return fmt.Errorf("login needs a token: --token-stdin (preferred) or --token")
+				if !interactive {
+					return fmt.Errorf("login needs a token: --token-stdin (preferred) or --token")
+				}
+				var err error
+				if token, err = promptSecret("token"); err != nil {
+					return err
+				}
+				if token == "" {
+					return fmt.Errorf("login needs a token")
+				}
 			}
 			cc := cliconfig.Context{
 				Server: server, Token: token, Namespace: namespace,
@@ -66,23 +87,42 @@ token keeps your --namespace pick.`,
 			}
 			// The handshake BEFORE anything is written: a bad server or
 			// token never lands in the file.
-			d, err := cmdutil.DialContext(cc)
-			if err != nil {
-				return err
+			fmt.Fprintln(os.Stderr, "verifying…")
+			who, err := handshake(cmd, cc)
+			if err != nil && !cc.Insecure && interactive && looksLikePlaintextDoor(err) {
+				// An honest TLS attempt first; plaintext only after an
+				// explicit yes — never silently.
+				fmt.Fprintf(os.Stderr, "TLS handshake with %s failed: %v\n", server, err)
+				if promptYes("retry over plaintext? — dev contours only") {
+					cc.Insecure = true
+					who, err = handshake(cmd, cc)
+				}
 			}
-			who, err := d.Ns.Whoami(cmd.Context(), connect.NewRequest(&managementv1.WhoamiRequest{}))
 			if err != nil {
 				return fmt.Errorf("handshake with %s failed: %w", server, err)
 			}
-			role, scope := who.Msg.GetRole(), who.Msg.GetNamespace()
-			if cc.Namespace == "" && scope != "*" {
-				cc.Namespace = scope
+			role, scope := who.GetRole(), who.GetNamespace()
+			fmt.Fprintf(os.Stderr, "✓ role %s, namespace %s\n", role, scope)
+			if cc.Namespace == "" {
+				if scope != "*" {
+					cc.Namespace = scope
+				} else if interactive {
+					if cc.Namespace, err = promptLine("namespace to work in", "default"); err != nil {
+						return err
+					}
+				}
 			}
 			ctxName := name
 			if ctxName == "" {
-				ctxName = server
+				def := server
 				if host, _, ok := strings.Cut(server, ":"); ok && host != "" {
-					ctxName = host
+					def = host
+				}
+				ctxName = def
+				if interactive {
+					if ctxName, err = promptLine("context name", def); err != nil {
+						return err
+					}
 				}
 			}
 			cfg, err := cliconfig.Load()
@@ -92,12 +132,17 @@ token keeps your --namespace pick.`,
 			if cfg.Contexts == nil {
 				cfg.Contexts = map[string]cliconfig.Context{}
 			}
+			if old, exists := cfg.Contexts[ctxName]; exists && interactive && old.Server != cc.Server {
+				if !promptYes(fmt.Sprintf("context %q exists (%s) — overwrite?", ctxName, old.Server)) {
+					return fmt.Errorf("kept the existing context %q", ctxName)
+				}
+			}
 			cfg.Contexts[ctxName] = cc
 			cfg.Current = ctxName
 			if err := cliconfig.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "logged in: context %s, role %s, namespace %s\n", ctxName, role, scope)
+			fmt.Fprintf(os.Stderr, "logged in: context %s, role %s, namespace %s (current)\n", ctxName, role, cc.Namespace)
 			return nil
 		},
 	}
