@@ -10,9 +10,9 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
-// observeDimension serves the shared dimensions 2-5 for any ref.
-// refPrefix ("run/") lets the run command take bare ids.
-func observeDimension(ctx context.Context, dim string, args []string, refPrefix string) error {
+// cmdObserve serves the shared dimensions 2-5 as top-level verbs:
+// events|logs|metrics|trace <kind> <id> (or kind/id).
+func cmdObserve(ctx context.Context, dim string, args []string) error {
 	fs := flag.NewFlagSet(dim, flag.ExitOnError)
 	co := commonFlags(fs)
 	follow := fs.Bool("follow", false, "keep streaming new entries")
@@ -20,10 +20,10 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: %s <ref>", dim)
+	ref, rest, err := targetRef(pos)
+	if err != nil || len(rest) != 0 {
+		return fmt.Errorf("usage: %s <kind> <id>", dim)
 	}
-	ref := refPrefix + pos[0]
 	d, err := co.dial()
 	if err != nil {
 		return err

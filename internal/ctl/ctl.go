@@ -1,5 +1,6 @@
 // Package ctl is graphenectl: the generic control CLI over the
-// installation's RECORDS — kubectl's stance. It knows nothing about any
+// installation's RECORDS — kubectl's stance and kubectl's grammar:
+// the verb comes first, the kind second. It knows nothing about any
 // pipeline's code; the pipeline binary manages its own pipeline (push,
 // run) with the same connection contexts.
 package ctl
@@ -16,10 +17,10 @@ import (
 // Version is stamped by the build.
 var Version = "dev"
 
-const usage = `usage: graphenectl <command> [args]
+const usage = `usage: graphenectl <verb> [kind] [id] | <command> [args]
 
-connection (shared with pipeline binaries; the file: --config, else
-$GRAPHENE_CONFIG, else ~/.config/graphene/config.yaml; field overrides:
+connection (the file: --config, else $GRAPHENE_CONFIG, else
+~/.config/graphene/config.yaml; field overrides on top:
 $GRAPHENE_ADDRESS/TOKEN/NAMESPACE/INSECURE — with a server and a token
 in the environment no file is needed at all):
   login --server host:port --token-stdin [--name ctx] [--namespace ns]
@@ -30,23 +31,25 @@ in the environment no file is needed at all):
                  [--insecure] [--base-image ref] [--use]
   ctx delete <name> | rename <old> <new>
 
-records (five dimensions each):
-  res list [-k kind] [-p phase] [--owner ref] [-l k=v]
-  res get <ref>                     state: the full record
-  res events <ref> [--follow]       its own history
-  res logs <ref> [--follow]         telemetry
-  res metrics <ref>
-  res trace <ref>
-  res tree <owner>
-  res delete <ref>
-  res transfer <ref> <new-owner> [--keep 72h]
-  res invoke <ref> <command> [--data JSON]
+records — the verb first, the kind second (kubectl's grammar); a
+target is "<kind> <id>" or "kind/id"; a run is a record too (kind
+"run"). Five dimensions each:
+  get all|<kind> [-l k=v] [-p phase] [--owner ref] [-w]
+  get <kind> <id>                   state: the full record
+  events  <kind> <id> [--follow]    its own history
+  logs    <kind> <id> [--follow]    telemetry
+  metrics <kind> <id>
+  trace   <kind> <id>
+  tree <owner-ref>
+  delete   <kind> <id>
+  transfer <kind> <id> <new-owner> [--keep 72h]
+  invoke   <kind> <id> <command> [--data JSON]
 
-runs (a run is a record too — the same dimensions apply):
-  run list [--status S] [-l k=v]
-  run get | watch | result | cancel <run-id>
-  run start <pipeline> [--run-id id] [--params JSON] [--image ref] [-l k=v] [--watch]
-  run events | logs | metrics | trace <run-id> [--follow]
+runs — the lifecycle verbs live under run (kubectl rollout's stance):
+  run start <pipeline> [--run-id id] [--params JSON] [--image ref]
+            [-l k=v] [--watch]
+  run watch | result | cancel <run-id>
+  run list [--status S] [-l k=v] [-w]     (same as: get run)
 
 installation:
   pipeline show <pipeline-id>
@@ -60,7 +63,8 @@ project:
 
 every read command takes -o table|json (default table) and --jq EXPR;
 every network command takes --context, --config, and -n (per-call
-namespace for cluster-wide admin tokens).`
+namespace for cluster-wide admin tokens); flags parse on either side
+of positionals.`
 
 // Main runs graphenectl; the exit code is the return.
 func Main(args []string) int {
@@ -75,8 +79,18 @@ func Main(args []string) int {
 		err = cmdLogin(ctx, args[1:])
 	case "ctx":
 		err = cmdCtx(args[1:])
-	case "res":
-		err = cmdRes(ctx, args[1:])
+	case "get":
+		err = cmdGet(ctx, args[1:])
+	case "tree":
+		err = cmdTree(ctx, args[1:])
+	case "delete":
+		err = cmdDelete(ctx, args[1:])
+	case "transfer":
+		err = cmdTransfer(ctx, args[1:])
+	case "invoke":
+		err = cmdInvoke(ctx, args[1:])
+	case "events", "logs", "metrics", "trace":
+		err = cmdObserve(ctx, args[0], args[1:])
 	case "run":
 		err = cmdRun(ctx, args[1:])
 	case "pipeline":

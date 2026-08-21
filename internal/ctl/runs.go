@@ -13,18 +13,16 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
-// cmdRun is the run surface. A run is a record too: the observe
-// dimensions apply with a bare run id.
+// cmdRun carries the run LIFECYCLE verbs (kubectl rollout's stance);
+// reading runs is the record grammar: get run [id], events run <id>...
 func cmdRun(ctx context.Context, args []string) error {
-	word, rest, err := need(args, "list, get, start, watch, result, cancel, events, logs, metrics, trace")
+	word, rest, err := need(args, "start, watch, result, cancel, list")
 	if err != nil {
 		return err
 	}
 	switch word {
 	case "list":
 		return runList(ctx, rest)
-	case "get":
-		return runGet(ctx, rest)
 	case "start":
 		return runStart(ctx, rest)
 	case "watch":
@@ -33,13 +31,12 @@ func cmdRun(ctx context.Context, args []string) error {
 		return runResult(ctx, rest)
 	case "cancel":
 		return runCancel(ctx, rest)
-	case "events", "logs", "metrics", "trace":
-		return observeDimension(ctx, word, rest, "run/")
 	default:
-		return fmt.Errorf("run %q: unknown verb", word)
+		return fmt.Errorf("run %q: want start, watch, result, cancel or list", word)
 	}
 }
 
+// runList is sugar over `get run`.
 func runList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run list", flag.ExitOnError)
 	co := commonFlags(fs)
@@ -47,25 +44,29 @@ func runList(ctx context.Context, args []string) error {
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
-	_, err := parseMixed(fs, args)
-	if err != nil {
+	if _, err := parseMixed(fs, args); err != nil {
 		return err
 	}
+	return runListWith(ctx, co, *status, labels.m, *watch)
+}
+
+func runListWith(ctx context.Context, co *common, status string, labels map[string]string, watch bool) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
 	list := func() (*managementv1.ListRunsResponse, error) {
 		resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
-			Status: *status, Labels: labels.m,
+			Status: status, Labels: labels,
 		}))
 		if err != nil {
 			return nil, err
 		}
 		return resp.Msg, nil
 	}
-	if *watch {
-		return watchList(ctx, co, []string{"RUN", "PIPELINE", "STATUS", "LABELS"}, func() (map[string]watchRow, error) {
+	header := []string{"RUN", "PIPELINE", "STATUS", "LABELS"}
+	if watch {
+		return watchList(ctx, co, header, func() (map[string]watchRow, error) {
 			msg, err := list()
 			if err != nil {
 				return nil, err
@@ -91,25 +92,17 @@ func runList(ctx context.Context, args []string) error {
 	for _, r := range msg.GetRuns() {
 		rows = append(rows, []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), labelsCell(r.GetLabels())})
 	}
-	table([]string{"RUN", "PIPELINE", "STATUS", "LABELS"}, rows)
+	table(header, rows)
 	return nil
 }
 
-func runGet(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("run get", flag.ExitOnError)
-	co := commonFlags(fs)
-	pos, err := parseMixed(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: run get <run-id>")
-	}
+// runGetOne shows one run — the record grammar's `get run <id>`.
+func runGetOne(ctx context.Context, co *common, runId string) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
-	resp, err := d.Runs.GetRun(ctx, connect.NewRequest(&managementv1.GetRunRequest{RunId: pos[0]}))
+	resp, err := d.Runs.GetRun(ctx, connect.NewRequest(&managementv1.GetRunRequest{RunId: runId}))
 	if err != nil {
 		return err
 	}
