@@ -1,4 +1,4 @@
-# The graphene POLYGON: a complete demo/dev installation — one command,
+# The graphene dev installation: complete demo/dev stack — one command,
 # everything visible. Production delivery is a SEPARATE stage (helm,
 # real Temporal cluster, external S3/telemetry) and deliberately not
 # this file.
@@ -40,7 +40,7 @@ services:
     volumes:
       - temporal-data:/data
     # The named volume is root-owned; the dev server just needs to
-    # write its sqlite file — root is fine on the polygon.
+    # write its sqlite file — root is fine on the dev stack.
     user: "0:0"
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
@@ -160,11 +160,15 @@ services:
       GRAPHENE_AUTH_ADMIN_TOKENS: "dev-admin-token"
       GRAPHENE_AUTH_RUN_TOKENS: "dev-run-token"
       GRAPHENE_AUTH_AGENT_TOKENS: "vm-1:dev-agent-token"
+      # Secrets survive restarts in the sealed store on this volume;
+      # REPLACE the dev key before exposing the door anywhere.
+      GRAPHENE_SECRETS_KEY: "6465762d6b65792d6465762d6b65792d6465762d6b65792d6465762d6b657921"
       GRAPHENE_LOG_LEVEL: "info"
       GRAPHENE_LOG_FORMAT: "json"
     volumes:
       # The managed contour launches run-worker containers on this host.
       - /var/run/docker.sock:/var/run/docker.sock
+      - graphene-data:/var/lib/graphene
     ports:
       # THE door: gRPC (agents, workers, Temporal proxy, worker and
       # management planes, OTLP), ConnectRPC for browsers, probes, and
@@ -187,6 +191,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  graphene-data:
   temporal-data:
   minio-data:
   vm-data:
@@ -196,3 +201,4 @@ volumes:
 networks:
   graphene:
     name: graphene
+
