@@ -37,7 +37,7 @@ func targetRef(pos []string) (string, []string, error) {
 func cmdGet(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 	co := commonFlags(fs)
-	phase := fs.String("p", "", "phase filter (lists)")
+	phase := fs.String("p", "", "lifecycle filter: a record phase (creating, ready, ...) or a run status (Running, Completed, ...)")
 	owner := fs.String("owner", "", "owner ref filter (lists)")
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
@@ -52,7 +52,7 @@ func cmdGet(ctx context.Context, args []string) error {
 	case len(pos) == 1 && !strings.Contains(pos[0], "/"):
 		kind := pos[0]
 		if kind == "run" {
-			return runListWith(ctx, co, "", labels.m, *watch)
+			return runListWith(ctx, co, *phase, labels.m, *watch)
 		}
 		if kind == "all" {
 			kind = ""

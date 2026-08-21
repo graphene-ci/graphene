@@ -34,7 +34,7 @@ in the environment no file is needed at all):
 records — the verb first, the kind second (kubectl's grammar); a
 target is "<kind> <id>" or "kind/id"; a run is a record too (kind
 "run"). Five dimensions each:
-  get all|<kind> [-l k=v] [-p phase] [--owner ref] [-w]
+  get all|<kind> [-l k=v] [-p phase|Status] [--owner ref] [-w]
   get <kind> <id>                   state: the full record
   events  <kind> <id> [--follow]    its own history
   logs    <kind> <id> [--follow]    telemetry
@@ -49,7 +49,7 @@ runs — the lifecycle verbs live under run (kubectl rollout's stance):
   run start <pipeline> [--run-id id] [--params JSON] [--image ref]
             [-l k=v] [--watch]
   run watch | result | cancel <run-id>
-  run list [--status S] [-l k=v] [-w]     (same as: get run)
+  run list [-p Status] [-l k=v] [-w]      (same as: get run)
 
 installation:
   pipeline show <pipeline-id>
