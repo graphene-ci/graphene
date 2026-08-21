@@ -97,8 +97,12 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 	}
 	defer func() { _ = session.Close() }()
 	// The install token is inside the script; it never appears in argv.
+	// The script needs root: a non-root login escalates with sudo -n
+	// (the stdin lands in a temp file first — sudo would eat the pipe).
 	session.Stdin = strings.NewReader(script)
-	if out, err := session.CombinedOutput("sh -s"); err != nil {
+	const run = `s=$(mktemp); cat > "$s"; ` +
+		`if [ "$(id -u)" -ne 0 ]; then exec sudo -n sh "$s"; else exec sh "$s"; fi`
+	if out, err := session.CombinedOutput("sh -c '" + run + "'"); err != nil {
 		return fmt.Errorf("install script: %w: %s", err, truncate(string(out), 2048))
 	}
 	return nil

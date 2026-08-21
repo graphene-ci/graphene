@@ -316,8 +316,19 @@ GRAPHENE_AGENT_REGISTRY=%s
 EOF
 chmod 600 /etc/graphene-agent/env
 if [ ! -x /usr/local/bin/graphene-agent ]; then
-  echo "graphene-agent binary must be provisioned to /usr/local/bin/graphene-agent" >&2
-  exit 1
+  # The binary comes from the same door the agent will dial.
+  # TODO(tls): https once the door serves it.
+  url="http://%s/agent/binary"
+  auth="Authorization: Bearer %s"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -H "$auth" "$url" -o /usr/local/bin/graphene-agent
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --header "$auth" -O /usr/local/bin/graphene-agent "$url"
+  else
+    echo "neither curl nor wget on the machine" >&2
+    exit 1
+  fi
+  chmod 755 /usr/local/bin/graphene-agent
 fi
 if command -v systemctl >/dev/null 2>&1; then
   cat > /etc/systemd/system/graphene-agent.service <<'UNIT'
@@ -339,6 +350,6 @@ UNIT
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
-`, cfg.External, token, agentId, cfg.External), nil
+`, cfg.External, token, agentId, cfg.External, cfg.External, token), nil
 	}
 }
