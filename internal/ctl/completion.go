@@ -77,12 +77,12 @@ var (
 	}
 	commonFlagWords = []string{"--context", "--config", "-n", "-o", "--jq"}
 	flagWords       = map[string][]string{
-		"get":      {"-l", "-p", "--owner", "-w"},
+		"get":      {"-l", "-p", "--owner", "-w", "--chunk-size"},
 		"transfer": {"--keep"},
 		"invoke":   {"--data", "--data-file"},
 		"events":   {"--follow"},
 		"logs":     {"--follow"},
-		"run":      {"--run-id", "--params", "--params-file", "--image", "--watch", "-l", "-p", "-w"},
+		"run":      {"--run-id", "--params", "--params-file", "--image", "--watch", "-l", "-p", "-w", "--chunk-size"},
 		"login":    {"--server", "--token", "--token-stdin", "--name", "--namespace", "--insecure", "--base-image"},
 		"ctx":      {"--server", "--token", "--token-stdin", "--namespace", "--insecure", "--base-image", "--use"},
 		"secret":   {"--value", "--value-file"},
@@ -165,7 +165,7 @@ func positionals(words []string) []string {
 		"--run-id": true, "--params": true, "--image": true, "--server": true,
 		"--token": true, "--name": true, "--namespace": true, "--base-image": true,
 		"--value": true, "--value-file": true, "--retention-days": true,
-		"--params-file": true, "--data-file": true,
+		"--params-file": true, "--data-file": true, "--chunk-size": true,
 	}
 	var pos []string
 	skip := false

@@ -3,6 +3,7 @@ package services
 import (
 	"connectrpc.com/connect"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -229,11 +230,15 @@ func (m *Management) ListRuns(ctx context.Context, creq *connect.Request[managem
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	query += labelTerms
+	token, err := decodePageToken(req.GetPageToken())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	resp := &managementv1.ListRunsResponse{}
-	var token []byte
 	for {
 		page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
 			Query:         query,
+			PageSize:      req.GetPageSize(),
 			NextPageToken: token,
 		})
 		if err != nil {
@@ -248,10 +253,35 @@ func (m *Management) ListRuns(ctx context.Context, creq *connect.Request[managem
 			})
 		}
 		token = page.GetNextPageToken()
+		// A bounded request answers with ONE page and the cursor; an
+		// unbounded one keeps the old drain-everything behavior.
+		if req.GetPageSize() > 0 {
+			resp.NextPageToken = encodePageToken(token)
+			return connect.NewResponse(resp), nil
+		}
 		if len(token) == 0 {
 			return connect.NewResponse(resp), nil
 		}
 	}
+}
+
+// Page tokens on the wire are base64 of Temporal's opaque cursor.
+func encodePageToken(token []byte) string {
+	if len(token) == 0 {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(token)
+}
+
+func decodePageToken(s string) ([]byte, error) {
+	if s == "" {
+		return nil, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("page token: %w", err)
+	}
+	return raw, nil
 }
 
 // --- ResourcesAPI ---
@@ -283,11 +313,15 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 	}
 	query += labelTerms
 	query += ` AND ExecutionStatus = 'Running'`
+	token, err := decodePageToken(req.GetPageToken())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	resp := &managementv1.ListResponse{}
-	var token []byte
 	for {
 		page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
 			Query:         query,
+			PageSize:      req.GetPageSize(),
 			NextPageToken: token,
 		})
 		if err != nil {
@@ -301,6 +335,12 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 			resp.Resources = append(resp.Resources, res)
 		}
 		token = page.GetNextPageToken()
+		// A bounded request answers with ONE page and the cursor; an
+		// unbounded one keeps the old drain-everything behavior.
+		if req.GetPageSize() > 0 {
+			resp.NextPageToken = encodePageToken(token)
+			return connect.NewResponse(resp), nil
+		}
 		if len(token) == 0 {
 			return connect.NewResponse(resp), nil
 		}

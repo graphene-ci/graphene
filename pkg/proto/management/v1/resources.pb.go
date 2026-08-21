@@ -100,8 +100,12 @@ func (x *Selector) GetLabels() map[string]string {
 }
 
 type ListRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Selector      *Selector              `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Selector *Selector              `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	// PageSize bounds one reply; 0 returns everything in one go.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// PageToken continues a previous listing (opaque, from the reply).
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -141,6 +145,20 @@ func (x *ListRequest) GetSelector() *Selector {
 		return x.Selector
 	}
 	return nil
+}
+
+func (x *ListRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
 }
 
 type Resource struct {
@@ -257,8 +275,10 @@ func (x *Resource) GetLabels() map[string]string {
 }
 
 type ListResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Resources     []*Resource            `protobuf:"bytes,1,rep,name=resources,proto3" json:"resources,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Resources []*Resource            `protobuf:"bytes,1,rep,name=resources,proto3" json:"resources,omitempty"`
+	// NextPageToken continues the listing; empty — the end.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -298,6 +318,13 @@ func (x *ListResponse) GetResources() []*Resource {
 		return x.Resources
 	}
 	return nil
+}
+
+func (x *ListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type GetRequest struct {
@@ -835,9 +862,12 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x06labels\x18\x04 \x03(\v2,.graphene.management.v1.Selector.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"K\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x01\n" +
 	"\vListRequest\x12<\n" +
-	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\"\xe2\x02\n" +
+	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xe2\x02\n" +
 	"\bResource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -850,9 +880,10 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"N\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"v\n" +
 	"\fListResponse\x12>\n" +
-	"\tresources\x18\x01 \x03(\v2 .graphene.management.v1.ResourceR\tresources\"\x1e\n" +
+	"\tresources\x18\x01 \x03(\v2 .graphene.management.v1.ResourceR\tresources\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x1e\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"K\n" +

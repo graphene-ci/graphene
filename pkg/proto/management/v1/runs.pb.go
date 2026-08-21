@@ -505,7 +505,11 @@ type ListRunsRequest struct {
 	// Status filters ("Running", "Completed", ...); empty — all.
 	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	// Labels filter by equality; every pair must match.
-	Labels        map[string]string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Labels map[string]string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// PageSize bounds one reply; 0 returns everything in one go.
+	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// PageToken continues a previous listing (opaque, from the reply).
+	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -552,6 +556,20 @@ func (x *ListRunsRequest) GetLabels() map[string]string {
 		return x.Labels
 	}
 	return nil
+}
+
+func (x *ListRunsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRunsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
 }
 
 type RunInfo struct {
@@ -623,8 +641,10 @@ func (x *RunInfo) GetLabels() map[string]string {
 }
 
 type ListRunsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Runs          []*RunInfo             `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Runs  []*RunInfo             `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	// NextPageToken continues the listing; empty — the end.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -666,6 +686,13 @@ func (x *ListRunsResponse) GetRuns() []*RunInfo {
 	return nil
 }
 
+func (x *ListRunsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_proto_management_v1_runs_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_runs_proto_rawDesc = "" +
@@ -698,10 +725,13 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\fR\x06result\")\n" +
 	"\x10CancelRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x13\n" +
-	"\x11CancelRunResponse\"\xb1\x01\n" +
+	"\x11CancelRunResponse\"\xed\x01\n" +
 	"\x0fListRunsRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12K\n" +
-	"\x06labels\x18\x02 \x03(\v23.graphene.management.v1.ListRunsRequest.LabelsEntryR\x06labels\x1a9\n" +
+	"\x06labels\x18\x02 \x03(\v23.graphene.management.v1.ListRunsRequest.LabelsEntryR\x06labels\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd4\x01\n" +
@@ -712,9 +742,10 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06labels\x18\x04 \x03(\v2+.graphene.management.v1.RunInfo.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"G\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"o\n" +
 	"\x10ListRunsResponse\x123\n" +
-	"\x04runs\x18\x01 \x03(\v2\x1f.graphene.management.v1.RunInfoR\x04runs2\xc2\x04\n" +
+	"\x04runs\x18\x01 \x03(\v2\x1f.graphene.management.v1.RunInfoR\x04runs\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xc2\x04\n" +
 	"\aRunsAPI\x12]\n" +
 	"\bStartRun\x12'.graphene.management.v1.StartRunRequest\x1a(.graphene.management.v1.StartRunResponse\x12W\n" +
 	"\x06GetRun\x12%.graphene.management.v1.GetRunRequest\x1a&.graphene.management.v1.GetRunResponse\x12\\\n" +
