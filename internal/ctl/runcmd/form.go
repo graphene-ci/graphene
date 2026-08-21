@@ -1,4 +1,4 @@
-package ctl
+package runcmd
 
 // The terminal form: `run start` without params on a TTY walks the
 // pipeline's params schema (from the record's manifest) and asks field
@@ -14,21 +14,13 @@ import (
 	"strings"
 
 	schemapb "github.com/gopherex/schemapb/go/schemapb"
-	"golang.org/x/term"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 )
 
 // stdinIsTerminal reports whether a human is on the other end.
-func stdinIsTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
-}
 
-// stdoutIsTerminal decides between the live panel and the plain feed.
-func stdoutIsTerminal() bool {
-	return term.IsTerminal(int(os.Stdout.Fd()))
-}
 
 // paramsSchemaOf pulls the params schema out of a pipeline record's
 // manifest; nil when there is none to ask about.
@@ -114,3 +106,4 @@ func parseAnswer(line string) any {
 	}
 	return line
 }
+
