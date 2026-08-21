@@ -7,6 +7,7 @@ package ctl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -227,6 +228,21 @@ func liveKinds() []string {
 			for _, r := range resp.Msg.GetResources() {
 				if r.GetKind() != "" {
 					seen[r.GetKind()] = true
+				}
+				// The pipeline records are the DISCOVERY: their
+				// manifests name every kind the installation's
+				// pipelines can declare — live records or not.
+				if r.GetKind() == "pipeline" {
+					var st struct {
+						Manifest struct {
+							Kinds []string `json:"kinds"`
+						} `json:"manifest"`
+					}
+					if json.Unmarshal(r.GetState(), &st) == nil {
+						for _, k := range st.Manifest.Kinds {
+							seen[k] = true
+						}
+					}
 				}
 			}
 		}
