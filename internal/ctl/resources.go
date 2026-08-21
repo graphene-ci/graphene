@@ -41,6 +41,7 @@ func cmdGet(ctx context.Context, args []string) error {
 	phase := fs.String("p", "", "lifecycle filter: a record phase (creating, ready, ...) or a run status (Running, Completed, ...)")
 	owner := fs.String("owner", "", "owner ref filter (lists)")
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
+	chunk := fs.Int("chunk-size", 500, "list page size (0 — one unpaginated request)")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
 	pos, err := parseMixed(fs, args)
@@ -53,12 +54,12 @@ func cmdGet(ctx context.Context, args []string) error {
 	case len(pos) == 1 && !strings.Contains(pos[0], "/"):
 		kind := pos[0]
 		if kind == "run" {
-			return runListWith(ctx, co, *phase, labels.m, *watch)
+			return runListWith(ctx, co, *phase, labels.m, *watch, *chunk)
 		}
 		if kind == "all" {
 			kind = ""
 		}
-		return resListWith(ctx, co, kind, *phase, *owner, labels.m, *watch)
+		return resListWith(ctx, co, kind, *phase, *owner, labels.m, *watch, *chunk)
 	default:
 		ref, rest, err := targetRef(pos)
 		if err != nil {
@@ -74,19 +75,31 @@ func cmdGet(ctx context.Context, args []string) error {
 	}
 }
 
-func resListWith(ctx context.Context, co *common, kind, phase, owner string, labels map[string]string, watch bool) error {
+func resListWith(ctx context.Context, co *common, kind, phase, owner string, labels map[string]string, watch bool, chunk int) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
+	// The chunked walk is invisible: pages accumulate into one reply,
+	// kubectl's --chunk-size stance.
 	list := func() (*managementv1.ListResponse, error) {
-		resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
-			Selector: &managementv1.Selector{Kind: kind, Phase: phase, Owner: owner, Labels: labels},
-		}))
-		if err != nil {
-			return nil, err
+		acc := &managementv1.ListResponse{}
+		token := ""
+		for {
+			resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
+				Selector:  &managementv1.Selector{Kind: kind, Phase: phase, Owner: owner, Labels: labels},
+				PageSize:  int32(chunk), //nolint:gosec // a small flag value
+				PageToken: token,
+			}))
+			if err != nil {
+				return nil, err
+			}
+			acc.Resources = append(acc.Resources, resp.Msg.GetResources()...)
+			token = resp.Msg.GetNextPageToken()
+			if chunk == 0 || token == "" {
+				return acc, nil
+			}
 		}
-		return resp.Msg, nil
 	}
 	// The table shapes: default, -o wide (more columns), -o name (refs
 	// only, xargs-ready).

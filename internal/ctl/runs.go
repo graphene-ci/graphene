@@ -42,27 +42,39 @@ func runList(ctx context.Context, args []string) error {
 	co := commonFlags(fs)
 	status := fs.String("p", "", "status filter (Running, Completed, ...)")
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
+	chunk := fs.Int("chunk-size", 500, "list page size (0 — one unpaginated request)")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
 	if _, err := parseMixed(fs, args); err != nil {
 		return err
 	}
-	return runListWith(ctx, co, *status, labels.m, *watch)
+	return runListWith(ctx, co, *status, labels.m, *watch, *chunk)
 }
 
-func runListWith(ctx context.Context, co *common, status string, labels map[string]string, watch bool) error {
+func runListWith(ctx context.Context, co *common, status string, labels map[string]string, watch bool, chunk int) error {
 	d, err := co.dial()
 	if err != nil {
 		return err
 	}
+	// The chunked walk is invisible: pages accumulate into one reply.
 	list := func() (*managementv1.ListRunsResponse, error) {
-		resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
-			Status: status, Labels: labels,
-		}))
-		if err != nil {
-			return nil, err
+		acc := &managementv1.ListRunsResponse{}
+		token := ""
+		for {
+			resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
+				Status: status, Labels: labels,
+				PageSize:  int32(chunk), //nolint:gosec // a small flag value
+				PageToken: token,
+			}))
+			if err != nil {
+				return nil, err
+			}
+			acc.Runs = append(acc.Runs, resp.Msg.GetRuns()...)
+			token = resp.Msg.GetNextPageToken()
+			if chunk == 0 || token == "" {
+				return acc, nil
+			}
 		}
-		return resp.Msg, nil
 	}
 	header := []string{"RUN", "PIPELINE", "STATUS", "LABELS"}
 	if watch {

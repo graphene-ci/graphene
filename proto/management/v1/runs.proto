@@ -77,6 +77,10 @@ message ListRunsRequest {
   string status = 1;
   // Labels filter by equality; every pair must match.
   map<string, string> labels = 2;
+  // PageSize bounds one reply; 0 returns everything in one go.
+  int32 page_size = 3;
+  // PageToken continues a previous listing (opaque, from the reply).
+  string page_token = 4;
 }
 
 message RunInfo {
@@ -88,4 +92,6 @@ message RunInfo {
 
 message ListRunsResponse {
   repeated RunInfo runs = 1;
+  // NextPageToken continues the listing; empty — the end.
+  string next_page_token = 2;
 }
