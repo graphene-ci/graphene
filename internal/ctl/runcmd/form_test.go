@@ -1,4 +1,4 @@
-package ctl
+package runcmd
 
 import (
 	"encoding/json"

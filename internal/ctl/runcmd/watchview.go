@@ -1,21 +1,19 @@
-package ctl
-
-// The rich run watch: a live tree of the run's resources, each node
-// carrying its own recent EVENTS (history, the plane of truth) and a
-// LOG tail (telemetry), the run's own strip at the bottom. One poll
-// tick feeds everything: the ownership tree, per-node events after a
-// cursor, per-node logs since a cursor — no fan-out of streams.
+// Package runcmd carries the run lifecycle verbs and the rich watch.
+package runcmd
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/term"
 
+	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -58,7 +56,7 @@ type nodeState struct {
 
 // runWatchView drives one watch.
 type runWatchView struct {
-	d     *door
+	d     *cmdutil.Door
 	runId string
 	opts  watchOptions
 
@@ -73,7 +71,7 @@ type runWatchView struct {
 
 // richWatch follows the run as a live resource tree until a terminal
 // status; returns the terminal status.
-func richWatch(ctx context.Context, d *door, runId string, opts watchOptions) (string, error) {
+func richWatch(ctx context.Context, d *cmdutil.Door, runId string, opts watchOptions) (string, error) {
 	v := &runWatchView{
 		d: d, runId: runId, opts: opts,
 		nodes: map[string]*nodeState{},
@@ -85,7 +83,7 @@ func richWatch(ctx context.Context, d *door, runId string, opts watchOptions) (s
 	var render *panelRenderer
 	if opts.plain {
 		v.plainSink = func(ref, line string) {
-			fmt.Fprintf(out, "%s  %-28s %s\n", time.Now().Format("15:04:05"), ref, line)
+			fmt.Fprintf(cmdutil.Out, "%s  %-28s %s\n", time.Now().Format("15:04:05"), ref, line)
 		}
 	} else {
 		render = newPanelRenderer()
@@ -315,3 +313,100 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+
+// panelRenderer redraws a block of lines in place.
+type panelRenderer struct {
+	lastLines int
+}
+
+func newPanelRenderer() *panelRenderer { return &panelRenderer{} }
+
+// draw replaces the previous frame with this one.
+func (p *panelRenderer) draw(lines []string) {
+	width := 120
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 20 {
+		width = w
+	}
+	if p.lastLines > 0 {
+		fmt.Fprintf(cmdutil.Out, "\x1b[%dA\x1b[J", p.lastLines)
+	}
+	for _, line := range lines {
+		fmt.Fprintln(cmdutil.Out, clip(line, width))
+	}
+	p.lastLines = len(lines)
+}
+
+// clip bounds one line to the terminal width, counting runes (close
+// enough for the frame's height bookkeeping).
+func clip(s string, width int) string {
+	runes := []rune(s)
+	if len(runes) <= width {
+		return s
+	}
+	return string(runes[:width-1]) + "…"
+}
+
+// frameLines renders the current model as one panel frame.
+func (v *runWatchView) frameLines() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	status := v.status
+	if status == "" {
+		status = "starting"
+	}
+	lines := []string{fmt.Sprintf("run %s   %s   %s",
+		v.runId, status, time.Since(v.start).Truncate(time.Second))}
+	lines = append(lines, "│")
+
+	runRef := "run/" + v.runId
+	// The resource nodes in tree order (the run node renders as the
+	// bottom strip instead).
+	for _, ref := range v.order {
+		if ref == runRef {
+			continue
+		}
+		node, ok := v.nodes[ref]
+		if !ok || node.gone {
+			continue
+		}
+		head := fmt.Sprintf("%s─ %-36s %-10s %s",
+			strings.Repeat("  ", node.depth-1)+"├",
+			ref, phaseWord(node.phase), time.Since(node.firstSee).Truncate(time.Second))
+		if node.attempt > 1 && node.phase != "ready" {
+			head += fmt.Sprintf("   ↻ attempt %d", node.attempt)
+		}
+		lines = append(lines, head)
+		if v.opts.collapse && node.phase == "ready" {
+			continue
+		}
+		indent := strings.Repeat("  ", node.depth-1) + "│   "
+		for _, ev := range node.events {
+			lines = append(lines, indent+ev)
+		}
+		for _, lg := range node.logs {
+			lines = append(lines, indent+lg)
+		}
+	}
+
+	// The run's own strip: its events and the orchestrator's logs.
+	if run, ok := v.nodes[runRef]; ok && (len(run.events) > 0 || len(run.logs) > 0) {
+		lines = append(lines, strings.Repeat("─", 58))
+		for _, ev := range run.events {
+			lines = append(lines, "run  "+ev)
+		}
+		for _, lg := range run.logs {
+			lines = append(lines, "     "+lg)
+		}
+	}
+	return lines
+}
+
+func phaseWord(phase string) string {
+	if phase == "" {
+		return "•"
+	}
+	return phase
+}
+
