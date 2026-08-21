@@ -411,6 +411,19 @@ func (m *Management) CreateNamespace(ctx context.Context, creq *connect.Request[
 	return connect.NewResponse(&managementv1.CreateNamespaceResponse{}), nil
 }
 
+// Whoami answers who the caller's token is — login's handshake. Any
+// authenticated principal may ask; no role gate.
+func (m *Management) Whoami(ctx context.Context, _ *connect.Request[managementv1.WhoamiRequest]) (*connect.Response[managementv1.WhoamiResponse], error) {
+	p, ok := auth.FromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "no principal")
+	}
+	return connect.NewResponse(&managementv1.WhoamiResponse{
+		Role:      string(p.Role),
+		Namespace: p.Namespace,
+	}), nil
+}
+
 // ListNamespaces lists the registered namespaces.
 func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[managementv1.ListNamespacesRequest]) (*connect.Response[managementv1.ListNamespacesResponse], error) {
 	if _, err := scope(ctx, auth.RoleAdmin); err != nil {

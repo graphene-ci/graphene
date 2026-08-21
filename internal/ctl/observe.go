@@ -38,10 +38,9 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 		}
 		for stream.Receive() {
 			ev := stream.Msg()
-			if *co.output == "json" {
-				if err := printJSON(ev); err != nil {
-					return err
-				}
+			if done, err := co.emit(ev); err != nil {
+				return err
+			} else if done {
 				continue
 			}
 			line := fmt.Sprintf("%s  %-24s %s", stamp(ev.GetTimeUnixNano()), ev.GetKind(), ev.GetSubject())
@@ -63,10 +62,9 @@ func observeDimension(ctx context.Context, dim string, args []string, refPrefix 
 		}
 		for stream.Receive() {
 			rec := stream.Msg()
-			if *co.output == "json" {
-				if err := printJSON(rec); err != nil {
-					return err
-				}
+			if done, err := co.emit(rec); err != nil {
+				return err
+			} else if done {
 				continue
 			}
 			fmt.Fprintf(out, "%s  %s\n", stamp(rec.GetTimeUnixNano()), rec.GetBody())

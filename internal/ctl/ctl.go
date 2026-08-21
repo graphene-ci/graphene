@@ -22,6 +22,8 @@ connection (shared with pipeline binaries; the file: --config, else
 $GRAPHENE_CONFIG, else ~/.config/graphene/config.yaml; field overrides:
 $GRAPHENE_ADDRESS/TOKEN/NAMESPACE/INSECURE — with a server and a token
 in the environment no file is needed at all):
+  login --server host:port --token-stdin [--name ctx] [--namespace ns]
+        [--insecure]           verify the token, save and switch context
   ctx list | show | current
   ctx use <name>
   ctx set <name> --server host:port [--token-stdin] [--namespace ns]
@@ -56,9 +58,9 @@ project:
   init <name>                       scaffold a pipeline project
   version
 
-every read command takes -o table|json (default table); every network
-command takes --context, --config, and -n (per-call namespace for
-cluster-wide admin tokens).`
+every read command takes -o table|json (default table) and --jq EXPR;
+every network command takes --context, --config, and -n (per-call
+namespace for cluster-wide admin tokens).`
 
 // Main runs graphenectl; the exit code is the return.
 func Main(args []string) int {
@@ -69,6 +71,8 @@ func Main(args []string) int {
 	ctx := context.Background()
 	var err error
 	switch args[0] {
+	case "login":
+		err = cmdLogin(ctx, args[1:])
 	case "ctx":
 		err = cmdCtx(args[1:])
 	case "res":

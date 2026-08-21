@@ -39,8 +39,8 @@ func cmdPipeline(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *co.output == "json" {
-		return printJSON(resp)
+	if done, err := co.emit(resp); done || err != nil {
+		return err
 	}
 	fmt.Fprintf(out, "pipeline %s\nimage    %s\ndigest   %s\n", pos[0], resp.GetImage(), resp.GetDigest())
 	if len(resp.GetManifest()) > 0 {
