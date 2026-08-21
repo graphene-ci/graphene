@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -130,6 +131,10 @@ func resListWith(ctx context.Context, co *common, kind, phase, owner string, lab
 		}
 		return nil
 	}
+	if len(msg.GetResources()) == 0 {
+		fmt.Fprintln(os.Stderr, "No records found.")
+		return nil
+	}
 	rows := make([][]string, 0, len(msg.GetResources()))
 	for _, r := range msg.GetResources() {
 		rows = append(rows, cols(r))
@@ -151,14 +156,10 @@ func resGetOne(ctx context.Context, co *common, ref string) error {
 		return err
 	}
 	r := resp.Msg.GetResource()
-	fmt.Fprintf(out, "ref    %s\nphase  %s\nowner  %s\nlabels %s\n",
+	fmt.Fprintf(out, "ref:    %s\nphase:  %s\nowner:  %s\nlabels: %s\n",
 		r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels()))
-	if len(r.GetSpec()) > 0 {
-		fmt.Fprintf(out, "spec   %s\n", compactJSON(r.GetSpec()))
-	}
-	if len(r.GetState()) > 0 {
-		fmt.Fprintf(out, "state  %s\n", compactJSON(r.GetState()))
-	}
+	printJSONBlock("spec", r.GetSpec())
+	printJSONBlock("state", r.GetState())
 	return nil
 }
 
@@ -202,6 +203,7 @@ func printTree(node *managementv1.TreeNode, indent string) {
 func cmdDelete(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 	co := commonFlags(fs)
+	wait := fs.Bool("wait", false, "block until the record is gone (finalize done)")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -217,7 +219,30 @@ func cmdDelete(ctx context.Context, args []string) error {
 	if _, err := d.Resources.Delete(ctx, connect.NewRequest(&managementv1.DeleteRequest{Ref: ref})); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s: deletion signaled\n", ref)
+	if !*wait {
+		fmt.Fprintf(out, "%s: deletion signaled\n", ref)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "%s: deleting...\n", ref)
+	for {
+		resp, err := d.Resources.Get(ctx, connect.NewRequest(&managementv1.GetRequest{Ref: ref}))
+		if err != nil {
+			// The record is gone entirely — that is the goal.
+			if connect.CodeOf(err) == connect.CodeNotFound {
+				break
+			}
+			return fmt.Errorf("wait: %w", err)
+		}
+		if resp.Msg.GetResource().GetPhase() == "deleted" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	fmt.Fprintf(out, "%s: deleted\n", ref)
 	return nil
 }
 

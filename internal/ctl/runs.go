@@ -94,6 +94,10 @@ func runListWith(ctx context.Context, co *common, status string, labels map[stri
 		}
 		return nil
 	}
+	if len(msg.GetRuns()) == 0 {
+		fmt.Fprintln(os.Stderr, "No runs found.")
+		return nil
+	}
 	rows := make([][]string, 0, len(msg.GetRuns()))
 	for _, r := range msg.GetRuns() {
 		rows = append(rows, []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), labelsCell(r.GetLabels())})
@@ -143,15 +147,23 @@ func runStart(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *image == "" {
-		// The pipeline record knows its current worker image.
-		if st, err := getPipeline(ctx, d.cc, pipelineId); err == nil {
-			*image = st.GetImage()
-		}
+	// The pipeline record supplies the worker image and, on a TTY with
+	// no params given, the schema for the terminal form.
+	rec, recErr := getPipeline(ctx, d.cc, pipelineId)
+	if *image == "" && recErr == nil {
+		*image = rec.GetImage()
 	}
 	paramsJSON, err := jsonInput("params", *params, *paramsFile)
 	if err != nil {
 		return err
+	}
+	if len(paramsJSON) == 0 && recErr == nil && stdinIsTerminal() {
+		if schema := paramsSchemaOf(rec.GetManifest()); schema != nil {
+			paramsJSON, err = promptParams(os.Stdin, schema)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	id := *runId
 	if id == "" {

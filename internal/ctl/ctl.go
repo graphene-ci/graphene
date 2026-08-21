@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"os"
 
 	"github.com/graphene-ci/graphene/internal/cli"
@@ -41,14 +42,15 @@ target is "<kind> <id>" or "kind/id"; a run is a record too (kind
   metrics <kind> <id>
   trace   <kind> <id>
   tree <owner-ref>
-  delete   <kind> <id>
+  delete   <kind> <id> [--wait]
   transfer <kind> <id> <new-owner> [--keep 72h]
   invoke   <kind> <id> <command> [--data JSON | --data-file f.yaml]
 
 runs — the lifecycle verbs live under run (kubectl rollout's stance):
   run start <pipeline> [--run-id id] [--params JSON | --params-file f.yaml]
-            [--image ref]
-            [-l k=v] [--watch]
+            [--image ref] [-l k=v] [--watch]
+            (no params on a terminal: an interactive form from the
+             pipeline's manifest asks field by field)
   run watch | result | cancel <run-id>
   run list [-p Status] [-l k=v] [-w]      (same as: get run)
 
@@ -117,9 +119,26 @@ func Main(args []string) int {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "graphenectl:", err)
+		if hint := hintFor(err); hint != "" {
+			fmt.Fprintln(os.Stderr, "  hint:", hint)
+		}
 		return 1
 	}
 	return 0
+}
+
+// hintFor turns the common failure modes into a next step.
+func hintFor(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "unauthenticated") || strings.Contains(msg, "401"):
+		return "the token was rejected — check `graphenectl ctx show`, or re-run `graphenectl login`"
+	case strings.Contains(msg, "permission_denied"):
+		return "the token's role may not do this — an admin token might (`graphenectl ctx show` prints the role's scope)"
+	case strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host"):
+		return "the server is unreachable — check the context's server address (`graphenectl ctx show`)"
+	}
+	return ""
 }
 
 // need returns the subcommand word and the rest, or an error listing

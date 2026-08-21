@@ -11,6 +11,7 @@ import (
 	"github.com/itchyny/gojq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	yamlpkg "sigs.k8s.io/yaml"
 
 	"github.com/graphene-ci/graphene/internal/protoyaml"
 )
@@ -184,6 +185,23 @@ func watchList(ctx context.Context, co *common, header []string, fetch func() (m
 			return nil
 		case <-time.After(2 * time.Second):
 		}
+	}
+}
+
+// printJSONBlock renders a raw-JSON field as an indented YAML block
+// under its title — the readable form of a record's spec and state.
+func printJSONBlock(title string, raw []byte) {
+	if len(raw) == 0 {
+		return
+	}
+	rendered, err := yamlpkg.JSONToYAML(raw)
+	if err != nil {
+		fmt.Fprintf(out, "%s: %s\n", title, string(raw))
+		return
+	}
+	fmt.Fprintf(out, "%s:\n", title)
+	for line := range strings.SplitSeq(strings.TrimRight(string(rendered), "\n"), "\n") {
+		fmt.Fprintf(out, "  %s\n", line)
 	}
 }
 
