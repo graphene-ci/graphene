@@ -40,7 +40,7 @@ func cmdRun(ctx context.Context, args []string) error {
 func runList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run list", flag.ExitOnError)
 	co := commonFlags(fs)
-	status := fs.String("status", "", "status filter (Running, Completed, ...)")
+	status := fs.String("p", "", "status filter (Running, Completed, ...)")
 	watch := fs.Bool("w", false, "watch: print the snapshot, then only changes")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
