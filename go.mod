@@ -3,6 +3,7 @@ module github.com/graphene-ci/graphene
 go 1.26.5
 
 require (
+	buf.build/go/protoyaml v0.7.0
 	connectrpc.com/connect v1.20.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/google/uuid v1.6.0
@@ -14,10 +15,11 @@ require (
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
 	github.com/graphene-ci/library/docker v0.0.0-20260819150826-a6ab5b685986
-	github.com/graphene-ci/pipeline v0.0.0-20260821094219-cb0c74cc32e2
+	github.com/graphene-ci/pipeline v0.0.0-20260821101503-cc8e58db81c8
 	github.com/graphene-ci/temporal-entity v0.0.0-20260819144617-bad3197122a5
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/soheilhy/cmux v0.1.5
 	go.opentelemetry.io/proto/otlp v1.11.0
@@ -30,6 +32,8 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250425153114-8976f5be98c1.1 // indirect
+	buf.build/go/protovalidate v0.12.0 // indirect
 	cel.dev/expr v0.25.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect

@@ -61,6 +61,15 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}), nil
 }
 
+// StartRunOnBundle exposes the start path to the server wiring: the
+// trigger contour starts runs through the same logic as the doors.
+func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
+	runId, pipelineId string, params []byte, image string, labels map[string]string,
+) error {
+	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels)
+	return err
+}
+
 // startRunCore is the start logic shared by both doors: the management
 // plane and the pipeline binary's own worker-plane RunsAPI.
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,

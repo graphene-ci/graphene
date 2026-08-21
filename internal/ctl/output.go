@@ -8,10 +8,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"buf.build/go/protoyaml"
 	"github.com/itchyny/gojq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"gopkg.in/yaml.v3"
 )
 
 // printJSON renders one proto message as JSON on stdout.
@@ -40,22 +40,14 @@ func (c *common) emit(m proto.Message) (bool, error) {
 	return false, nil
 }
 
-// printYAML renders one proto message as YAML (through its JSON form,
-// so the field names match -o json).
+// printYAML renders one proto message as YAML with protoyaml — the
+// canonical proto mapping, field names as in -o json.
 func printYAML(m proto.Message) error {
-	raw, err := protojson.Marshal(m)
+	raw, err := protoyaml.Marshal(m)
 	if err != nil {
 		return err
 	}
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return err
-	}
-	enc, err := yaml.Marshal(v)
-	if err != nil {
-		return err
-	}
-	fmt.Fprint(out, string(enc))
+	fmt.Fprint(out, string(raw))
 	return nil
 }
 

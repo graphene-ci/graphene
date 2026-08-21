@@ -42,6 +42,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/internal/telemetry"
+	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
@@ -103,7 +104,13 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		SweepEvery:       time.Duration(cfg.SweepSeconds) * time.Second,
 		ReapEvery:        time.Duration(cfg.ReapSeconds) * time.Second,
 		LogSink:          otlp.ForwardLogs,
-		Log:              log,
+		// Trigger firings start runs through the same door logic.
+		MakeRunStarter: func(b *nsbundle.Bundle) worker.RunStarter {
+			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string) error {
+				return services.StartRunOnBundle(ctx, b, log, runId, pipelineId, params, image, labels)
+			}
+		},
+		Log: log,
 	})
 	// The default namespace exists on every installation.
 	if err := bundles.CreateNamespace(ctx, temporalClient, "default", 0); err != nil {
@@ -182,6 +189,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Auth:             authn,
 		RegistryUpstream: cfg.RegistryUpstream,
 		Health:           health.HTTPMux(),
+		Bundles:          bundles,
+		Secrets:          secretStore,
 		Log:              log.With(xlog.String("component", "http")),
 	}))
 	httpProtocols := new(http.Protocols)
