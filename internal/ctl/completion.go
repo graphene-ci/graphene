@@ -79,13 +79,13 @@ var (
 	flagWords       = map[string][]string{
 		"get":      {"-l", "-p", "--owner", "-w"},
 		"transfer": {"--keep"},
-		"invoke":   {"--data"},
+		"invoke":   {"--data", "--data-file"},
 		"events":   {"--follow"},
 		"logs":     {"--follow"},
-		"run":      {"--run-id", "--params", "--image", "--watch", "-l", "-p", "-w"},
+		"run":      {"--run-id", "--params", "--params-file", "--image", "--watch", "-l", "-p", "-w"},
 		"login":    {"--server", "--token", "--token-stdin", "--name", "--namespace", "--insecure", "--base-image"},
 		"ctx":      {"--server", "--token", "--token-stdin", "--namespace", "--insecure", "--base-image", "--use"},
-		"secret":   {"--value"},
+		"secret":   {"--value", "--value-file"},
 		"ns":       {"--retention-days"},
 	}
 	// Kinds every installation has, offered even when the server is
@@ -164,7 +164,8 @@ func positionals(words []string) []string {
 		"-l": true, "-p": true, "--owner": true, "--keep": true, "--data": true,
 		"--run-id": true, "--params": true, "--image": true, "--server": true,
 		"--token": true, "--name": true, "--namespace": true, "--base-image": true,
-		"--value": true, "--retention-days": true, "--status": true,
+		"--value": true, "--value-file": true, "--retention-days": true,
+		"--params-file": true, "--data-file": true,
 	}
 	var pos []string
 	skip := false

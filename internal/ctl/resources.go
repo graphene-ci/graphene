@@ -252,7 +252,8 @@ func cmdTransfer(ctx context.Context, args []string) error {
 func cmdInvoke(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("invoke", flag.ExitOnError)
 	co := commonFlags(fs)
-	data := fs.String("data", "", "command payload as JSON")
+	data := fs.String("data", "", "command payload as inline JSON")
+	dataFile := fs.String("data-file", "", "command payload from a JSON/YAML file (- for stdin)")
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -261,6 +262,10 @@ func cmdInvoke(ctx context.Context, args []string) error {
 	if err != nil || len(rest) != 1 {
 		return fmt.Errorf("usage: invoke <kind> <id> <command>")
 	}
+	payload, err := jsonInput("data", *data, *dataFile)
+	if err != nil {
+		return err
+	}
 	d, err := co.dial()
 	if err != nil {
 		return err
@@ -268,7 +273,7 @@ func cmdInvoke(ctx context.Context, args []string) error {
 	resp, err := d.Resources.Invoke(ctx, connect.NewRequest(&managementv1.InvokeRequest{
 		Ref:     ref,
 		Command: rest[0],
-		Payload: []byte(*data),
+		Payload: payload,
 	}))
 	if err != nil {
 		return err

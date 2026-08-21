@@ -23,7 +23,8 @@ func cmdSecret(ctx context.Context, args []string) error {
 	case "set":
 		fs := flag.NewFlagSet("secret set", flag.ExitOnError)
 		co := commonFlags(fs)
-		value := fs.String("value", "", "secret value (omit to read from stdin)")
+		value := fs.String("value", "", "secret value inline (omit both flags to read from stdin)")
+		valueFile := fs.String("value-file", "", "secret value from a file, raw bytes")
 		pos, err := parseMixed(fs, rest)
 		if err != nil {
 			return err
@@ -31,8 +32,20 @@ func cmdSecret(ctx context.Context, args []string) error {
 		if len(pos) != 1 {
 			return fmt.Errorf("usage: secret set <name>")
 		}
-		v := *value
-		if v == "" {
+		var v string
+		switch {
+		case *value != "" && *valueFile != "":
+			return fmt.Errorf("--value and --value-file are mutually exclusive")
+		case *valueFile != "":
+			// Raw bytes on purpose: a secret is never YAML-converted.
+			raw, err := readFile(*valueFile)
+			if err != nil {
+				return err
+			}
+			v = string(raw)
+		case *value != "":
+			v = *value
+		default:
 			raw, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				return err
