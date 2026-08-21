@@ -87,7 +87,23 @@ func resListWith(ctx context.Context, co *common, kind, phase, owner string, lab
 		}
 		return resp.Msg, nil
 	}
+	// The table shapes: default, -o wide (more columns), -o name (refs
+	// only, xargs-ready).
 	header := []string{"REF", "PHASE", "OWNER", "LABELS"}
+	cols := func(r *managementv1.Resource) []string {
+		return []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())}
+	}
+	switch *co.output {
+	case "wide":
+		header = []string{"REF", "PHASE", "OWNER", "PENDING", "DELETING", "LABELS"}
+		cols = func(r *managementv1.Resource) []string {
+			return []string{r.GetRef(), r.GetPhase(), r.GetOwner(),
+				fmt.Sprint(r.GetPendingCommands()), fmt.Sprint(r.GetMarkedForDeletion()), labelsCell(r.GetLabels())}
+		}
+	case "name":
+		header = []string{"REF"}
+		cols = func(r *managementv1.Resource) []string { return []string{r.GetRef()} }
+	}
 	if watch {
 		return watchList(ctx, co, header, func() (map[string]watchRow, error) {
 			msg, err := list()
@@ -96,10 +112,7 @@ func resListWith(ctx context.Context, co *common, kind, phase, owner string, lab
 			}
 			rows := make(map[string]watchRow, len(msg.GetResources()))
 			for _, r := range msg.GetResources() {
-				rows[r.GetRef()] = watchRow{
-					cols: []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())},
-					msg:  r,
-				}
+				rows[r.GetRef()] = watchRow{cols: cols(r), msg: r}
 			}
 			return rows, nil
 		})
@@ -111,9 +124,15 @@ func resListWith(ctx context.Context, co *common, kind, phase, owner string, lab
 	if done, err := co.emit(msg); done || err != nil {
 		return err
 	}
+	if *co.output == "name" {
+		for _, r := range msg.GetResources() {
+			fmt.Fprintln(out, r.GetRef())
+		}
+		return nil
+	}
 	rows := make([][]string, 0, len(msg.GetResources()))
 	for _, r := range msg.GetResources() {
-		rows = append(rows, []string{r.GetRef(), r.GetPhase(), r.GetOwner(), labelsCell(r.GetLabels())})
+		rows = append(rows, cols(r))
 	}
 	table(header, rows)
 	return nil

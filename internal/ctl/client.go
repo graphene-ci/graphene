@@ -46,7 +46,7 @@ func commonFlags(fs *flag.FlagSet) *common {
 		ctxName: fs.String("context", "", "connection context name"),
 		config:  fs.String("config", "", "config file (default: $"+cliconfig.EnvConfig+", else ~/.config/graphene/config.yaml)"),
 		ns:      fs.String("n", "", "namespace for this call (cluster-wide admin tokens)"),
-		output:  fs.String("o", "table", "output: table | json"),
+		output:  fs.String("o", "table", "output: table | wide | name | json | yaml"),
 		jq:      fs.String("jq", "", "jq expression over the JSON form (implies -o json)"),
 	}
 }

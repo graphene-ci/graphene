@@ -11,6 +11,7 @@ import (
 	"github.com/itchyny/gojq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v3"
 )
 
 // printJSON renders one proto message as JSON on stdout.
@@ -24,16 +25,38 @@ func printJSON(m proto.Message) error {
 }
 
 // emit renders one message per the shared output flags: a --jq
-// expression over the JSON form, or -o json — and reports whether it
-// handled the message (false — the caller renders its table).
+// expression over the JSON form, -o json, or -o yaml — and reports
+// whether it handled the message (false — the caller renders its
+// table; -o name and -o wide are the caller's table variants).
 func (c *common) emit(m proto.Message) (bool, error) {
-	if *c.jq != "" {
+	switch {
+	case *c.jq != "":
 		return true, printJQ(*c.jq, m)
-	}
-	if *c.output == "json" {
+	case *c.output == "json":
 		return true, printJSON(m)
+	case *c.output == "yaml":
+		return true, printYAML(m)
 	}
 	return false, nil
+}
+
+// printYAML renders one proto message as YAML (through its JSON form,
+// so the field names match -o json).
+func printYAML(m proto.Message) error {
+	raw, err := protojson.Marshal(m)
+	if err != nil {
+		return err
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	enc, err := yaml.Marshal(v)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(out, string(enc))
+	return nil
 }
 
 // printJQ pipes the message's JSON form through a jq expression.
@@ -134,7 +157,7 @@ func watchList(ctx context.Context, co *common, header []string, fetch func() (m
 		}
 		if first {
 			// Size the columns on the first frame; print the header for
-			// the table form only.
+			// the table forms only.
 			for _, row := range cur {
 				for i, c := range row.cols {
 					if i < len(widths) && len(c) > widths[i] {
@@ -142,7 +165,7 @@ func watchList(ctx context.Context, co *common, header []string, fetch func() (m
 					}
 				}
 			}
-			if *co.jq == "" && *co.output != "json" {
+			if *co.jq == "" && *co.output != "json" && *co.output != "yaml" && len(header) > 1 {
 				line(header)
 			}
 			first = false

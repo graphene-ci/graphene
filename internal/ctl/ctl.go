@@ -59,6 +59,7 @@ installation:
 
 project:
   init <name>                       scaffold a pipeline project
+  completion bash|zsh|fish          shell autocompletion hook
   version
 
 every read command takes -o table|json (default table) and --jq EXPR;
@@ -99,6 +100,10 @@ func Main(args []string) int {
 		err = cmdSecret(ctx, args[1:])
 	case "ns":
 		err = cmdNs(ctx, args[1:])
+	case "completion":
+		err = cmdCompletion(args[1:])
+	case "__complete":
+		cmdComplete()
 	case "init":
 		err = cli.Init(args[1:], os.Stdout, os.Stderr)
 	case "version":

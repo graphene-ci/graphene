@@ -88,6 +88,12 @@ func runListWith(ctx context.Context, co *common, status string, labels map[stri
 	if done, err := co.emit(msg); done || err != nil {
 		return err
 	}
+	if *co.output == "name" {
+		for _, r := range msg.GetRuns() {
+			fmt.Fprintln(out, r.GetRunId())
+		}
+		return nil
+	}
 	rows := make([][]string, 0, len(msg.GetRuns()))
 	for _, r := range msg.GetRuns() {
 		rows = append(rows, []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), labelsCell(r.GetLabels())})
