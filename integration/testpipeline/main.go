@@ -12,6 +12,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/docker/docker/api/types/volume"
+
+	dockerlib "github.com/graphene-ci/library/docker"
 	pipelineactivity "github.com/graphene-ci/pipeline/pkg/activity"
 	"github.com/graphene-ci/pipeline/pkg/artifact"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
@@ -22,6 +25,10 @@ type Params struct {
 	AgentId   string        `json:"agentId"`
 	MarkerDir string        `json:"markerDir"`
 	Keep      time.Duration `json:"keep"`
+	// VolumeName, when set, declares a docker volume on the agent's
+	// machine as a LIBRARY KIND entity and hands it to the stand — the
+	// library-kind leg of the contour.
+	VolumeName string `json:"volumeName"`
 }
 
 // Result is the run's output.
@@ -112,6 +119,17 @@ func main() {
 		// Stand with a small TTL — the run ends, the record stays until
 		// the sweeper collects it.
 		pipeline.ToStand(ctx, art, pipeline.KeepFor(params.Keep))
+
+		// The library-kind leg: a docker volume declared as an entity on
+		// the agent's machine, owned in the tree, then handed to the
+		// stand with the same TTL — the record must outlive the run and
+		// its cascade must remove the real volume. Declared
+		// unconditionally: the recording pass walks the zero path.
+		vol := dockerlib.Volume(ctx, agent, volume.CreateOptions{Name: params.VolumeName})
+		if info := vol.Ready(ctx); info.Name != params.VolumeName {
+			return Result{}, fmt.Errorf("volume ready: want %q, got %q", params.VolumeName, info.Name)
+		}
+		pipeline.ToStand(ctx, vol, pipeline.KeepFor(params.Keep))
 
 		return Result{Report: report, FanOut: len(fanReports), BaselineDigest: digest}, nil
 	})
