@@ -5,6 +5,7 @@
 package httpapi
 
 import (
+	"os"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -17,6 +18,9 @@ import (
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/secrets"
 )
+
+// agentBinaryPath is where the image carries the agent binary.
+const agentBinaryPath = "/agent/graphene-agent"
 
 // Deps is everything the HTTP door needs.
 type Deps struct {
@@ -41,6 +45,14 @@ func New(deps Deps) http.Handler {
 	})
 	if deps.Health != nil {
 		mux.Handle("/healthz/", deps.Health)
+	}
+	// The agent binary machines install: the ssh script and user-data
+	// download it from the same door they will dial.
+	if _, err := os.Stat(agentBinaryPath); err == nil {
+		mux.Handle("GET /agent/binary", deps.requireRole(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.ServeFile(w, r, agentBinaryPath)
+			}), auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
 	}
 	if deps.Bundles != nil && deps.Secrets != nil {
 		// The webhook door: authenticated by the trigger's own secret,
