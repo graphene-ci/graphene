@@ -42,7 +42,7 @@ func cmdRun(ctx context.Context, args []string) error {
 
 func runList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run list", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	status := fs.String("status", "", "status filter (Running, Completed, ...)")
 	var labels labelFlag
 	fs.Var(&labels, "l", "label selector k=v (repeatable)")
@@ -50,7 +50,7 @@ func runList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func runList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	rows := make([][]string, 0, len(resp.Msg.GetRuns()))
@@ -73,7 +73,7 @@ func runList(ctx context.Context, args []string) error {
 
 func runGet(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run get", flag.ExitOnError)
-	ctxName, output := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -81,7 +81,7 @@ func runGet(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: run get <run-id>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func runGet(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *output == "json" {
+	if *co.output == "json" {
 		return printJSON(resp.Msg)
 	}
 	fmt.Fprintln(out, resp.Msg.GetStatus())
@@ -100,7 +100,7 @@ func runGet(ctx context.Context, args []string) error {
 // the pipeline record unless overridden — re-run without a checkout.
 func runStart(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run start", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	runId := fs.String("run-id", "", "run id (default: derived from the pipeline and time)")
 	params := fs.String("params", "", "typed params as JSON")
 	image := fs.String("image", "", "worker image override (default: the pipeline record's)")
@@ -115,7 +115,7 @@ func runStart(ctx context.Context, args []string) error {
 		return fmt.Errorf("usage: run start <pipeline>")
 	}
 	pipelineId := pos[0]
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func runStart(ctx context.Context, args []string) error {
 
 func runWatch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run watch", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -157,7 +157,7 @@ func runWatch(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: run watch <run-id>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -196,7 +196,7 @@ func watchToEnd(ctx context.Context, d *door, runId string) error {
 
 func runResult(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run result", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func runResult(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: run result <run-id>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func runResult(ctx context.Context, args []string) error {
 
 func runCancel(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run cancel", flag.ExitOnError)
-	ctxName, _ := commonFlags(fs)
+	co := commonFlags(fs)
 	pos, err := parseMixed(fs, args)
 	if err != nil {
 		return err
@@ -226,7 +226,7 @@ func runCancel(ctx context.Context, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: run cancel <run-id>")
 	}
-	d, err := dial(*ctxName)
+	d, err := co.dial()
 	if err != nil {
 		return err
 	}

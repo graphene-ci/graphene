@@ -18,8 +18,15 @@ var Version = "dev"
 
 const usage = `usage: graphenectl <command> [args]
 
-connection (shared with pipeline binaries, ~/.config/graphene):
-  ctx list | show | use <name>
+connection (shared with pipeline binaries; the file: --config, else
+$GRAPHENE_CONFIG, else ~/.config/graphene/config.yaml; field overrides:
+$GRAPHENE_ADDRESS/TOKEN/NAMESPACE/INSECURE — with a server and a token
+in the environment no file is needed at all):
+  ctx list | show | current
+  ctx use <name>
+  ctx set <name> --server host:port [--token-stdin] [--namespace ns]
+                 [--insecure] [--base-image ref] [--use]
+  ctx delete <name> | rename <old> <new>
 
 records (five dimensions each):
   res list [-k kind] [-p phase] [--owner ref] [-l k=v]
@@ -49,7 +56,9 @@ project:
   init <name>                       scaffold a pipeline project
   version
 
-every read command takes -o table|json (default table).`
+every read command takes -o table|json (default table); every network
+command takes --context, --config, and -n (per-call namespace for
+cluster-wide admin tokens).`
 
 // Main runs graphenectl; the exit code is the return.
 func Main(args []string) int {
