@@ -19,8 +19,9 @@ type Store interface {
 
 // Namespaced keeps every namespace's secret set.
 type Namespaced struct {
-	mu sync.RWMutex
-	m  map[string]map[string]string
+	mu      sync.RWMutex
+	m       map[string]map[string]string
+	persist *filePersister
 }
 
 // NewNamespaced seeds the "default" namespace from the config.
@@ -30,6 +31,35 @@ func NewNamespaced(seedDefault map[string]string) *Namespaced {
 		s.set("default", k, v)
 	}
 	return s
+}
+
+// NewPersistent opens the sealed file store: values survive restarts.
+// The config seed lays under whatever the file already holds.
+func NewPersistent(path, keyHex string, seedDefault map[string]string) (*Namespaced, error) {
+	persist, err := newFilePersister(path, keyHex)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := persist.load()
+	if err != nil {
+		return nil, err
+	}
+	s := &Namespaced{m: loaded, persist: persist}
+	for k, v := range seedDefault {
+		if _, exists := s.m["default"][k]; !exists {
+			s.set("default", k, v)
+		}
+	}
+	return s, nil
+}
+
+// flush writes the sealed file; the caller holds the lock. Memory-only
+// stores flush nothing.
+func (s *Namespaced) flush() {
+	if s.persist == nil {
+		return
+	}
+	_ = s.persist.save(s.m)
 }
 
 // Get resolves one name in a namespace.
@@ -48,6 +78,7 @@ func (s *Namespaced) Set(namespace, name, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.set(namespace, name, value)
+	s.flush()
 }
 
 func (s *Namespaced) set(namespace, name, value string) {
@@ -62,6 +93,7 @@ func (s *Namespaced) Delete(namespace, name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.m[namespace], name)
+	s.flush()
 }
 
 // List returns the NAMES of a namespace's secrets — never the values.

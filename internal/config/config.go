@@ -72,6 +72,13 @@ type File struct {
 		// (file wins on collision). Only names ever leave the server.
 		File   string            `mapstructure:"file"`
 		Values map[string]string `mapstructure:"values"`
+		// Store is the sealed value store on the server's volume;
+		// with Key set, secrets survive restarts (AES-GCM). Empty Key
+		// keeps the in-memory store (dev only, values die with the
+		// process).
+		Store string `mapstructure:"store" default:"/var/lib/graphene/secrets.enc"`
+		// Key is the installation's master key: 64 hex chars.
+		Key string `mapstructure:"key"`
 	} `mapstructure:"secrets"`
 
 	Otel struct {
@@ -119,6 +126,10 @@ type Config struct {
 
 	Tokens  []Token
 	Secrets map[string]string
+	// SecretsStore/SecretsKey open the sealed value store; empty key
+	// keeps secrets in memory.
+	SecretsStore string
+	SecretsKey   string
 
 	BlobBackend      string
 	BlobDir          string
@@ -203,6 +214,8 @@ func Resolve(f File) (Config, error) {
 		SweepSeconds:          f.Intervals.SweepSeconds,
 		ReapSeconds:           f.Intervals.ReapSeconds,
 		Secrets:               map[string]string{},
+		SecretsStore:          f.Secrets.Store,
+		SecretsKey:            f.Secrets.Key,
 	}
 	if cfg.External == "" {
 		cfg.External = cfg.Listen

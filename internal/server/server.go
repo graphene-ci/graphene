@@ -67,7 +67,16 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 
 	authn := auth.New(cfg.Tokens)
 	registry := agents.New(cfg.AgentHeartbeat, log.With(xlog.String("component", "agents")))
-	secretStore := secrets.NewNamespaced(cfg.Secrets)
+	var secretStore *secrets.Namespaced
+	if cfg.SecretsKey != "" {
+		secretStore, err = secrets.NewPersistent(cfg.SecretsStore, cfg.SecretsKey, cfg.Secrets)
+		if err != nil {
+			return fmt.Errorf("secret store: %w", err)
+		}
+	} else {
+		log.Warn("secrets are IN MEMORY — set secrets.key for persistence")
+		secretStore = secrets.NewNamespaced(cfg.Secrets)
+	}
 
 	blobStore, err := buildBlobStore(ctx, cfg)
 	if err != nil {
