@@ -168,6 +168,10 @@ func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) er
 	}
 	resp, err := d.Resources.Get(ctx, connect.NewRequest(&managementv1.GetRequest{Ref: ref}))
 	if err != nil {
+		// The raw not-found is Temporal's "workflow not found" phrasing.
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return fmt.Errorf("no record %s", ref)
+		}
 		return err
 	}
 	if done, err := f.Emit(resp.Msg); done || err != nil {
@@ -188,6 +192,9 @@ func runGetOne(ctx context.Context, f *cmdutil.Factory, runId string) error {
 	}
 	resp, err := d.Runs.GetRun(ctx, connect.NewRequest(&managementv1.GetRunRequest{RunId: runId}))
 	if err != nil {
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return fmt.Errorf("no run %s", runId)
+		}
 		return err
 	}
 	if done, err := f.Emit(resp.Msg); done || err != nil {

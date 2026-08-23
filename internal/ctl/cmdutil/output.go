@@ -130,6 +130,24 @@ func printJQ(expr string, m proto.Message) error {
 	if err != nil {
 		return err
 	}
+	return runJQ(query, v)
+}
+
+// JQBytes runs a jq expression over raw JSON bytes — the observe
+// passthroughs (PromQL, Jaeger) that never were proto messages.
+func JQBytes(expr string, raw []byte) error {
+	query, err := gojq.Parse(expr)
+	if err != nil {
+		return fmt.Errorf("--jq: %w", err)
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	return runJQ(query, v)
+}
+
+func runJQ(query *gojq.Query, v any) error {
 	iter := query.Run(v)
 	for {
 		item, ok := iter.Next()
