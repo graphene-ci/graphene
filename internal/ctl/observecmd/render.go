@@ -1,0 +1,137 @@
+package observecmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+)
+
+// The metrics and trace answers are backend passthroughs (PromQL and
+// Jaeger JSON), not proto messages — so the output flags are honored
+// here by hand: -o json prints the raw payload, --jq runs over it,
+// and the default is a readable table.
+
+func renderMetrics(f *cmdutil.Factory, series []byte) error {
+	if f.JQ != "" {
+		return cmdutil.JQBytes(f.JQ, series)
+	}
+	if f.Output == "json" || f.Output == "yaml" {
+		fmt.Fprintln(cmdutil.Out, string(series))
+		return nil
+	}
+	var payload struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][2]any          `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(series, &payload); err != nil {
+		// Not the PromQL shape — hand over the raw payload.
+		fmt.Fprintln(cmdutil.Out, string(series))
+		return nil
+	}
+	if len(payload.Data.Result) == 0 {
+		fmt.Fprintln(os.Stderr, "No metrics recorded.")
+		return nil
+	}
+	rows := make([][]string, 0, len(payload.Data.Result))
+	for _, s := range payload.Data.Result {
+		last := ""
+		if n := len(s.Values); n > 0 {
+			last = fmt.Sprint(s.Values[n-1][1])
+		}
+		rows = append(rows, []string{metricCell(s.Metric), fmt.Sprint(len(s.Values)), last})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
+	cmdutil.Table([]string{"METRIC", "POINTS", "LAST"}, rows)
+	return nil
+}
+
+// metricCell renders a PromQL label set the way prometheus does:
+// name{label="v",...}.
+func metricCell(labels map[string]string) string {
+	name := labels["__name__"]
+	parts := make([]string, 0, len(labels))
+	for k, v := range labels {
+		if k == "__name__" {
+			continue
+		}
+		parts = append(parts, k+`="`+v+`"`)
+	}
+	if len(parts) == 0 {
+		return name
+	}
+	sort.Strings(parts)
+	return name + "{" + strings.Join(parts, ",") + "}"
+}
+
+func renderTrace(f *cmdutil.Factory, trace []byte) error {
+	if f.JQ != "" {
+		return cmdutil.JQBytes(f.JQ, trace)
+	}
+	if f.Output == "json" || f.Output == "yaml" {
+		fmt.Fprintln(cmdutil.Out, string(trace))
+		return nil
+	}
+	var payload struct {
+		Data []struct {
+			Processes map[string]struct {
+				ServiceName string `json:"serviceName"`
+			} `json:"processes"`
+			Spans []struct {
+				OperationName string `json:"operationName"`
+				ProcessID     string `json:"processID"`
+				StartTime     int64  `json:"startTime"` // µs
+				Duration      int64  `json:"duration"`  // µs
+				Tags          []struct {
+					Key   string `json:"key"`
+					Value any    `json:"value"`
+				} `json:"tags"`
+			} `json:"spans"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(trace, &payload); err != nil {
+		fmt.Fprintln(cmdutil.Out, string(trace))
+		return nil
+	}
+	type row struct {
+		start int64
+		cols  []string
+	}
+	var rows []row
+	for _, t := range payload.Data {
+		for _, s := range t.Spans {
+			errMark := ""
+			for _, tag := range s.Tags {
+				if tag.Key == "error" && fmt.Sprint(tag.Value) != "unset" && fmt.Sprint(tag.Value) != "false" {
+					errMark = "error"
+				}
+			}
+			rows = append(rows, row{s.StartTime, []string{
+				cmdutil.Stamp(s.StartTime * int64(time.Microsecond)),
+				fmt.Sprintf("%.1fms", float64(s.Duration)/1000),
+				s.OperationName,
+				t.Processes[s.ProcessID].ServiceName,
+				errMark,
+			}})
+		}
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(os.Stderr, "No trace recorded.")
+		return nil
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].start < rows[j].start })
+	cells := make([][]string, len(rows))
+	for i, r := range rows {
+		cells[i] = r.cols
+	}
+	cmdutil.Table([]string{"START", "DURATION", "OPERATION", "SERVICE", ""}, cells)
+	return nil
+}

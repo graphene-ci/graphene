@@ -5,6 +5,7 @@ package observecmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -56,7 +57,9 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 		if err != nil {
 			return err
 		}
+		n := 0
 		for stream.Receive() {
+			n++
 			ev := stream.Msg()
 			if done, err := f.Emit(ev); err != nil {
 				return err
@@ -72,7 +75,13 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 			}
 			fmt.Fprintln(cmdutil.Out, line)
 		}
-		return stream.Err()
+		if err := stream.Err(); err != nil {
+			return err
+		}
+		if n == 0 && !follow {
+			fmt.Fprintln(os.Stderr, "No events.")
+		}
+		return nil
 	case "logs":
 		stream, err := d.Observe.Logs(ctx, connect.NewRequest(&managementv1.LogsRequest{
 			Ref: ref, Follow: follow,
@@ -80,7 +89,9 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 		if err != nil {
 			return err
 		}
+		n := 0
 		for stream.Receive() {
+			n++
 			rec := stream.Msg()
 			if done, err := f.Emit(rec); err != nil {
 				return err
@@ -89,22 +100,25 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 			}
 			fmt.Fprintf(cmdutil.Out, "%s  %s\n", cmdutil.Stamp(rec.GetTimeUnixNano()), rec.GetBody())
 		}
-		return stream.Err()
+		if err := stream.Err(); err != nil {
+			return err
+		}
+		if n == 0 && !follow {
+			fmt.Fprintln(os.Stderr, "No log records.")
+		}
+		return nil
 	case "metrics":
 		resp, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref}))
 		if err != nil {
 			return err
 		}
-		// The series is the backend's standard PromQL JSON either way.
-		fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetSeries()))
-		return nil
+		return renderMetrics(f, resp.Msg.GetSeries())
 	case "trace":
 		resp, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Ref: ref}))
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetTrace()))
-		return nil
+		return renderTrace(f, resp.Msg.GetTrace())
 	default:
 		return fmt.Errorf("unknown dimension %q", dim)
 	}

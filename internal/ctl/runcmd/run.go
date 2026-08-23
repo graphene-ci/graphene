@@ -167,15 +167,38 @@ func watchToEnd(ctx context.Context, f *cmdutil.Factory, d *cmdutil.Door, runId 
 	}
 	switch last {
 	case "Completed":
-		resp, err := d.Runs.RunResult(ctx, connect.NewRequest(&managementv1.RunResultRequest{RunId: runId}))
+		result, err := fetchResult(ctx, d, runId)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetResult()))
+		fmt.Fprintln(cmdutil.Out, string(result))
 		return nil
 	default:
 		return fmt.Errorf("run %s: %s", runId, strings.ToLower(last))
 	}
+}
+
+// fetchResult wraps RunResult's failure modes into plain words — the
+// raw error is Temporal's workflow-execution phrasing.
+func fetchResult(ctx context.Context, d *cmdutil.Door, runId string) ([]byte, error) {
+	resp, err := d.Runs.RunResult(ctx, connect.NewRequest(&managementv1.RunResultRequest{RunId: runId}))
+	if err == nil {
+		return resp.Msg.GetResult(), nil
+	}
+	switch connect.CodeOf(err) {
+	case connect.CodeNotFound:
+		return nil, fmt.Errorf("no run %s", runId)
+	case connect.CodeFailedPrecondition:
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "terminated"):
+			return nil, fmt.Errorf("run %s was terminated — no result", runId)
+		case strings.Contains(msg, "canceled"):
+			return nil, fmt.Errorf("run %s was canceled — no result", runId)
+		}
+		return nil, fmt.Errorf("run %s did not complete — no result", runId)
+	}
+	return nil, err
 }
 
 func newResult(f *cmdutil.Factory) *cobra.Command {
@@ -189,11 +212,11 @@ func newResult(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Runs.RunResult(cmd.Context(), connect.NewRequest(&managementv1.RunResultRequest{RunId: args[0]}))
+			result, err := fetchResult(cmd.Context(), d, args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetResult()))
+			fmt.Fprintln(cmdutil.Out, string(result))
 			return nil
 		},
 	}
