@@ -112,10 +112,25 @@ func (a authInterceptor) apply(h http.Header) {
 	}
 }
 
+// Unary calls retry on Unavailable — a server redeploy mid-request
+// otherwise surfaces as a one-off "unexpected EOF". Streams are not
+// retried: the watch loops re-poll on their own.
 func (a authInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		a.apply(req.Header())
-		return next(ctx, req)
+		var res connect.AnyResponse
+		var err error
+		for attempt, backoff := 0, 300*time.Millisecond; ; attempt, backoff = attempt+1, backoff*2 {
+			res, err = next(ctx, req)
+			if err == nil || attempt == 2 || connect.CodeOf(err) != connect.CodeUnavailable {
+				return res, err
+			}
+			select {
+			case <-ctx.Done():
+				return res, err
+			case <-time.After(backoff):
+			}
+		}
 	}
 }
 
