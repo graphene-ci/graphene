@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,8 +14,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	yamlpkg "sigs.k8s.io/yaml"
-
-	"github.com/graphene-ci/graphene/internal/protoyaml"
 )
 
 // Out is where data goes; progress goes to stderr.
@@ -24,6 +23,10 @@ var Out = os.Stdout
 // expression over the JSON form, -o json, or -o yaml — and reports
 // whether it handled the message (false — the caller renders its
 // table; -o name and -o wide are the caller's table variants).
+//
+// Embedded-JSON bytes fields (a record's spec and state, a manifest,
+// an event's payloads) decode into real objects on the way — protojson
+// would render them as base64, which nobody can read or query.
 func (f *Factory) Emit(m proto.Message) (bool, error) {
 	switch {
 	case f.JQ != "":
@@ -36,8 +39,60 @@ func (f *Factory) Emit(m proto.Message) (bool, error) {
 	return false, nil
 }
 
+// jsonForm is the message's protojson form with the embedded-JSON
+// bytes fields decoded.
+func jsonForm(m proto.Message) (any, error) {
+	raw, err := protojson.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	return decodeEmbedded(v), nil
+}
+
+// embeddedJSONFields name the bytes fields that CARRY JSON by
+// contract: a record's spec/state, a manifest, an event's payloads.
+var embeddedJSONFields = map[string]bool{
+	"spec": true, "state": true, "manifest": true,
+	"params": true, "result": true, "payload": true,
+	"input": true, "raw": true,
+}
+
+// decodeEmbedded walks the JSON form and turns base64 strings under
+// the known field names into the objects they carry; anything that
+// does not decode stays as it was.
+func decodeEmbedded(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, mv := range t {
+			if s, ok := mv.(string); ok && embeddedJSONFields[k] && s != "" {
+				if raw, err := base64.StdEncoding.DecodeString(s); err == nil && len(raw) > 0 {
+					var decoded any
+					if json.Unmarshal(raw, &decoded) == nil && decoded != nil {
+						t[k] = decodeEmbedded(decoded)
+						continue
+					}
+				}
+			}
+			t[k] = decodeEmbedded(mv)
+		}
+	case []any:
+		for i, item := range t {
+			t[i] = decodeEmbedded(item)
+		}
+	}
+	return v
+}
+
 func printJSON(m proto.Message) error {
-	raw, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(m)
+	v, err := jsonForm(m)
+	if err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -45,30 +100,34 @@ func printJSON(m proto.Message) error {
 	return err
 }
 
-// printYAML renders one proto message with the in-house protoyaml —
-// protojson names through the k8s YAML mapping.
+// printYAML renders the same decoded form through the in-house
+// protoyaml mapping (JSON to the k8s YAML shape).
 func printYAML(m proto.Message) error {
-	raw, err := protoyaml.Marshal(m)
+	v, err := jsonForm(m)
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(Out, string(raw))
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	rendered, err := yamlpkg.JSONToYAML(raw)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(Out, string(rendered))
 	return nil
 }
 
-// printJQ pipes the message's JSON form through a jq expression.
-// Strings print raw (jq's own -r behavior).
+// printJQ pipes the message's decoded JSON form through a jq
+// expression. Strings print raw (jq's own -r behavior).
 func printJQ(expr string, m proto.Message) error {
 	query, err := gojq.Parse(expr)
 	if err != nil {
 		return fmt.Errorf("--jq: %w", err)
 	}
-	raw, err := protojson.Marshal(m)
+	v, err := jsonForm(m)
 	if err != nil {
-		return err
-	}
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
 		return err
 	}
 	iter := query.Run(v)
