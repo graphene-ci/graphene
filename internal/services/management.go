@@ -15,6 +15,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -25,7 +26,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/secrets"
-	"github.com/graphene-ci/graphene/internal/worker"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/ref"
@@ -328,11 +328,12 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		for _, e := range page.GetExecutions() {
-			res, err := m.describe(ctx, b, e.GetExecution().GetWorkflowId())
-			if err != nil {
-				continue // gone between list and describe
-			}
-			resp.Resources = append(resp.Resources, res)
+			// The row comes from VISIBILITY alone: ref, kind, phase,
+			// owner, and labels are all mirrored search attributes. A
+			// per-entity describe is a workflow QUERY — it wakes the
+			// record's worker and made listing O(n) queries; the full
+			// record stays behind Get.
+			resp.Resources = append(resp.Resources, resourceFromVisibility(e))
 		}
 		token = page.GetNextPageToken()
 		// A bounded request answers with ONE page and the cursor; an
@@ -376,19 +377,19 @@ func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv
 }
 
 func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef) ([]*managementv1.TreeNode, error) {
-	children, err := worker.OwnedBy(ctx, b.Client, owner)
+	// Visibility carries everything a tree node shows; a describe per
+	// node would wake every record's worker.
+	page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("%s = '%s' AND ExecutionStatus = 'Running'",
+			wire.SearchAttrOwner.GetName(), string(owner)),
+	})
 	if err != nil {
 		return nil, err
 	}
 	var out []*managementv1.TreeNode
-	for _, child := range children {
-		node := &managementv1.TreeNode{}
-		if res, err := m.describe(ctx, b, child); err == nil {
-			node.Resource = res
-		} else {
-			node.Resource = &managementv1.Resource{Ref: child}
-		}
-		grand, err := m.subtree(ctx, b, ref.OwnerRef(child))
+	for _, e := range page.GetExecutions() {
+		node := &managementv1.TreeNode{Resource: resourceFromVisibility(e)}
+		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()))
 		if err != nil {
 			return nil, err
 		}
@@ -621,4 +622,41 @@ func stripPrefix(s, prefix string) string {
 		return s[len(prefix):]
 	}
 	return s
+}
+
+// resourceFromVisibility builds a listing row from ONE visibility
+// execution: ref, kind, phase, owner, and labels are all mirrored
+// search attributes — no workflow query, no worker woken. Spec and
+// state stay behind Get: a listing is a projection, not a describe.
+func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.Resource {
+	workflowId := e.GetExecution().GetWorkflowId()
+	kind, _, _ := strings.Cut(workflowId, "/")
+	res := &managementv1.Resource{Ref: workflowId, Kind: kind}
+	fields := e.GetSearchAttributes().GetIndexedFields()
+	dc := converter.GetDefaultDataConverter()
+	str := func(name string) string {
+		p, ok := fields[name]
+		if !ok {
+			return ""
+		}
+		var out string
+		_ = dc.FromPayload(p, &out)
+		return out
+	}
+	res.Phase = str(entdefine.SearchAttrPhase.GetName())
+	res.Owner = str(wire.SearchAttrOwner.GetName())
+	if p, ok := fields[entdefine.SearchAttrLabels.GetName()]; ok {
+		var pairs []string
+		_ = dc.FromPayload(p, &pairs)
+		labels := make(map[string]string, len(pairs))
+		for _, pair := range pairs {
+			if k, v, found := strings.Cut(pair, "="); found {
+				labels[k] = v
+			}
+		}
+		if len(labels) > 0 {
+			res.Labels = labels
+		}
+	}
+	return res
 }
