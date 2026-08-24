@@ -108,6 +108,18 @@ func (s *Namespaced) List(namespace string) []string {
 	return names
 }
 
+// Items returns a namespace's full map (a copy). The VARS plane reads
+// values back by design; the secrets plane never calls this.
+func (s *Namespaced) Items(namespace string) map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]string, len(s.m[namespace]))
+	for k, v := range s.m[namespace] {
+		out[k] = v
+	}
+	return out
+}
+
 // In binds the store to one namespace as the flow-facing Store.
 func (s *Namespaced) In(namespace string) Store {
 	return bound{s: s, ns: namespace}

@@ -41,6 +41,7 @@ type Management struct {
 	// Base is a namespace-agnostic client for cluster admin calls.
 	Base    client.Client
 	Secrets *secrets.Namespaced
+	Vars    *secrets.Namespaced
 	Log     *xlog.Logger
 }
 
@@ -86,6 +87,13 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	if err := wire.ValidateUserLabels(labels); err != nil {
 		return "", "", status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Variables substitute FIRST — "${var:name}" placeholders become
+	// the installation's values, so validation sees what the workflow
+	// will see and a missing variable fails the submit here.
+	params, err = substituteVars(params, b.Vars)
+	if err != nil {
+		return "", "", status.Error(codes.InvalidArgument, err.Error())
+	}
 	// Validate params against the published manifest — a bad submit
 	// fails at the door. No manifest (never pushed) — no gate. The
 	// validated form comes back duration-normalized for the workflow.
@@ -95,6 +103,12 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 			return "", "", status.Error(codes.InvalidArgument, err.Error())
 		}
 		params = normalized
+		// A secret-typed param names a secret; the name must resolve
+		// NOW — the run must not discover a missing secret hours later
+		// inside an activity.
+		if err := checkSecretRefs(st.Manifest, params, b.Secrets); err != nil {
+			return "", "", status.Error(codes.InvalidArgument, err.Error())
+		}
 	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
@@ -520,6 +534,53 @@ func (m *Management) ListSecrets(ctx context.Context, _ *connect.Request[managem
 		return nil, err
 	}
 	return connect.NewResponse(&managementv1.ListSecretsResponse{Names: m.Secrets.List(namespace)}), nil
+}
+
+// --- VarsAPI (management) ---
+
+// SetVar stores a variable — the visible sibling of a secret.
+func (m *Management) SetVar(ctx context.Context, creq *connect.Request[managementv1.SetVarRequest]) (*connect.Response[managementv1.SetVarResponse], error) {
+	req := creq.Msg
+	namespace, err := scope(ctx, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+	m.Vars.Set(namespace, req.GetName(), req.GetValue())
+	return connect.NewResponse(&managementv1.SetVarResponse{}), nil
+}
+
+// DeleteVar forgets a name.
+func (m *Management) DeleteVar(ctx context.Context, creq *connect.Request[managementv1.DeleteVarRequest]) (*connect.Response[managementv1.DeleteVarResponse], error) {
+	req := creq.Msg
+	namespace, err := scope(ctx, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	m.Vars.Delete(namespace, req.GetName())
+	return connect.NewResponse(&managementv1.DeleteVarResponse{}), nil
+}
+
+// ListVars returns names AND values — that is the plane's difference
+// from secrets.
+func (m *Management) ListVars(ctx context.Context, _ *connect.Request[managementv1.ListVarsRequest]) (*connect.Response[managementv1.ListVarsResponse], error) {
+	namespace, err := scope(ctx, auth.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	items := m.Vars.Items(namespace)
+	names := make([]string, 0, len(items))
+	for name := range items {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]*managementv1.ListVarsResponse_Var, 0, len(names))
+	for _, name := range names {
+		out = append(out, &managementv1.ListVarsResponse_Var{Name: name, Value: items[name]})
+	}
+	return connect.NewResponse(&managementv1.ListVarsResponse{Vars: out}), nil
 }
 
 // --- helpers ---
