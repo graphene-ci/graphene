@@ -1,0 +1,382 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* `dark` variant matches EVERY dark theme class — but per AGENTS.md it is
+   for non-color tweaks only; colors flip via tokens. */
+@custom-variant dark (&:is(.dark *, .midnight *, .graphite *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+    /* Scalable text scale: every size multiplies by --text-scale so a user
+       text-size setting scales the whole app. Extend here, never inline. */
+    --text-4xs: calc(0.5rem * var(--text-scale));
+    --text-4xs--line-height: calc(0.75rem * var(--text-scale));
+    --text-3xs: calc(0.625rem * var(--text-scale));
+    --text-3xs--line-height: calc(0.875rem * var(--text-scale));
+    --text-2xs: calc(0.6875rem * var(--text-scale));
+    --text-2xs--line-height: calc(0.9375rem * var(--text-scale));
+    --text-xs: calc(0.75rem * var(--text-scale));
+    --text-xs--line-height: calc(1rem * var(--text-scale));
+    --text-sm: calc(0.875rem * var(--text-scale));
+    --text-sm--line-height: calc(1.25rem * var(--text-scale));
+    --text-base: calc(1rem * var(--text-scale));
+    --text-base--line-height: calc(1.5rem * var(--text-scale));
+    --text-lg: calc(1.125rem * var(--text-scale));
+    --text-lg--line-height: calc(1.75rem * var(--text-scale));
+    --text-xl: calc(1.25rem * var(--text-scale));
+    --text-xl--line-height: calc(1.75rem * var(--text-scale));
+    --text-2xl: calc(1.5rem * var(--text-scale));
+    --text-2xl--line-height: calc(2rem * var(--text-scale));
+    --text-3xl: calc(1.875rem * var(--text-scale));
+    --text-3xl--line-height: calc(2.25rem * var(--text-scale));
+    --text-4xl: calc(2.25rem * var(--text-scale));
+    --text-4xl--line-height: calc(2.5rem * var(--text-scale));
+    --text-5xl: calc(3rem * var(--text-scale));
+    --text-5xl--line-height: calc(1 * var(--text-scale));
+    --text-6xl: calc(3.75rem * var(--text-scale));
+    --text-6xl--line-height: calc(1 * var(--text-scale));
+
+    --color-scrim: var(--scrim);
+    --color-surface-hover: var(--surface-hover);
+    --color-primary-hover: var(--primary-hover);
+    --color-link: var(--link);
+    --color-status-success: var(--status-success);
+    --color-status-success-bg: var(--status-success-bg);
+    --color-status-failed: var(--status-failed);
+    --color-status-failed-bg: var(--status-failed-bg);
+    --color-status-running: var(--status-running);
+    --color-status-running-bg: var(--status-running-bg);
+    --color-status-pending: var(--status-pending);
+    --color-status-pending-bg: var(--status-pending-bg);
+    --color-status-warning: var(--status-warning);
+    --color-status-warning-bg: var(--status-warning-bg);
+    --color-status-canceled: var(--status-canceled);
+    --color-status-canceled-bg: var(--status-canceled-bg);
+    --color-status-skipped: var(--status-skipped);
+    --color-status-skipped-bg: var(--status-skipped-bg);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ============================================================
+   Palette: GitLab Pajamas. Dark theme (.dark) is the default —
+   index.html ships <html class="dark">. Hex values reference
+   Pajamas scale names in comments. New derived shades (hover,
+   soft badge bg, …) are defined HERE, never at call sites.
+   ============================================================ */
+
+:root {
+    --text-scale: 1;
+    --radius: 0.375rem;
+
+    /* Scrim over media — the only sanctioned translucent surface. */
+    --scrim: rgb(0 0 0 / 0.3);
+
+    /* GitLab light */
+    --background: #ffffff;
+    --foreground: #333238;              /* gray-900 */
+    --card: #ffffff;
+    --card-foreground: #333238;
+    --popover: #ffffff;
+    --popover-foreground: #333238;
+    --primary: #1f75cb;                 /* blue-500 (confirm) */
+    --primary-foreground: #ffffff;
+    --primary-hover: #1068bf;           /* blue-600 */
+    --link: #1f75cb;
+    --secondary: #ececef;               /* gray-50 */
+    --secondary-foreground: #333238;
+    --muted: #fbfafd;                   /* gray-10 */
+    --muted-foreground: #737278;        /* gray-500 */
+    --accent: #ececef;
+    --accent-foreground: #333238;
+    --surface-hover: #ececef;
+    --destructive: #dd2b0e;             /* red-500 */
+    --border: #dcdcde;                  /* gray-100 */
+    --input: #bfbfc3;                   /* gray-200 */
+    --ring: #428fdc;                    /* blue-400 */
+
+    /* CI status — consumed only via components/status/ module.
+       Soft -bg variants back badges/rows; alpha lives here only. */
+    --status-success: #108548;          /* green-500 */
+    --status-success-bg: rgb(16 133 72 / 0.1);
+    --status-failed: #dd2b0e;           /* red-500 */
+    --status-failed-bg: rgb(221 43 14 / 0.1);
+    --status-running: #1f75cb;          /* blue-500 */
+    --status-running-bg: rgb(31 117 203 / 0.1);
+    --status-pending: #ab6100;          /* orange-500 */
+    --status-pending-bg: rgb(171 97 0 / 0.1);
+    --status-warning: #ab6100;
+    --status-warning-bg: rgb(171 97 0 / 0.1);
+    --status-canceled: #535158;         /* gray-700 */
+    --status-canceled-bg: rgb(83 81 88 / 0.12);
+    --status-skipped: #737278;          /* gray-500 */
+    --status-skipped-bg: rgb(115 114 120 / 0.12);
+
+    /* Data-viz (Pajamas dataviz order: blue, orange, aqua, green, magenta) */
+    --chart-1: #428fdc;
+    --chart-2: #d99530;
+    --chart-3: #0094b6;
+    --chart-4: #2da160;
+    --chart-5: #d84280;
+
+    /* Super-sidebar */
+    --sidebar: #fbfafd;                 /* gray-10 */
+    --sidebar-foreground: #333238;
+    --sidebar-primary: #1f75cb;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #ececef;
+    --sidebar-accent-foreground: #333238;
+    --sidebar-border: #dcdcde;
+    --sidebar-ring: #428fdc;
+}
+
+/* Shared tokens for ALL dark themes (status ramp, charts, scrim).
+   Per-theme blocks below override surfaces and accents only. */
+.dark,
+.midnight,
+.graphite {
+    --scrim: rgb(0 0 0 / 0.45);
+
+    /* CI status (dark ramp — one step lighter for contrast) */
+    --status-success: #52b87a;          /* green-300 */
+    --status-success-bg: rgb(82 184 122 / 0.14);
+    --status-failed: #f57f6c;           /* red-300 */
+    --status-failed-bg: rgb(245 127 108 / 0.14);
+    --status-running: #63a6e9;          /* blue-300 */
+    --status-running-bg: rgb(99 166 233 / 0.14);
+    --status-pending: #d99530;          /* orange-300 */
+    --status-pending-bg: rgb(217 149 48 / 0.14);
+    --status-warning: #d99530;
+    --status-warning-bg: rgb(217 149 48 / 0.14);
+    --status-canceled: #a4a3a8;         /* gray-300 */
+    --status-canceled-bg: rgb(164 163 168 / 0.14);
+    --status-skipped: #89888d;          /* gray-400 */
+    --status-skipped-bg: rgb(137 136 141 / 0.14);
+
+    --chart-1: #63a6e9;
+    --chart-2: #e9be74;
+    --chart-3: #3bafda;
+    --chart-4: #52b87a;
+    --chart-5: #e57fa6;
+}
+
+.dark {
+    /* GitLab dark */
+    --background: #1f1e24;              /* gray-950 — body */
+    --foreground: #ececef;              /* gray-50 — text-primary */
+    --card: #28272d;                    /* raised surface */
+    --card-foreground: #ececef;
+    --popover: #333238;                 /* gray-900 — overlay surface */
+    --popover-foreground: #ececef;
+    --primary: #428fdc;                 /* blue-400 */
+    --primary-foreground: #1f1e24;
+    --primary-hover: #63a6e9;           /* blue-300 */
+    --link: #63a6e9;
+    --secondary: #333238;               /* gray-900 */
+    --secondary-foreground: #ececef;
+    --muted: #28272d;
+    --muted-foreground: #a4a3a8;        /* gray-300 — text-secondary */
+    --accent: #333238;
+    --accent-foreground: #ececef;
+    --surface-hover: #333238;
+    --destructive: #ec5941;             /* red-400 */
+    --border: #434248;                  /* gray-800 */
+    --input: #535158;                   /* gray-700 */
+    --ring: #63a6e9;                    /* blue-300 */
+
+    /* Super-sidebar (darkest chrome) */
+    --sidebar: #18171d;
+    --sidebar-foreground: #ececef;
+    --sidebar-primary: #428fdc;
+    --sidebar-primary-foreground: #1f1e24;
+    --sidebar-accent: #28272d;
+    --sidebar-accent-foreground: #ececef;
+    --sidebar-border: #333238;
+    --sidebar-ring: #63a6e9;
+}
+
+.midnight {
+    /* Blue-black (GitHub-dark-like surfaces) */
+    --background: #0d1117;
+    --foreground: #e6edf3;
+    --card: #161b22;
+    --card-foreground: #e6edf3;
+    --popover: #1c2128;
+    --popover-foreground: #e6edf3;
+    --primary: #4493f8;
+    --primary-foreground: #0d1117;
+    --primary-hover: #6cabf9;
+    --link: #6cabf9;
+    --secondary: #21262d;
+    --secondary-foreground: #e6edf3;
+    --muted: #161b22;
+    --muted-foreground: #8d96a0;
+    --accent: #21262d;
+    --accent-foreground: #e6edf3;
+    --surface-hover: #21262d;
+    --destructive: #f85149;
+    --border: #30363d;
+    --input: #3d444d;
+    --ring: #6cabf9;
+    --sidebar: #010409;
+    --sidebar-foreground: #e6edf3;
+    --sidebar-primary: #4493f8;
+    --sidebar-primary-foreground: #0d1117;
+    --sidebar-accent: #161b22;
+    --sidebar-accent-foreground: #e6edf3;
+    --sidebar-border: #21262d;
+    --sidebar-ring: #6cabf9;
+}
+
+.graphite {
+    /* Strict neutral monochrome dark — zero hue tint, gray accents */
+    --background: #161616;
+    --foreground: #e8e8e8;
+    --card: #1f1f1f;
+    --card-foreground: #e8e8e8;
+    --popover: #262626;
+    --popover-foreground: #e8e8e8;
+    --primary: #d4d4d4;
+    --primary-foreground: #161616;
+    --primary-hover: #e8e8e8;
+    --link: #9ecbff;
+    --secondary: #262626;
+    --secondary-foreground: #e8e8e8;
+    --muted: #1f1f1f;
+    --muted-foreground: #9a9a9a;
+    --accent: #262626;
+    --accent-foreground: #e8e8e8;
+    --surface-hover: #262626;
+    --destructive: #f57f6c;
+    --border: #333333;
+    --input: #404040;
+    --ring: #8f8f8f;
+    --sidebar: #101010;
+    --sidebar-foreground: #e8e8e8;
+    --sidebar-primary: #d4d4d4;
+    --sidebar-primary-foreground: #161616;
+    --sidebar-accent: #1f1f1f;
+    --sidebar-accent-foreground: #e8e8e8;
+    --sidebar-border: #262626;
+    --sidebar-ring: #8f8f8f;
+}
+
+.snow {
+    /* Strict cool light — slate-tinted chrome, GitHub-light blue */
+    --background: #fafbfc;
+    --foreground: #1f2328;
+    --card: #ffffff;
+    --card-foreground: #1f2328;
+    --popover: #ffffff;
+    --popover-foreground: #1f2328;
+    --primary: #0969da;
+    --primary-foreground: #ffffff;
+    --primary-hover: #0550ae;
+    --link: #0969da;
+    --secondary: #eaeef2;
+    --secondary-foreground: #1f2328;
+    --muted: #f6f8fa;
+    --muted-foreground: #59636e;
+    --accent: #eaeef2;
+    --accent-foreground: #1f2328;
+    --surface-hover: #eaeef2;
+    --destructive: #cf222e;
+    --border: #d0d7de;
+    --input: #afb8c1;
+    --ring: #218bff;
+    --sidebar: #f6f8fa;
+    --sidebar-foreground: #1f2328;
+    --sidebar-primary: #0969da;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #eaeef2;
+    --sidebar-accent-foreground: #1f2328;
+    --sidebar-border: #d0d7de;
+    --sidebar-ring: #218bff;
+}
+
+.paper {
+    /* Strict warm light — off-white paper, ink primary */
+    --background: #faf9f7;
+    --foreground: #2b2823;
+    --card: #ffffff;
+    --card-foreground: #2b2823;
+    --popover: #ffffff;
+    --popover-foreground: #2b2823;
+    --primary: #37332c;
+    --primary-foreground: #faf9f7;
+    --primary-hover: #24211b;
+    --link: #175dc7;
+    --secondary: #efece6;
+    --secondary-foreground: #2b2823;
+    --muted: #f4f2ee;
+    --muted-foreground: #6f6a60;
+    --accent: #efece6;
+    --accent-foreground: #2b2823;
+    --surface-hover: #efece6;
+    --destructive: #c93b26;
+    --border: #e3ded4;
+    --input: #cbc4b6;
+    --ring: #8a8375;
+    --sidebar: #f4f2ee;
+    --sidebar-foreground: #2b2823;
+    --sidebar-primary: #37332c;
+    --sidebar-primary-foreground: #faf9f7;
+    --sidebar-accent: #efece6;
+    --sidebar-accent-foreground: #2b2823;
+    --sidebar-border: #e3ded4;
+    --sidebar-ring: #8a8375;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}

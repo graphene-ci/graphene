@@ -24,6 +24,10 @@ lint: ## Run Go linters
 build: ## Build the server binary
 	go build ./cmd/graphene-server
 
+.PHONY: generate
+generate: ## Generate Go + TS contracts from proto (needs web/node_modules)
+	PATH="$(CURDIR)/web/node_modules/.bin:$(PATH)" easyp generate
+
 .PHONY: help
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
