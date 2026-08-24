@@ -81,6 +81,16 @@ type File struct {
 		Key string `mapstructure:"key"`
 	} `mapstructure:"secrets"`
 
+	Vars struct {
+		// Values seeds name -> value. A variable is the visible sibling
+		// of a secret: environment configuration params reference as
+		// "${var:name}" — substituted by the door on run start.
+		Values map[string]string `mapstructure:"values"`
+		// Store persists variables on the server's volume, sealed with
+		// the secrets key when one is set.
+		Store string `mapstructure:"store" default:"/var/lib/graphene/vars.enc"`
+	} `mapstructure:"vars"`
+
 	Otel struct {
 		// The OTLP/HTTP ingest URLs the door forwards each signal to —
 		// the backends speak OTLP directly, no collector needed. Empty
@@ -130,6 +140,8 @@ type Config struct {
 	// keeps secrets in memory.
 	SecretsStore string
 	SecretsKey   string
+	Vars         map[string]string
+	VarsStore    string
 
 	BlobBackend      string
 	BlobDir          string
@@ -216,6 +228,8 @@ func Resolve(f File) (Config, error) {
 		Secrets:               map[string]string{},
 		SecretsStore:          f.Secrets.Store,
 		SecretsKey:            f.Secrets.Key,
+		Vars:                  f.Vars.Values,
+		VarsStore:             f.Vars.Store,
 	}
 	if cfg.External == "" {
 		cfg.External = cfg.Listen

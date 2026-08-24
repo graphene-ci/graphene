@@ -77,6 +77,17 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		log.Warn("secrets are IN MEMORY — set secrets.key for persistence")
 		secretStore = secrets.NewNamespaced(cfg.Secrets)
 	}
+	// Variables ride the same engine as secrets — one file format, the
+	// same key — but their PLANE differs: values read back.
+	var varStore *secrets.Namespaced
+	if cfg.SecretsKey != "" {
+		varStore, err = secrets.NewPersistent(cfg.VarsStore, cfg.SecretsKey, cfg.Vars)
+		if err != nil {
+			return fmt.Errorf("var store: %w", err)
+		}
+	} else {
+		varStore = secrets.NewNamespaced(cfg.Vars)
+	}
 
 	blobStore, err := buildBlobStore(ctx, cfg)
 	if err != nil {
@@ -106,6 +117,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		TemporalLogger:   logging.Temporal(log),
 		Registry:         registry,
 		Secrets:          secretStore,
+		Vars:             varStore,
 		Blobs:            blobStore,
 		External:         cfg.External,
 		RunTokenFor:      func(ns string) string { return runTokenFor(cfg, ns) },
@@ -144,6 +156,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Bundles: bundles,
 		Base:    temporalClient,
 		Secrets: secretStore,
+		Vars:    varStore,
 		Log:     log.With(xlog.String("component", "management")),
 	}
 	observe := &services.Observe{

@@ -147,6 +147,74 @@ func NewSecret(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
+// NewVar builds the `var` tree: variables are the visible sibling of
+// secrets — environment configuration params reference as
+// "${var:name}"; the door substitutes values on run start.
+func NewVar(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "var",
+		Short: "Variables: set, list, delete — visible configuration",
+	}
+	set := &cobra.Command{
+		Use:   "set <name> <value>",
+		Short: "Set a variable",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			if _, err := d.Vars.SetVar(cmd.Context(), connect.NewRequest(&managementv1.SetVarRequest{
+				Name: args[0], Value: args[1],
+			})); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "var %s set\n", args[0])
+			return nil
+		},
+	}
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List variables with values",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Vars.ListVars(cmd.Context(), connect.NewRequest(&managementv1.ListVarsRequest{}))
+			if err != nil {
+				return err
+			}
+			if done, err := f.Emit(resp.Msg); done || err != nil {
+				return err
+			}
+			for _, v := range resp.Msg.GetVars() {
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\n", v.GetName(), v.GetValue())
+			}
+			return nil
+		},
+	}
+	del := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a variable",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			if _, err := d.Vars.DeleteVar(cmd.Context(), connect.NewRequest(&managementv1.DeleteVarRequest{Name: args[0]})); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "var %s deleted\n", args[0])
+			return nil
+		},
+	}
+	cmd.AddCommand(set, list, del)
+	return cmd
+}
+
 // NewNs builds the `ns` tree.
 func NewNs(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{

@@ -38,6 +38,7 @@ type Deps struct {
 	TemporalLogger   log.Logger
 	Registry         *agents.Registry
 	Secrets          *secrets.Namespaced
+	Vars             *secrets.Namespaced
 	Blobs            blob.Store
 	External         string
 	// RunTokenFor returns the run token of a namespace.
@@ -62,6 +63,11 @@ type Bundle struct {
 	Client    client.Client
 	Worker    *worker.Worker
 	Runner    *managed.Runner
+	// Secrets and Vars are the namespace-bound value stores: on run
+	// start the door substitutes ${var:...} params and checks that
+	// secret-typed params name existing secrets.
+	Secrets secrets.Store
+	Vars    secrets.Store
 }
 
 // Manager builds and runs bundles.
@@ -139,7 +145,10 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
 		m.deps.LogSink, log.With(xlog.String("component", "managed")))
 
-	b := &Bundle{Namespace: namespace, Client: c, Worker: w, Runner: runner}
+	b := &Bundle{
+		Namespace: namespace, Client: c, Worker: w, Runner: runner,
+		Secrets: m.deps.Secrets.In(namespace), Vars: m.deps.Vars.In(namespace),
+	}
 	if m.deps.MakeRunStarter != nil {
 		// Trigger-driven starts go through the same door logic as the
 		// management plane; the starter needs the whole bundle.

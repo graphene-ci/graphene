@@ -28,6 +28,7 @@ func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Aut
 	mount(managementv1connect.NewResourcesAPIHandler(m, opts))
 	mount(managementv1connect.NewNamespacesAPIHandler(m, opts))
 	mount(managementv1connect.NewSecretsAPIHandler(m, opts))
+	mount(managementv1connect.NewVarsAPIHandler(m, opts))
 	mount(managementv1connect.NewObserveAPIHandler(o, opts))
 }
 
