@@ -1,0 +1,24 @@
+{
+  "graphene": {
+    "app": {
+      "title": "Graphene CI",
+      "stackDescription": "Vite + React + TypeScript + Tailwind v4 + shadcn/ui",
+      "itWorks": "Работает",
+      "theme": "Тема",
+      "language": "Язык"
+    },
+    "theme": {
+      "light": "Светлая",
+      "snow": "Снег",
+      "paper": "Бумага",
+      "dark": "Тёмная",
+      "midnight": "Полночь",
+      "graphite": "Графит"
+    },
+    "lang": {
+      "en": "English",
+      "ru": "Русский"
+    }
+  },
+  "common": {}
+}

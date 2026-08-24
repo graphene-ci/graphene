@@ -18,3 +18,9 @@ generate:
       out: .
       opts:
         module: github.com/graphene-ci/graphene
+    # TypeScript for web/ (connect-es v2): protoc-gen-es comes from
+    # web/node_modules/.bin — run through `make generate`.
+    - name: es
+      out: web/src
+      opts:
+        target: ts
