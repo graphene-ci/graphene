@@ -125,7 +125,10 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			ownership.Init(ctx, &st.State, ref.OwnerRef("pipeline/"+spec.PipelineId))
 			return st, nil
 		}),
-		entdefine.WithReconcileEvery[Spec, State](tick, cronTick),
+		entdefine.WithReconcileEvery[Spec, State](tick,
+			func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
+				return cronTick(ctx, ec, tick)
+			}),
 	)
 	ownership.Register(def, func(s *State) *ownership.State { return &s.State })
 	entdefine.Handle(def, func(_ workflow.Context, ec *entdefine.Ctx[Spec, State], _ PauseCmd) (StateRes, error) {
@@ -151,7 +154,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 
 // cronTick fires a due schedule. The record's own timer: no server
 // loop, the firing is an event of THIS history.
-func cronTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
+func cronTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], tick time.Duration) error {
 	spec := ec.Spec()
 	if spec.Kind != "cron" {
 		return nil
@@ -168,7 +171,16 @@ func cronTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
 	if err != nil {
 		return err
 	}
-	if workflow.Now(ctx).Before(next) {
+	now := workflow.Now(ctx)
+	if now.Before(next) {
+		return nil
+	}
+	// A missed slot is SKIPPED, never chased: the timer may wake long
+	// after the slot (worker down, record migrating) and a 03:00
+	// nightly must not fire at 16:39. A slot fires only while fresh —
+	// two ticks of grace; a staler one just advances the clock.
+	if now.Sub(next) > 2*tick {
+		st.LastFired = &now
 		return nil
 	}
 	fire(ctx, spec, st, nil)

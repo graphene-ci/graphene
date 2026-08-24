@@ -22,6 +22,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/worker"
 
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
@@ -436,12 +437,24 @@ func (s *Worker) transferResource(ctx context.Context, req wire.TransferResource
 // Transfer gives a resource to a new owner through the entity's own
 // transfer command: typed for the system kinds, by wire identity for
 // every kind that registered the command (library kinds included).
+//
+// A resource declared inside an ownership chain moves as ONE tree:
+// naming any node hands over the chain's ROOT — the subtree follows by
+// ownership. Declared dependencies are indivisible (a vm on a stand
+// must not strand its subnet under a finishing run); resources with
+// separate fates are simply not chained.
 func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest) error {
+	standId, toStand := strings.CutPrefix(string(req.NewOwner), "stand/")
+	if toStand {
+		// The climb is a STAND semantic: handing over survivors moves
+		// the whole declared tree. A point re-parenting (adopting a
+		// declared child) stays point-wise.
+		req.Resource = s.transferRoot(ctx, req.Resource)
+	}
 	kind, resource, ok := strings.Cut(string(req.Resource), "/")
 	if !ok {
 		return fmt.Errorf("resource ref %q: want kind/id", req.Resource)
 	}
-	standId, toStand := strings.CutPrefix(string(req.NewOwner), "stand/")
 	if req.Keep > 0 && !toStand {
 		return fmt.Errorf("KeepFor is a stand-stay bound; owner %q is not a stand", req.NewOwner)
 	}
@@ -458,6 +471,49 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		return err
 	}
 	return nil
+}
+
+// transferRoot climbs the ancestor chain of a resource: an owner that
+// is itself a RESOURCE record continues the climb; run, stand,
+// pipeline, or no owner ends it. Best effort — an unreadable record
+// transfers what was named.
+func (s *Worker) transferRoot(ctx context.Context, res ref.OwnerRef) ref.OwnerRef {
+	cur := res
+	for range 32 {
+		owner, err := s.ownerOf(ctx, string(cur))
+		if err != nil || owner == "" {
+			return cur
+		}
+		kind, _, ok := strings.Cut(owner, "/")
+		if !ok || kind == "run" || kind == "stand" || kind == "pipeline" {
+			return cur
+		}
+		if cur != res {
+			s.deps.Log.Info("transfer climbs the ownership chain",
+				xlog.String("named", string(res)), xlog.String("via", string(cur)))
+		}
+		cur = ref.OwnerRef(owner)
+	}
+	return cur
+}
+
+// ownerOf reads a record's EntityOwner from visibility — no workflow
+// query, no worker woken.
+func (s *Worker) ownerOf(ctx context.Context, workflowId string) (string, error) {
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, workflowId, "")
+	if err != nil {
+		return "", err
+	}
+	fields := desc.GetWorkflowExecutionInfo().GetSearchAttributes().GetIndexedFields()
+	payload, ok := fields[wire.SearchAttrOwner.GetName()]
+	if !ok {
+		return "", nil
+	}
+	var owner string
+	if err := converter.GetDefaultDataConverter().FromPayload(payload, &owner); err != nil {
+		return "", err
+	}
+	return owner, nil
 }
 
 // transferCmd lands transfer-owner on the resource itself.
