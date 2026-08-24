@@ -6,6 +6,7 @@
 package standflow
 
 import (
+	"strings"
 	"fmt"
 	"time"
 
@@ -175,13 +176,27 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 }
 
 // expireTick tears down what outstayed its keep — the stand's own
-// clock, not a server scan.
+// clock, not a server scan. A holding whose ORIGIN run still runs is
+// left alone until the run ends: ToStand happens mid-workflow, and a
+// short keep must never tear the tree from under the run that handed
+// it over.
 func expireTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
 	st := ec.State()
 	now := workflow.Now(ctx)
 	for held, h := range st.Holdings {
 		if h.KeepUntil == nil || h.KeepUntil.After(now) {
 			continue
+		}
+		if strings.HasPrefix(h.From, "run/") {
+			var active bool
+			if err := workflow.ExecuteActivity(serverActx(ctx), RunActiveActivity, h.From).Get(ctx, &active); err != nil {
+				return err
+			}
+			if active {
+				workflow.GetLogger(ctx).Info("stand TTL expired, awaiting the origin run",
+					"resource", held, "run", h.From)
+				continue
+			}
 		}
 		workflow.GetLogger(ctx).Info("stand TTL expired", "resource", held)
 		if err := cascade(ctx, held); err != nil {
@@ -192,9 +207,17 @@ func expireTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
 	return nil
 }
 
+// RunActiveActivity reports whether a workflow (a run) is still
+// running — served by the graphene worker.
+const RunActiveActivity = "stand.run-active"
+
 // cascade runs the server-side teardown of one held subtree.
 func cascade(ctx workflow.Context, held string) error {
-	actx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+	return workflow.ExecuteActivity(serverActx(ctx), CascadeActivity, held).Get(ctx, nil)
+}
+
+func serverActx(ctx workflow.Context) workflow.Context {
+	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		TaskQueue:           wire.ServerQueue,
 		StartToCloseTimeout: 10 * time.Minute,
 		HeartbeatTimeout:    time.Minute,
@@ -204,5 +227,4 @@ func cascade(ctx workflow.Context, held string) error {
 			MaximumInterval:    time.Minute,
 		},
 	})
-	return workflow.ExecuteActivity(actx, CascadeActivity, held).Get(ctx, nil)
 }
