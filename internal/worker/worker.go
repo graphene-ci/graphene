@@ -124,6 +124,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.publishCapability, activity.RegisterOptions{Name: wire.PublishCapabilityActivity})
 	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
 	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
+	w.RegisterActivityWithOptions(s.runActive, activity.RegisterOptions{Name: standflow.RunActiveActivity})
 	// The trigger contour: the arbiter's arms and the firing path.
 	w.RegisterActivityWithOptions(s.triggerFire, activity.RegisterOptions{Name: triggerflow.FireActivity})
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
@@ -198,6 +199,17 @@ func (s *Worker) cancelRuns(ctx context.Context, pipelineId string) error {
 		}
 	}
 	return nil
+}
+
+// runActive reports whether a workflow (a run) still runs — the
+// stand's guard against tearing a holding from under its origin.
+func (s *Worker) runActive(ctx context.Context, workflowId string) (bool, error) {
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, workflowId, "")
+	if err != nil {
+		// An unknown record is not a live run.
+		return false, nil
+	}
+	return desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING, nil
 }
 
 // standCascade is the stand's teardown arm: subtree first, then the
@@ -429,8 +441,13 @@ func labelsMatch(want, have map[string]string) bool {
 	return true
 }
 
-// transferResource is the activity form of Transfer.
+// transferResource is the activity form of Transfer. The calling
+// workflow (the run doing ToStand) is stamped as the transfer's
+// origin: the stand will not tear the holding down from under it.
 func (s *Worker) transferResource(ctx context.Context, req wire.TransferResourceRequest) error {
+	if req.From == "" {
+		req.From = activity.GetInfo(ctx).WorkflowExecution.ID
+	}
 	return s.Transfer(ctx, req)
 }
 
@@ -467,7 +484,7 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
 		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
 			standflow.Spec{PipelineId: standId},
-			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep})
+			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From})
 		return err
 	}
 	return nil
