@@ -7,6 +7,7 @@ import (
 	"github.com/gopherex/schemapb/go/schemapb"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 )
@@ -68,16 +69,32 @@ func TestCheckSecretRefs(t *testing.T) {
 
 // A listing narrowed to one kind must be authorized against THAT kind,
 // not against everything: "list pipelines" is not "list the world".
+// The kind comes from the selector a client fills, or from the raw
+// query when someone writes one by hand.
 func TestKindFromQuery(t *testing.T) {
 	for query, want := range map[string]string{
-		"EntityKind = 'pipeline'":                            "pipeline",
+		"EntityKind = 'pipeline'":                             "pipeline",
 		"EntityKind='revision' AND ExecutionStatus='Running'": "revision",
-		"EntityKind = 'k8s.compute.Instance'":                "resource",
-		"ExecutionStatus = 'Running'":                        "*",
-		"":                                                   "*",
+		"EntityKind = 'k8s.compute.Instance'":                 "resource",
+		"ExecutionStatus = 'Running'":                         "*",
+		"":                                                    "*",
 	} {
-		if got := string(kindFromQuery(query)); got != want {
-			t.Fatalf("kindFromQuery(%q) = %q, want %q", query, got, want)
+		if got := string(listedKind(nil, query)); got != want {
+			t.Fatalf("listedKind(nil, %q) = %q, want %q", query, got, want)
 		}
+	}
+}
+
+// The selector is how a client narrows a listing; authorization must
+// read it, not just a hand-written query.
+func TestListedKindFromSelector(t *testing.T) {
+	if got := string(listedKind(&managementv1.Selector{Kind: "pipeline"}, "")); got != "pipeline" {
+		t.Fatalf("selector kind ignored: %q", got)
+	}
+	if got := string(listedKind(&managementv1.Selector{Kind: "docker"}, "")); got != "resource" {
+		t.Fatalf("a user's own kind must be the resource group: %q", got)
+	}
+	if got := string(listedKind(nil, "")); got != "*" {
+		t.Fatalf("an unnarrowed listing must need everything: %q", got)
 	}
 }

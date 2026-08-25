@@ -254,10 +254,14 @@ func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[manage
 	return connect.NewResponse(&managementv1.CancelRunResponse{}), nil
 }
 
-// kindFromQuery reads the kind a listing is narrowed to. A listing of
-// ONE kind is authorized against that kind; a listing of everything
+// listedKind reads the kind a listing is narrowed to — from the
+// selector a client fills, or from the raw visibility query. A listing
+// of ONE kind is authorized against that kind; a listing of everything
 // needs the right to see everything.
-func kindFromQuery(query string) authz.Kind {
+func listedKind(selector *managementv1.Selector, query string) authz.Kind {
+	if k := selector.GetKind(); k != "" {
+		return authz.KindOf(k + "/")
+	}
 	m := kindInQuery.FindStringSubmatch(query)
 	if m == nil {
 		return authz.KindAll
@@ -327,7 +331,7 @@ func decodePageToken(s string) ([]byte, error) {
 // List returns the resources matching the selector.
 func (m *Management) List(ctx context.Context, creq *connect.Request[managementv1.ListRequest]) (*connect.Response[managementv1.ListResponse], error) {
 	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbList, kindFromQuery(req.GetQuery()))
+	b, err := m.allow(ctx, authz.VerbList, listedKind(req.GetSelector(), req.GetQuery()))
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +378,7 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 // execution status — visibility's CountWorkflow, no rows fetched.
 func (m *Management) Count(ctx context.Context, creq *connect.Request[managementv1.CountRequest]) (*connect.Response[managementv1.CountResponse], error) {
 	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbList, kindFromQuery(req.GetQuery()))
+	b, err := m.allow(ctx, authz.VerbList, listedKind(req.GetSelector(), req.GetQuery()))
 	if err != nil {
 		return nil, err
 	}
