@@ -8,80 +8,18 @@ option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;man
 // service accounts of this installation. People come from the identity
 // provider and are never stored here; machines are accounts, and their
 // tokens are issued here and kept by hash only.
+// Roles, bindings and accounts are RECORDS: they are declared with
+// Apply, changed with Invoke and read with Get — no door of their own.
+// Two calls remain here, and only because they cannot be commands:
 service RbacAPI {
-  rpc PutRole(PutRoleRequest) returns (PutRoleResponse);
-  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
-  rpc PutBinding(PutBindingRequest) returns (PutBindingResponse);
-  rpc ListBindings(ListBindingsRequest) returns (ListBindingsResponse);
-  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
-  // IssueToken mints a token for a service account. The VALUE is
-  // returned exactly once, here: the record keeps only its hash.
+  // IssueToken mints a token for a service account. It cannot be a
+  // command: a command's payload AND its result both land in the
+  // record's history, and a token value must land nowhere. The value
+  // is returned exactly once, here; the record keeps only its hash.
   rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
-  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
-  // Whoami answers who the caller is and what they may do — what a UI
-  // needs to decide which buttons exist.
+  // WhoAmI answers who the caller is and what they may do — a property
+  // of the caller, not of any record.
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
-}
-
-message Rule {
-  repeated string verbs = 1;
-  repeated string kinds = 2;
-}
-
-message PutRoleRequest {
-  string name = 1;
-  repeated Rule rules = 2;
-  string description = 3;
-}
-
-message PutRoleResponse {}
-
-message ListRolesRequest {}
-
-message ListRolesResponse {
-  message Role {
-    string name = 1;
-    repeated Rule rules = 2;
-    bool builtin = 3;
-  }
-  repeated Role roles = 1;
-}
-
-message PutBindingRequest {
-  string name = 1;
-  string role = 2;
-  // Subjects are "user:<sub>", "group:<name>" or "sa:<id>".
-  repeated string subjects = 3;
-  // Namespace scopes the binding; "*" is every namespace.
-  string namespace = 4;
-}
-
-message PutBindingResponse {}
-
-message ListBindingsRequest {}
-
-message ListBindingsResponse {
-  message Binding {
-    string name = 1;
-    string role = 2;
-    repeated string subjects = 3;
-    string namespace = 4;
-  }
-  repeated Binding bindings = 1;
-}
-
-message CreateAccountRequest {
-  string name = 1;
-  string description = 2;
-}
-
-message CreateAccountResponse {}
-
-message IssueTokenRequest {
-  string account = 1;
-  // TtlSeconds bounds the token's life; 0 means until it is revoked.
-  int64 ttl_seconds = 2;
-  string comment = 3;
 }
 
 message IssueTokenResponse {
@@ -91,12 +29,12 @@ message IssueTokenResponse {
   string expires = 3;
 }
 
-message RevokeTokenRequest {
+message IssueTokenRequest {
   string account = 1;
-  string token_id = 2;
+  // TtlSeconds bounds the token's life; 0 means until it is revoked.
+  int64 ttl_seconds = 2;
+  string comment = 3;
 }
-
-message RevokeTokenResponse {}
 
 message WhoAmIRequest {}
 

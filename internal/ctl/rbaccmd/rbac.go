@@ -4,6 +4,7 @@
 package rbaccmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -34,21 +35,38 @@ func NewRole(f *cmdutil.Factory) *cobra.Command {
 			if len(rules) == 0 {
 				return fmt.Errorf("a role needs at least one --rule 'verbs:kinds'")
 			}
-			req := &managementv1.PutRoleRequest{Name: args[0], Description: description}
+			parsed := make([]map[string]any, 0, len(rules))
 			for _, raw := range rules {
 				verbs, kinds, ok := strings.Cut(raw, ":")
 				if !ok {
 					return fmt.Errorf("rule %q: want 'verbs:kinds', e.g. 'get,list:pipeline,run'", raw)
 				}
-				req.Rules = append(req.Rules, &managementv1.Rule{
-					Verbs: splitList(verbs), Kinds: splitList(kinds),
+				parsed = append(parsed, map[string]any{
+					"verbs": splitList(verbs), "kinds": splitList(kinds),
 				})
+			}
+			spec, err := json.Marshal(map[string]any{
+				"rules":       parsed,
+				"description": description,
+			})
+			if err != nil {
+				return err
 			}
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			if _, err := d.Rbac.PutRole(cmd.Context(), connect.NewRequest(req)); err != nil {
+			// A role is an ordinary record: it is declared through the
+			// one door every kind is declared through, and its rules are
+			// replaced by its own command.
+			if _, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "role", Id: args[0], Spec: spec,
+			})); err != nil {
+				return err
+			}
+			if _, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
+				Ref: "role/" + args[0], Command: "set-rules", Payload: mustJSON(map[string]any{"rules": parsed}),
+			})); err != nil {
 				return err
 			}
 			fmt.Fprintf(os.Stderr, "role %s written\n", args[0])
@@ -67,24 +85,30 @@ func NewRole(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Rbac.ListRoles(cmd.Context(), connect.NewRequest(&managementv1.ListRolesRequest{}))
+			// Roles are records: they are listed and read through the
+			// same door as everything else. The built-ins live in the
+			// code, not in records, so they are named here.
+			records, err := listRecords(cmd, d, "role")
 			if err != nil {
 				return err
 			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
+			fmt.Fprintf(cmdutil.Out, "ROLE\tRULES\n")
+			for _, name := range builtinRoles {
+				fmt.Fprintf(cmdutil.Out, "%s\t(built in)\n", name)
 			}
-			fmt.Fprintf(cmdutil.Out, "ROLE\tBUILTIN\tRULES\n")
-			for _, r := range resp.Msg.GetRoles() {
-				builtin := ""
-				if r.GetBuiltin() {
-					builtin = "*"
+			for _, rec := range records {
+				var st struct {
+					Rules []struct {
+						Verbs []string `json:"verbs"`
+						Kinds []string `json:"kinds"`
+					} `json:"rules"`
 				}
-				parts := make([]string, 0, len(r.GetRules()))
-				for _, rule := range r.GetRules() {
-					parts = append(parts, strings.Join(rule.GetVerbs(), ",")+":"+strings.Join(rule.GetKinds(), ","))
+				_ = json.Unmarshal(rec.state, &st)
+				parts := make([]string, 0, len(st.Rules))
+				for _, rule := range st.Rules {
+					parts = append(parts, strings.Join(rule.Verbs, ",")+":"+strings.Join(rule.Kinds, ","))
 				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\n", r.GetName(), builtin, strings.Join(parts, "  "))
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\n", rec.id, strings.Join(parts, "  "))
 			}
 			return nil
 		},
@@ -114,8 +138,11 @@ func NewBinding(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := d.Rbac.PutBinding(cmd.Context(), connect.NewRequest(&managementv1.PutBindingRequest{
-				Name: args[0], Role: role, Subjects: subjects, Namespace: namespace,
+			spec := mustJSON(map[string]any{
+				"role": role, "subjects": subjectsOf(subjects), "namespace": namespace,
+			})
+			if _, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "rolebinding", Id: args[0], Spec: spec,
 			})); err != nil {
 				return err
 			}
@@ -136,16 +163,26 @@ func NewBinding(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Rbac.ListBindings(cmd.Context(), connect.NewRequest(&managementv1.ListBindingsRequest{}))
+			records, err := listRecords(cmd, d, "rolebinding")
 			if err != nil {
 				return err
 			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
-			}
-			fmt.Fprintf(cmdutil.Out, "ROLE\tNAMESPACE\tSUBJECTS\n")
-			for _, b := range resp.Msg.GetBindings() {
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\n", b.GetRole(), b.GetNamespace(), strings.Join(b.GetSubjects(), ", "))
+			fmt.Fprintf(cmdutil.Out, "BINDING\tROLE\tNAMESPACE\tSUBJECTS\n")
+			for _, rec := range records {
+				var st struct {
+					Role      string `json:"role"`
+					Namespace string `json:"namespace"`
+					Subjects  []struct {
+						Kind string `json:"kind"`
+						Name string `json:"name"`
+					} `json:"subjects"`
+				}
+				_ = json.Unmarshal(rec.state, &st)
+				subjects := make([]string, 0, len(st.Subjects))
+				for _, sub := range st.Subjects {
+					subjects = append(subjects, sub.Kind+":"+sub.Name)
+				}
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\n", rec.id, st.Role, st.Namespace, strings.Join(subjects, ", "))
 			}
 			return nil
 		},
@@ -171,8 +208,9 @@ func NewAccount(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := d.Rbac.CreateAccount(cmd.Context(), connect.NewRequest(&managementv1.CreateAccountRequest{
-				Name: args[0], Description: description,
+			if _, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "serviceaccount", Id: args[0],
+				Spec: mustJSON(map[string]any{"description": description}),
 			})); err != nil {
 				return err
 			}
@@ -223,8 +261,9 @@ func NewAccount(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := d.Rbac.RevokeToken(cmd.Context(), connect.NewRequest(&managementv1.RevokeTokenRequest{
-				Account: args[0], TokenId: args[1],
+			if _, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
+				Ref: "serviceaccount/" + args[0], Command: "revoke-token",
+				Payload: mustJSON(map[string]any{"id": args[1]}),
 			})); err != nil {
 				return err
 			}
@@ -282,4 +321,50 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// subjectsOf parses "kind:name" into the shape a binding declares.
+func subjectsOf(subjects []string) []map[string]string {
+	out := make([]map[string]string, 0, len(subjects))
+	for _, s := range subjects {
+		kind, name, _ := strings.Cut(s, ":")
+		out = append(out, map[string]string{"kind": kind, "name": name})
+	}
+	return out
+}
+
+func mustJSON(v any) []byte {
+	raw, _ := json.Marshal(v)
+	return raw
+}
+
+// builtinRoles are the roles every installation starts with; they live
+// in the code, so no record answers for them.
+var builtinRoles = []string{"admin", "developer", "viewer", "agent", "run"}
+
+// record is one listed record with its state.
+type record struct {
+	id    string
+	state []byte
+}
+
+// listRecords lists a kind through the general door and reads each
+// one's state — the same two verbs any client would use.
+func listRecords(cmd *cobra.Command, d *cmdutil.Door, kind string) ([]record, error) {
+	list, err := d.Resources.List(cmd.Context(), connect.NewRequest(&managementv1.ListRequest{
+		Selector: &managementv1.Selector{Kind: kind},
+	}))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]record, 0, len(list.Msg.GetResources()))
+	for _, res := range list.Msg.GetResources() {
+		got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{Ref: res.GetRef()}))
+		if err != nil {
+			continue
+		}
+		id := strings.TrimPrefix(res.GetRef(), kind+"/")
+		out = append(out, record{id: id, state: got.Msg.GetResource().GetState()})
+	}
+	return out, nil
 }

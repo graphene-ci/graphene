@@ -19,14 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RbacAPI_PutRole_FullMethodName       = "/graphene.management.v1.RbacAPI/PutRole"
-	RbacAPI_ListRoles_FullMethodName     = "/graphene.management.v1.RbacAPI/ListRoles"
-	RbacAPI_PutBinding_FullMethodName    = "/graphene.management.v1.RbacAPI/PutBinding"
-	RbacAPI_ListBindings_FullMethodName  = "/graphene.management.v1.RbacAPI/ListBindings"
-	RbacAPI_CreateAccount_FullMethodName = "/graphene.management.v1.RbacAPI/CreateAccount"
-	RbacAPI_IssueToken_FullMethodName    = "/graphene.management.v1.RbacAPI/IssueToken"
-	RbacAPI_RevokeToken_FullMethodName   = "/graphene.management.v1.RbacAPI/RevokeToken"
-	RbacAPI_WhoAmI_FullMethodName        = "/graphene.management.v1.RbacAPI/WhoAmI"
+	RbacAPI_IssueToken_FullMethodName = "/graphene.management.v1.RbacAPI/IssueToken"
+	RbacAPI_WhoAmI_FullMethodName     = "/graphene.management.v1.RbacAPI/WhoAmI"
 )
 
 // RbacAPIClient is the client API for RbacAPI service.
@@ -37,18 +31,17 @@ const (
 // service accounts of this installation. People come from the identity
 // provider and are never stored here; machines are accounts, and their
 // tokens are issued here and kept by hash only.
+// Roles, bindings and accounts are RECORDS: they are declared with
+// Apply, changed with Invoke and read with Get — no door of their own.
+// Two calls remain here, and only because they cannot be commands:
 type RbacAPIClient interface {
-	PutRole(ctx context.Context, in *PutRoleRequest, opts ...grpc.CallOption) (*PutRoleResponse, error)
-	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
-	PutBinding(ctx context.Context, in *PutBindingRequest, opts ...grpc.CallOption) (*PutBindingResponse, error)
-	ListBindings(ctx context.Context, in *ListBindingsRequest, opts ...grpc.CallOption) (*ListBindingsResponse, error)
-	CreateAccount(ctx context.Context, in *CreateAccountRequest, opts ...grpc.CallOption) (*CreateAccountResponse, error)
-	// IssueToken mints a token for a service account. The VALUE is
-	// returned exactly once, here: the record keeps only its hash.
+	// IssueToken mints a token for a service account. It cannot be a
+	// command: a command's payload AND its result both land in the
+	// record's history, and a token value must land nowhere. The value
+	// is returned exactly once, here; the record keeps only its hash.
 	IssueToken(ctx context.Context, in *IssueTokenRequest, opts ...grpc.CallOption) (*IssueTokenResponse, error)
-	RevokeToken(ctx context.Context, in *RevokeTokenRequest, opts ...grpc.CallOption) (*RevokeTokenResponse, error)
-	// Whoami answers who the caller is and what they may do — what a UI
-	// needs to decide which buttons exist.
+	// WhoAmI answers who the caller is and what they may do — a property
+	// of the caller, not of any record.
 	WhoAmI(ctx context.Context, in *WhoAmIRequest, opts ...grpc.CallOption) (*WhoAmIResponse, error)
 }
 
@@ -60,70 +53,10 @@ func NewRbacAPIClient(cc grpc.ClientConnInterface) RbacAPIClient {
 	return &rbacAPIClient{cc}
 }
 
-func (c *rbacAPIClient) PutRole(ctx context.Context, in *PutRoleRequest, opts ...grpc.CallOption) (*PutRoleResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PutRoleResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_PutRole_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *rbacAPIClient) ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListRolesResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_ListRoles_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *rbacAPIClient) PutBinding(ctx context.Context, in *PutBindingRequest, opts ...grpc.CallOption) (*PutBindingResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PutBindingResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_PutBinding_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *rbacAPIClient) ListBindings(ctx context.Context, in *ListBindingsRequest, opts ...grpc.CallOption) (*ListBindingsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListBindingsResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_ListBindings_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *rbacAPIClient) CreateAccount(ctx context.Context, in *CreateAccountRequest, opts ...grpc.CallOption) (*CreateAccountResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateAccountResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_CreateAccount_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *rbacAPIClient) IssueToken(ctx context.Context, in *IssueTokenRequest, opts ...grpc.CallOption) (*IssueTokenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IssueTokenResponse)
 	err := c.cc.Invoke(ctx, RbacAPI_IssueToken_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *rbacAPIClient) RevokeToken(ctx context.Context, in *RevokeTokenRequest, opts ...grpc.CallOption) (*RevokeTokenResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RevokeTokenResponse)
-	err := c.cc.Invoke(ctx, RbacAPI_RevokeToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -148,18 +81,17 @@ func (c *rbacAPIClient) WhoAmI(ctx context.Context, in *WhoAmIRequest, opts ...g
 // service accounts of this installation. People come from the identity
 // provider and are never stored here; machines are accounts, and their
 // tokens are issued here and kept by hash only.
+// Roles, bindings and accounts are RECORDS: they are declared with
+// Apply, changed with Invoke and read with Get — no door of their own.
+// Two calls remain here, and only because they cannot be commands:
 type RbacAPIServer interface {
-	PutRole(context.Context, *PutRoleRequest) (*PutRoleResponse, error)
-	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
-	PutBinding(context.Context, *PutBindingRequest) (*PutBindingResponse, error)
-	ListBindings(context.Context, *ListBindingsRequest) (*ListBindingsResponse, error)
-	CreateAccount(context.Context, *CreateAccountRequest) (*CreateAccountResponse, error)
-	// IssueToken mints a token for a service account. The VALUE is
-	// returned exactly once, here: the record keeps only its hash.
+	// IssueToken mints a token for a service account. It cannot be a
+	// command: a command's payload AND its result both land in the
+	// record's history, and a token value must land nowhere. The value
+	// is returned exactly once, here; the record keeps only its hash.
 	IssueToken(context.Context, *IssueTokenRequest) (*IssueTokenResponse, error)
-	RevokeToken(context.Context, *RevokeTokenRequest) (*RevokeTokenResponse, error)
-	// Whoami answers who the caller is and what they may do — what a UI
-	// needs to decide which buttons exist.
+	// WhoAmI answers who the caller is and what they may do — a property
+	// of the caller, not of any record.
 	WhoAmI(context.Context, *WhoAmIRequest) (*WhoAmIResponse, error)
 	mustEmbedUnimplementedRbacAPIServer()
 }
@@ -171,26 +103,8 @@ type RbacAPIServer interface {
 // pointer dereference when methods are called.
 type UnimplementedRbacAPIServer struct{}
 
-func (UnimplementedRbacAPIServer) PutRole(context.Context, *PutRoleRequest) (*PutRoleResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method PutRole not implemented")
-}
-func (UnimplementedRbacAPIServer) ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListRoles not implemented")
-}
-func (UnimplementedRbacAPIServer) PutBinding(context.Context, *PutBindingRequest) (*PutBindingResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method PutBinding not implemented")
-}
-func (UnimplementedRbacAPIServer) ListBindings(context.Context, *ListBindingsRequest) (*ListBindingsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListBindings not implemented")
-}
-func (UnimplementedRbacAPIServer) CreateAccount(context.Context, *CreateAccountRequest) (*CreateAccountResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateAccount not implemented")
-}
 func (UnimplementedRbacAPIServer) IssueToken(context.Context, *IssueTokenRequest) (*IssueTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method IssueToken not implemented")
-}
-func (UnimplementedRbacAPIServer) RevokeToken(context.Context, *RevokeTokenRequest) (*RevokeTokenResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RevokeToken not implemented")
 }
 func (UnimplementedRbacAPIServer) WhoAmI(context.Context, *WhoAmIRequest) (*WhoAmIResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WhoAmI not implemented")
@@ -216,96 +130,6 @@ func RegisterRbacAPIServer(s grpc.ServiceRegistrar, srv RbacAPIServer) {
 	s.RegisterService(&RbacAPI_ServiceDesc, srv)
 }
 
-func _RbacAPI_PutRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutRoleRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).PutRole(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_PutRole_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).PutRole(ctx, req.(*PutRoleRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RbacAPI_ListRoles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListRolesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).ListRoles(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_ListRoles_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).ListRoles(ctx, req.(*ListRolesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RbacAPI_PutBinding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutBindingRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).PutBinding(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_PutBinding_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).PutBinding(ctx, req.(*PutBindingRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RbacAPI_ListBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListBindingsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).ListBindings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_ListBindings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).ListBindings(ctx, req.(*ListBindingsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RbacAPI_CreateAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateAccountRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).CreateAccount(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_CreateAccount_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).CreateAccount(ctx, req.(*CreateAccountRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _RbacAPI_IssueToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(IssueTokenRequest)
 	if err := dec(in); err != nil {
@@ -320,24 +144,6 @@ func _RbacAPI_IssueToken_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RbacAPIServer).IssueToken(ctx, req.(*IssueTokenRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RbacAPI_RevokeToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RevokeTokenRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RbacAPIServer).RevokeToken(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RbacAPI_RevokeToken_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RbacAPIServer).RevokeToken(ctx, req.(*RevokeTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -368,32 +174,8 @@ var RbacAPI_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*RbacAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "PutRole",
-			Handler:    _RbacAPI_PutRole_Handler,
-		},
-		{
-			MethodName: "ListRoles",
-			Handler:    _RbacAPI_ListRoles_Handler,
-		},
-		{
-			MethodName: "PutBinding",
-			Handler:    _RbacAPI_PutBinding_Handler,
-		},
-		{
-			MethodName: "ListBindings",
-			Handler:    _RbacAPI_ListBindings_Handler,
-		},
-		{
-			MethodName: "CreateAccount",
-			Handler:    _RbacAPI_CreateAccount_Handler,
-		},
-		{
 			MethodName: "IssueToken",
 			Handler:    _RbacAPI_IssueToken_Handler,
-		},
-		{
-			MethodName: "RevokeToken",
-			Handler:    _RbacAPI_RevokeToken_Handler,
 		},
 		{
 			MethodName: "WhoAmI",

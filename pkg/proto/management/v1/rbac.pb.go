@@ -21,569 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Rule struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Verbs         []string               `protobuf:"bytes,1,rep,name=verbs,proto3" json:"verbs,omitempty"`
-	Kinds         []string               `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Rule) Reset() {
-	*x = Rule{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Rule) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Rule) ProtoMessage() {}
-
-func (x *Rule) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Rule.ProtoReflect.Descriptor instead.
-func (*Rule) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Rule) GetVerbs() []string {
-	if x != nil {
-		return x.Verbs
-	}
-	return nil
-}
-
-func (x *Rule) GetKinds() []string {
-	if x != nil {
-		return x.Kinds
-	}
-	return nil
-}
-
-type PutRoleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Rules         []*Rule                `protobuf:"bytes,2,rep,name=rules,proto3" json:"rules,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PutRoleRequest) Reset() {
-	*x = PutRoleRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PutRoleRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PutRoleRequest) ProtoMessage() {}
-
-func (x *PutRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PutRoleRequest.ProtoReflect.Descriptor instead.
-func (*PutRoleRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *PutRoleRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *PutRoleRequest) GetRules() []*Rule {
-	if x != nil {
-		return x.Rules
-	}
-	return nil
-}
-
-func (x *PutRoleRequest) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-type PutRoleResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PutRoleResponse) Reset() {
-	*x = PutRoleResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PutRoleResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PutRoleResponse) ProtoMessage() {}
-
-func (x *PutRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PutRoleResponse.ProtoReflect.Descriptor instead.
-func (*PutRoleResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{2}
-}
-
-type ListRolesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRolesRequest) Reset() {
-	*x = ListRolesRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRolesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRolesRequest) ProtoMessage() {}
-
-func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRolesRequest.ProtoReflect.Descriptor instead.
-func (*ListRolesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{3}
-}
-
-type ListRolesResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Roles         []*ListRolesResponse_Role `protobuf:"bytes,1,rep,name=roles,proto3" json:"roles,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRolesResponse) Reset() {
-	*x = ListRolesResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRolesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRolesResponse) ProtoMessage() {}
-
-func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
-func (*ListRolesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListRolesResponse) GetRoles() []*ListRolesResponse_Role {
-	if x != nil {
-		return x.Roles
-	}
-	return nil
-}
-
-type PutBindingRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Role  string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
-	// Subjects are "user:<sub>", "group:<name>" or "sa:<id>".
-	Subjects []string `protobuf:"bytes,3,rep,name=subjects,proto3" json:"subjects,omitempty"`
-	// Namespace scopes the binding; "*" is every namespace.
-	Namespace     string `protobuf:"bytes,4,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PutBindingRequest) Reset() {
-	*x = PutBindingRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PutBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PutBindingRequest) ProtoMessage() {}
-
-func (x *PutBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PutBindingRequest.ProtoReflect.Descriptor instead.
-func (*PutBindingRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *PutBindingRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *PutBindingRequest) GetRole() string {
-	if x != nil {
-		return x.Role
-	}
-	return ""
-}
-
-func (x *PutBindingRequest) GetSubjects() []string {
-	if x != nil {
-		return x.Subjects
-	}
-	return nil
-}
-
-func (x *PutBindingRequest) GetNamespace() string {
-	if x != nil {
-		return x.Namespace
-	}
-	return ""
-}
-
-type PutBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PutBindingResponse) Reset() {
-	*x = PutBindingResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PutBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PutBindingResponse) ProtoMessage() {}
-
-func (x *PutBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PutBindingResponse.ProtoReflect.Descriptor instead.
-func (*PutBindingResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{6}
-}
-
-type ListBindingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListBindingsRequest) Reset() {
-	*x = ListBindingsRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListBindingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListBindingsRequest) ProtoMessage() {}
-
-func (x *ListBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListBindingsRequest.ProtoReflect.Descriptor instead.
-func (*ListBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{7}
-}
-
-type ListBindingsResponse struct {
-	state         protoimpl.MessageState          `protogen:"open.v1"`
-	Bindings      []*ListBindingsResponse_Binding `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListBindingsResponse) Reset() {
-	*x = ListBindingsResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListBindingsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListBindingsResponse) ProtoMessage() {}
-
-func (x *ListBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListBindingsResponse.ProtoReflect.Descriptor instead.
-func (*ListBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *ListBindingsResponse) GetBindings() []*ListBindingsResponse_Binding {
-	if x != nil {
-		return x.Bindings
-	}
-	return nil
-}
-
-type CreateAccountRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAccountRequest) Reset() {
-	*x = CreateAccountRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAccountRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAccountRequest) ProtoMessage() {}
-
-func (x *CreateAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAccountRequest.ProtoReflect.Descriptor instead.
-func (*CreateAccountRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *CreateAccountRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CreateAccountRequest) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-type CreateAccountResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAccountResponse) Reset() {
-	*x = CreateAccountResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAccountResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAccountResponse) ProtoMessage() {}
-
-func (x *CreateAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAccountResponse.ProtoReflect.Descriptor instead.
-func (*CreateAccountResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{10}
-}
-
-type IssueTokenRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Account string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	// TtlSeconds bounds the token's life; 0 means until it is revoked.
-	TtlSeconds    int64  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	Comment       string `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *IssueTokenRequest) Reset() {
-	*x = IssueTokenRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IssueTokenRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IssueTokenRequest) ProtoMessage() {}
-
-func (x *IssueTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IssueTokenRequest.ProtoReflect.Descriptor instead.
-func (*IssueTokenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *IssueTokenRequest) GetAccount() string {
-	if x != nil {
-		return x.Account
-	}
-	return ""
-}
-
-func (x *IssueTokenRequest) GetTtlSeconds() int64 {
-	if x != nil {
-		return x.TtlSeconds
-	}
-	return 0
-}
-
-func (x *IssueTokenRequest) GetComment() string {
-	if x != nil {
-		return x.Comment
-	}
-	return ""
-}
-
 type IssueTokenResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	TokenId string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
@@ -596,7 +33,7 @@ type IssueTokenResponse struct {
 
 func (x *IssueTokenResponse) Reset() {
 	*x = IssueTokenResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[12]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +45,7 @@ func (x *IssueTokenResponse) String() string {
 func (*IssueTokenResponse) ProtoMessage() {}
 
 func (x *IssueTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[12]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +58,7 @@ func (x *IssueTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueTokenResponse.ProtoReflect.Descriptor instead.
 func (*IssueTokenResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{12}
+	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *IssueTokenResponse) GetTokenId() string {
@@ -645,29 +82,31 @@ func (x *IssueTokenResponse) GetExpires() string {
 	return ""
 }
 
-type RevokeTokenRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Account       string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	TokenId       string                 `protobuf:"bytes,2,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+type IssueTokenRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Account string                 `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	// TtlSeconds bounds the token's life; 0 means until it is revoked.
+	TtlSeconds    int64  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	Comment       string `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RevokeTokenRequest) Reset() {
-	*x = RevokeTokenRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[13]
+func (x *IssueTokenRequest) Reset() {
+	*x = IssueTokenRequest{}
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RevokeTokenRequest) String() string {
+func (x *IssueTokenRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RevokeTokenRequest) ProtoMessage() {}
+func (*IssueTokenRequest) ProtoMessage() {}
 
-func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[13]
+func (x *IssueTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -678,59 +117,30 @@ func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RevokeTokenRequest.ProtoReflect.Descriptor instead.
-func (*RevokeTokenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{13}
+// Deprecated: Use IssueTokenRequest.ProtoReflect.Descriptor instead.
+func (*IssueTokenRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *RevokeTokenRequest) GetAccount() string {
+func (x *IssueTokenRequest) GetAccount() string {
 	if x != nil {
 		return x.Account
 	}
 	return ""
 }
 
-func (x *RevokeTokenRequest) GetTokenId() string {
+func (x *IssueTokenRequest) GetTtlSeconds() int64 {
 	if x != nil {
-		return x.TokenId
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *IssueTokenRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
 	}
 	return ""
-}
-
-type RevokeTokenResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RevokeTokenResponse) Reset() {
-	*x = RevokeTokenResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RevokeTokenResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RevokeTokenResponse) ProtoMessage() {}
-
-func (x *RevokeTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RevokeTokenResponse.ProtoReflect.Descriptor instead.
-func (*RevokeTokenResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{14}
 }
 
 type WhoAmIRequest struct {
@@ -741,7 +151,7 @@ type WhoAmIRequest struct {
 
 func (x *WhoAmIRequest) Reset() {
 	*x = WhoAmIRequest{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[15]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -753,7 +163,7 @@ func (x *WhoAmIRequest) String() string {
 func (*WhoAmIRequest) ProtoMessage() {}
 
 func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[15]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -766,7 +176,7 @@ func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIRequest.ProtoReflect.Descriptor instead.
 func (*WhoAmIRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{15}
+	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{2}
 }
 
 type WhoAmIResponse struct {
@@ -785,7 +195,7 @@ type WhoAmIResponse struct {
 
 func (x *WhoAmIResponse) Reset() {
 	*x = WhoAmIResponse{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[16]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +207,7 @@ func (x *WhoAmIResponse) String() string {
 func (*WhoAmIResponse) ProtoMessage() {}
 
 func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[16]
+	mi := &file_proto_management_v1_rbac_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,7 +220,7 @@ func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIResponse.ProtoReflect.Descriptor instead.
 func (*WhoAmIResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{16}
+	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WhoAmIResponse) GetSubject() string {
@@ -848,202 +258,30 @@ func (x *WhoAmIResponse) GetAllowed() []string {
 	return nil
 }
 
-type ListRolesResponse_Role struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Rules         []*Rule                `protobuf:"bytes,2,rep,name=rules,proto3" json:"rules,omitempty"`
-	Builtin       bool                   `protobuf:"varint,3,opt,name=builtin,proto3" json:"builtin,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRolesResponse_Role) Reset() {
-	*x = ListRolesResponse_Role{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRolesResponse_Role) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRolesResponse_Role) ProtoMessage() {}
-
-func (x *ListRolesResponse_Role) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRolesResponse_Role.ProtoReflect.Descriptor instead.
-func (*ListRolesResponse_Role) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{4, 0}
-}
-
-func (x *ListRolesResponse_Role) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ListRolesResponse_Role) GetRules() []*Rule {
-	if x != nil {
-		return x.Rules
-	}
-	return nil
-}
-
-func (x *ListRolesResponse_Role) GetBuiltin() bool {
-	if x != nil {
-		return x.Builtin
-	}
-	return false
-}
-
-type ListBindingsResponse_Binding struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
-	Subjects      []string               `protobuf:"bytes,3,rep,name=subjects,proto3" json:"subjects,omitempty"`
-	Namespace     string                 `protobuf:"bytes,4,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListBindingsResponse_Binding) Reset() {
-	*x = ListBindingsResponse_Binding{}
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListBindingsResponse_Binding) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListBindingsResponse_Binding) ProtoMessage() {}
-
-func (x *ListBindingsResponse_Binding) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_rbac_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListBindingsResponse_Binding.ProtoReflect.Descriptor instead.
-func (*ListBindingsResponse_Binding) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_rbac_proto_rawDescGZIP(), []int{8, 0}
-}
-
-func (x *ListBindingsResponse_Binding) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ListBindingsResponse_Binding) GetRole() string {
-	if x != nil {
-		return x.Role
-	}
-	return ""
-}
-
-func (x *ListBindingsResponse_Binding) GetSubjects() []string {
-	if x != nil {
-		return x.Subjects
-	}
-	return nil
-}
-
-func (x *ListBindingsResponse_Binding) GetNamespace() string {
-	if x != nil {
-		return x.Namespace
-	}
-	return ""
-}
-
 var File_proto_management_v1_rbac_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_rbac_proto_rawDesc = "" +
 	"\n" +
-	"\x1eproto/management/v1/rbac.proto\x12\x16graphene.management.v1\"2\n" +
-	"\x04Rule\x12\x14\n" +
-	"\x05verbs\x18\x01 \x03(\tR\x05verbs\x12\x14\n" +
-	"\x05kinds\x18\x02 \x03(\tR\x05kinds\"z\n" +
-	"\x0ePutRoleRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x122\n" +
-	"\x05rules\x18\x02 \x03(\v2\x1c.graphene.management.v1.RuleR\x05rules\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\x11\n" +
-	"\x0fPutRoleResponse\"\x12\n" +
-	"\x10ListRolesRequest\"\xc3\x01\n" +
-	"\x11ListRolesResponse\x12D\n" +
-	"\x05roles\x18\x01 \x03(\v2..graphene.management.v1.ListRolesResponse.RoleR\x05roles\x1ah\n" +
-	"\x04Role\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x122\n" +
-	"\x05rules\x18\x02 \x03(\v2\x1c.graphene.management.v1.RuleR\x05rules\x12\x18\n" +
-	"\abuiltin\x18\x03 \x01(\bR\abuiltin\"u\n" +
-	"\x11PutBindingRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04role\x18\x02 \x01(\tR\x04role\x12\x1a\n" +
-	"\bsubjects\x18\x03 \x03(\tR\bsubjects\x12\x1c\n" +
-	"\tnamespace\x18\x04 \x01(\tR\tnamespace\"\x14\n" +
-	"\x12PutBindingResponse\"\x15\n" +
-	"\x13ListBindingsRequest\"\xd5\x01\n" +
-	"\x14ListBindingsResponse\x12P\n" +
-	"\bbindings\x18\x01 \x03(\v24.graphene.management.v1.ListBindingsResponse.BindingR\bbindings\x1ak\n" +
-	"\aBinding\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04role\x18\x02 \x01(\tR\x04role\x12\x1a\n" +
-	"\bsubjects\x18\x03 \x03(\tR\bsubjects\x12\x1c\n" +
-	"\tnamespace\x18\x04 \x01(\tR\tnamespace\"L\n" +
-	"\x14CreateAccountRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\"\x17\n" +
-	"\x15CreateAccountResponse\"h\n" +
+	"\x1eproto/management/v1/rbac.proto\x12\x16graphene.management.v1\"_\n" +
+	"\x12IssueTokenResponse\x12\x19\n" +
+	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x12\x18\n" +
+	"\aexpires\x18\x03 \x01(\tR\aexpires\"h\n" +
 	"\x11IssueTokenRequest\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12\x1f\n" +
 	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
 	"ttlSeconds\x12\x18\n" +
-	"\acomment\x18\x03 \x01(\tR\acomment\"_\n" +
-	"\x12IssueTokenResponse\x12\x19\n" +
-	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\x12\x18\n" +
-	"\aexpires\x18\x03 \x01(\tR\aexpires\"I\n" +
-	"\x12RevokeTokenRequest\x12\x18\n" +
-	"\aaccount\x18\x01 \x01(\tR\aaccount\x12\x19\n" +
-	"\btoken_id\x18\x02 \x01(\tR\atokenId\"\x15\n" +
-	"\x13RevokeTokenResponse\"\x0f\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\"\x0f\n" +
 	"\rWhoAmIRequest\"\x90\x01\n" +
 	"\x0eWhoAmIResponse\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
 	"\x06groups\x18\x02 \x03(\tR\x06groups\x12\x1c\n" +
 	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12\x14\n" +
 	"\x05roles\x18\x04 \x03(\tR\x05roles\x12\x18\n" +
-	"\aallowed\x18\x05 \x03(\tR\aallowed2\xab\x06\n" +
-	"\aRbacAPI\x12Z\n" +
-	"\aPutRole\x12&.graphene.management.v1.PutRoleRequest\x1a'.graphene.management.v1.PutRoleResponse\x12`\n" +
-	"\tListRoles\x12(.graphene.management.v1.ListRolesRequest\x1a).graphene.management.v1.ListRolesResponse\x12c\n" +
+	"\aallowed\x18\x05 \x03(\tR\aallowed2\xc7\x01\n" +
+	"\aRbacAPI\x12c\n" +
 	"\n" +
-	"PutBinding\x12).graphene.management.v1.PutBindingRequest\x1a*.graphene.management.v1.PutBindingResponse\x12i\n" +
-	"\fListBindings\x12+.graphene.management.v1.ListBindingsRequest\x1a,.graphene.management.v1.ListBindingsResponse\x12l\n" +
-	"\rCreateAccount\x12,.graphene.management.v1.CreateAccountRequest\x1a-.graphene.management.v1.CreateAccountResponse\x12c\n" +
-	"\n" +
-	"IssueToken\x12).graphene.management.v1.IssueTokenRequest\x1a*.graphene.management.v1.IssueTokenResponse\x12f\n" +
-	"\vRevokeToken\x12*.graphene.management.v1.RevokeTokenRequest\x1a+.graphene.management.v1.RevokeTokenResponse\x12W\n" +
+	"IssueToken\x12).graphene.management.v1.IssueTokenRequest\x1a*.graphene.management.v1.IssueTokenResponse\x12W\n" +
 	"\x06WhoAmI\x12%.graphene.management.v1.WhoAmIRequest\x1a&.graphene.management.v1.WhoAmIResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
@@ -1058,54 +296,23 @@ func file_proto_management_v1_rbac_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_rbac_proto_rawDescData
 }
 
-var file_proto_management_v1_rbac_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_proto_management_v1_rbac_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_management_v1_rbac_proto_goTypes = []any{
-	(*Rule)(nil),                         // 0: graphene.management.v1.Rule
-	(*PutRoleRequest)(nil),               // 1: graphene.management.v1.PutRoleRequest
-	(*PutRoleResponse)(nil),              // 2: graphene.management.v1.PutRoleResponse
-	(*ListRolesRequest)(nil),             // 3: graphene.management.v1.ListRolesRequest
-	(*ListRolesResponse)(nil),            // 4: graphene.management.v1.ListRolesResponse
-	(*PutBindingRequest)(nil),            // 5: graphene.management.v1.PutBindingRequest
-	(*PutBindingResponse)(nil),           // 6: graphene.management.v1.PutBindingResponse
-	(*ListBindingsRequest)(nil),          // 7: graphene.management.v1.ListBindingsRequest
-	(*ListBindingsResponse)(nil),         // 8: graphene.management.v1.ListBindingsResponse
-	(*CreateAccountRequest)(nil),         // 9: graphene.management.v1.CreateAccountRequest
-	(*CreateAccountResponse)(nil),        // 10: graphene.management.v1.CreateAccountResponse
-	(*IssueTokenRequest)(nil),            // 11: graphene.management.v1.IssueTokenRequest
-	(*IssueTokenResponse)(nil),           // 12: graphene.management.v1.IssueTokenResponse
-	(*RevokeTokenRequest)(nil),           // 13: graphene.management.v1.RevokeTokenRequest
-	(*RevokeTokenResponse)(nil),          // 14: graphene.management.v1.RevokeTokenResponse
-	(*WhoAmIRequest)(nil),                // 15: graphene.management.v1.WhoAmIRequest
-	(*WhoAmIResponse)(nil),               // 16: graphene.management.v1.WhoAmIResponse
-	(*ListRolesResponse_Role)(nil),       // 17: graphene.management.v1.ListRolesResponse.Role
-	(*ListBindingsResponse_Binding)(nil), // 18: graphene.management.v1.ListBindingsResponse.Binding
+	(*IssueTokenResponse)(nil), // 0: graphene.management.v1.IssueTokenResponse
+	(*IssueTokenRequest)(nil),  // 1: graphene.management.v1.IssueTokenRequest
+	(*WhoAmIRequest)(nil),      // 2: graphene.management.v1.WhoAmIRequest
+	(*WhoAmIResponse)(nil),     // 3: graphene.management.v1.WhoAmIResponse
 }
 var file_proto_management_v1_rbac_proto_depIdxs = []int32{
-	0,  // 0: graphene.management.v1.PutRoleRequest.rules:type_name -> graphene.management.v1.Rule
-	17, // 1: graphene.management.v1.ListRolesResponse.roles:type_name -> graphene.management.v1.ListRolesResponse.Role
-	18, // 2: graphene.management.v1.ListBindingsResponse.bindings:type_name -> graphene.management.v1.ListBindingsResponse.Binding
-	0,  // 3: graphene.management.v1.ListRolesResponse.Role.rules:type_name -> graphene.management.v1.Rule
-	1,  // 4: graphene.management.v1.RbacAPI.PutRole:input_type -> graphene.management.v1.PutRoleRequest
-	3,  // 5: graphene.management.v1.RbacAPI.ListRoles:input_type -> graphene.management.v1.ListRolesRequest
-	5,  // 6: graphene.management.v1.RbacAPI.PutBinding:input_type -> graphene.management.v1.PutBindingRequest
-	7,  // 7: graphene.management.v1.RbacAPI.ListBindings:input_type -> graphene.management.v1.ListBindingsRequest
-	9,  // 8: graphene.management.v1.RbacAPI.CreateAccount:input_type -> graphene.management.v1.CreateAccountRequest
-	11, // 9: graphene.management.v1.RbacAPI.IssueToken:input_type -> graphene.management.v1.IssueTokenRequest
-	13, // 10: graphene.management.v1.RbacAPI.RevokeToken:input_type -> graphene.management.v1.RevokeTokenRequest
-	15, // 11: graphene.management.v1.RbacAPI.WhoAmI:input_type -> graphene.management.v1.WhoAmIRequest
-	2,  // 12: graphene.management.v1.RbacAPI.PutRole:output_type -> graphene.management.v1.PutRoleResponse
-	4,  // 13: graphene.management.v1.RbacAPI.ListRoles:output_type -> graphene.management.v1.ListRolesResponse
-	6,  // 14: graphene.management.v1.RbacAPI.PutBinding:output_type -> graphene.management.v1.PutBindingResponse
-	8,  // 15: graphene.management.v1.RbacAPI.ListBindings:output_type -> graphene.management.v1.ListBindingsResponse
-	10, // 16: graphene.management.v1.RbacAPI.CreateAccount:output_type -> graphene.management.v1.CreateAccountResponse
-	12, // 17: graphene.management.v1.RbacAPI.IssueToken:output_type -> graphene.management.v1.IssueTokenResponse
-	14, // 18: graphene.management.v1.RbacAPI.RevokeToken:output_type -> graphene.management.v1.RevokeTokenResponse
-	16, // 19: graphene.management.v1.RbacAPI.WhoAmI:output_type -> graphene.management.v1.WhoAmIResponse
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	1, // 0: graphene.management.v1.RbacAPI.IssueToken:input_type -> graphene.management.v1.IssueTokenRequest
+	2, // 1: graphene.management.v1.RbacAPI.WhoAmI:input_type -> graphene.management.v1.WhoAmIRequest
+	0, // 2: graphene.management.v1.RbacAPI.IssueToken:output_type -> graphene.management.v1.IssueTokenResponse
+	3, // 3: graphene.management.v1.RbacAPI.WhoAmI:output_type -> graphene.management.v1.WhoAmIResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_rbac_proto_init() }
@@ -1119,7 +326,7 @@ func file_proto_management_v1_rbac_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_rbac_proto_rawDesc), len(file_proto_management_v1_rbac_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
