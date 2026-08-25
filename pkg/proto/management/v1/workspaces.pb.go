@@ -587,6 +587,362 @@ func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
 	return nil
 }
 
+type ListFilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFilesRequest) Reset() {
+	*x = ListFilesRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFilesRequest) ProtoMessage() {}
+
+func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
+func (*ListFilesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListFilesRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+type ListFilesResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Files         []*ListFilesResponse_File `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty"`
+	TreeDigest    string                    `protobuf:"bytes,2,opt,name=tree_digest,json=treeDigest,proto3" json:"tree_digest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFilesResponse) Reset() {
+	*x = ListFilesResponse{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFilesResponse) ProtoMessage() {}
+
+func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
+func (*ListFilesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListFilesResponse) GetFiles() []*ListFilesResponse_File {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *ListFilesResponse) GetTreeDigest() string {
+	if x != nil {
+		return x.TreeDigest
+	}
+	return ""
+}
+
+type ReadFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadFileRequest) Reset() {
+	*x = ReadFileRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileRequest) ProtoMessage() {}
+
+func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
+func (*ReadFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ReadFileRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ReadFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ReadFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Content       []byte                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadFileResponse) Reset() {
+	*x = ReadFileResponse{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileResponse) ProtoMessage() {}
+
+func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
+func (*ReadFileResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReadFileResponse) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+type WriteFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteFileRequest) Reset() {
+	*x = WriteFileRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteFileRequest) ProtoMessage() {}
+
+func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
+func (*WriteFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *WriteFileRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *WriteFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WriteFileRequest) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+type WriteFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TreeDigest    string                 `protobuf:"bytes,1,opt,name=tree_digest,json=treeDigest,proto3" json:"tree_digest,omitempty"`
+	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteFileResponse) Reset() {
+	*x = WriteFileResponse{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteFileResponse) ProtoMessage() {}
+
+func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
+func (*WriteFileResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *WriteFileResponse) GetTreeDigest() string {
+	if x != nil {
+		return x.TreeDigest
+	}
+	return ""
+}
+
+func (x *WriteFileResponse) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+type DeleteFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFileRequest) Reset() {
+	*x = DeleteFileRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFileRequest) ProtoMessage() {}
+
+func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
+func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *DeleteFileRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *DeleteFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
 type ListRuntimesResponse_Runtime struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -599,7 +955,7 @@ type ListRuntimesResponse_Runtime struct {
 
 func (x *ListRuntimesResponse_Runtime) Reset() {
 	*x = ListRuntimesResponse_Runtime{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +967,7 @@ func (x *ListRuntimesResponse_Runtime) String() string {
 func (*ListRuntimesResponse_Runtime) ProtoMessage() {}
 
 func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -653,6 +1009,58 @@ func (x *ListRuntimesResponse_Runtime) GetIsDefault() bool {
 		return x.IsDefault
 	}
 	return false
+}
+
+type ListFilesResponse_File struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Size          int64                  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFilesResponse_File) Reset() {
+	*x = ListFilesResponse_File{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFilesResponse_File) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFilesResponse_File) ProtoMessage() {}
+
+func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFilesResponse_File.ProtoReflect.Descriptor instead.
+func (*ListFilesResponse_File) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11, 0}
+}
+
+func (x *ListFilesResponse_File) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListFilesResponse_File) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
 }
 
 var File_proto_management_v1_workspaces_proto protoreflect.FileDescriptor
@@ -704,12 +1112,44 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x04 \x01(\bR\tisDefault2\xcc\x03\n" +
+	"is_default\x18\x04 \x01(\bR\tisDefault\"5\n" +
+	"\x10ListFilesRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\"\xaa\x01\n" +
+	"\x11ListFilesResponse\x12D\n" +
+	"\x05files\x18\x01 \x03(\v2..graphene.management.v1.ListFilesResponse.FileR\x05files\x12\x1f\n" +
+	"\vtree_digest\x18\x02 \x01(\tR\n" +
+	"treeDigest\x1a.\n" +
+	"\x04File\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\"H\n" +
+	"\x0fReadFileRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\",\n" +
+	"\x10ReadFileResponse\x12\x18\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent\"c\n" +
+	"\x10WriteFileRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\"T\n" +
+	"\x11WriteFileResponse\x12\x1f\n" +
+	"\vtree_digest\x18\x01 \x01(\tR\n" +
+	"treeDigest\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\"J\n" +
+	"\x11DeleteFileRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path2\xd3\x06\n" +
 	"\rWorkspacesAPI\x12r\n" +
 	"\x0fCreateWorkspace\x12..graphene.management.v1.CreateWorkspaceRequest\x1a/.graphene.management.v1.CreateWorkspaceResponse\x12l\n" +
 	"\rSyncWorkspace\x12,.graphene.management.v1.SyncWorkspaceRequest\x1a-.graphene.management.v1.SyncWorkspaceResponse\x12n\n" +
 	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01\x12i\n" +
-	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponse\x12`\n" +
+	"\tListFiles\x12(.graphene.management.v1.ListFilesRequest\x1a).graphene.management.v1.ListFilesResponse\x12]\n" +
+	"\bReadFile\x12'.graphene.management.v1.ReadFileRequest\x1a(.graphene.management.v1.ReadFileResponse\x12`\n" +
+	"\tWriteFile\x12(.graphene.management.v1.WriteFileRequest\x1a).graphene.management.v1.WriteFileResponse\x12b\n" +
+	"\n" +
+	"DeleteFile\x12).graphene.management.v1.DeleteFileRequest\x1a).graphene.management.v1.WriteFileResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_workspaces_proto_rawDescOnce sync.Once
@@ -723,7 +1163,7 @@ func file_proto_management_v1_workspaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_workspaces_proto_rawDescData
 }
 
-var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_management_v1_workspaces_proto_goTypes = []any{
 	(*GitSource)(nil),                    // 0: graphene.management.v1.GitSource
 	(*SnapshotSource)(nil),               // 1: graphene.management.v1.SnapshotSource
@@ -735,25 +1175,42 @@ var file_proto_management_v1_workspaces_proto_goTypes = []any{
 	(*DownloadSourceChunk)(nil),          // 7: graphene.management.v1.DownloadSourceChunk
 	(*ListRuntimesRequest)(nil),          // 8: graphene.management.v1.ListRuntimesRequest
 	(*ListRuntimesResponse)(nil),         // 9: graphene.management.v1.ListRuntimesResponse
-	(*ListRuntimesResponse_Runtime)(nil), // 10: graphene.management.v1.ListRuntimesResponse.Runtime
+	(*ListFilesRequest)(nil),             // 10: graphene.management.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),            // 11: graphene.management.v1.ListFilesResponse
+	(*ReadFileRequest)(nil),              // 12: graphene.management.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),             // 13: graphene.management.v1.ReadFileResponse
+	(*WriteFileRequest)(nil),             // 14: graphene.management.v1.WriteFileRequest
+	(*WriteFileResponse)(nil),            // 15: graphene.management.v1.WriteFileResponse
+	(*DeleteFileRequest)(nil),            // 16: graphene.management.v1.DeleteFileRequest
+	(*ListRuntimesResponse_Runtime)(nil), // 17: graphene.management.v1.ListRuntimesResponse.Runtime
+	(*ListFilesResponse_File)(nil),       // 18: graphene.management.v1.ListFilesResponse.File
 }
 var file_proto_management_v1_workspaces_proto_depIdxs = []int32{
 	0,  // 0: graphene.management.v1.CreateWorkspaceRequest.git:type_name -> graphene.management.v1.GitSource
 	1,  // 1: graphene.management.v1.CreateWorkspaceRequest.snapshot:type_name -> graphene.management.v1.SnapshotSource
-	10, // 2: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
-	2,  // 3: graphene.management.v1.WorkspacesAPI.CreateWorkspace:input_type -> graphene.management.v1.CreateWorkspaceRequest
-	4,  // 4: graphene.management.v1.WorkspacesAPI.SyncWorkspace:input_type -> graphene.management.v1.SyncWorkspaceRequest
-	6,  // 5: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
-	8,  // 6: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
-	3,  // 7: graphene.management.v1.WorkspacesAPI.CreateWorkspace:output_type -> graphene.management.v1.CreateWorkspaceResponse
-	5,  // 8: graphene.management.v1.WorkspacesAPI.SyncWorkspace:output_type -> graphene.management.v1.SyncWorkspaceResponse
-	7,  // 9: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
-	9,  // 10: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
-	7,  // [7:11] is the sub-list for method output_type
-	3,  // [3:7] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 2: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
+	18, // 3: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
+	2,  // 4: graphene.management.v1.WorkspacesAPI.CreateWorkspace:input_type -> graphene.management.v1.CreateWorkspaceRequest
+	4,  // 5: graphene.management.v1.WorkspacesAPI.SyncWorkspace:input_type -> graphene.management.v1.SyncWorkspaceRequest
+	6,  // 6: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
+	8,  // 7: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
+	10, // 8: graphene.management.v1.WorkspacesAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
+	12, // 9: graphene.management.v1.WorkspacesAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
+	14, // 10: graphene.management.v1.WorkspacesAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
+	16, // 11: graphene.management.v1.WorkspacesAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
+	3,  // 12: graphene.management.v1.WorkspacesAPI.CreateWorkspace:output_type -> graphene.management.v1.CreateWorkspaceResponse
+	5,  // 13: graphene.management.v1.WorkspacesAPI.SyncWorkspace:output_type -> graphene.management.v1.SyncWorkspaceResponse
+	7,  // 14: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
+	9,  // 15: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
+	11, // 16: graphene.management.v1.WorkspacesAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
+	13, // 17: graphene.management.v1.WorkspacesAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
+	15, // 18: graphene.management.v1.WorkspacesAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
+	15, // 19: graphene.management.v1.WorkspacesAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_workspaces_proto_init() }
@@ -771,7 +1228,7 @@ func file_proto_management_v1_workspaces_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_workspaces_proto_rawDesc), len(file_proto_management_v1_workspaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

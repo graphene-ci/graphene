@@ -45,6 +45,15 @@ const (
 	// WorkspacesAPIListRuntimesProcedure is the fully-qualified name of the WorkspacesAPI's
 	// ListRuntimes RPC.
 	WorkspacesAPIListRuntimesProcedure = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
+	// WorkspacesAPIListFilesProcedure is the fully-qualified name of the WorkspacesAPI's ListFiles RPC.
+	WorkspacesAPIListFilesProcedure = "/graphene.management.v1.WorkspacesAPI/ListFiles"
+	// WorkspacesAPIReadFileProcedure is the fully-qualified name of the WorkspacesAPI's ReadFile RPC.
+	WorkspacesAPIReadFileProcedure = "/graphene.management.v1.WorkspacesAPI/ReadFile"
+	// WorkspacesAPIWriteFileProcedure is the fully-qualified name of the WorkspacesAPI's WriteFile RPC.
+	WorkspacesAPIWriteFileProcedure = "/graphene.management.v1.WorkspacesAPI/WriteFile"
+	// WorkspacesAPIDeleteFileProcedure is the fully-qualified name of the WorkspacesAPI's DeleteFile
+	// RPC.
+	WorkspacesAPIDeleteFileProcedure = "/graphene.management.v1.WorkspacesAPI/DeleteFile"
 )
 
 // WorkspacesAPIClient is a client for the graphene.management.v1.WorkspacesAPI service.
@@ -58,6 +67,13 @@ type WorkspacesAPIClient interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
+	// The working tree is EDITABLE: Studio reads and writes files
+	// straight into the workspace, and every write is durable — that is
+	// the whole point of the tree living on the server.
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
 }
 
 // NewWorkspacesAPIClient constructs a client for the graphene.management.v1.WorkspacesAPI service.
@@ -95,6 +111,30 @@ func NewWorkspacesAPIClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workspacesAPIMethods.ByName("ListRuntimes")),
 			connect.WithClientOptions(opts...),
 		),
+		listFiles: connect.NewClient[v1.ListFilesRequest, v1.ListFilesResponse](
+			httpClient,
+			baseURL+WorkspacesAPIListFilesProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("ListFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		readFile: connect.NewClient[v1.ReadFileRequest, v1.ReadFileResponse](
+			httpClient,
+			baseURL+WorkspacesAPIReadFileProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("ReadFile")),
+			connect.WithClientOptions(opts...),
+		),
+		writeFile: connect.NewClient[v1.WriteFileRequest, v1.WriteFileResponse](
+			httpClient,
+			baseURL+WorkspacesAPIWriteFileProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("WriteFile")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteFile: connect.NewClient[v1.DeleteFileRequest, v1.WriteFileResponse](
+			httpClient,
+			baseURL+WorkspacesAPIDeleteFileProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("DeleteFile")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -104,6 +144,10 @@ type workspacesAPIClient struct {
 	syncWorkspace   *connect.Client[v1.SyncWorkspaceRequest, v1.SyncWorkspaceResponse]
 	downloadSource  *connect.Client[v1.DownloadSourceRequest, v1.DownloadSourceChunk]
 	listRuntimes    *connect.Client[v1.ListRuntimesRequest, v1.ListRuntimesResponse]
+	listFiles       *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	readFile        *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	writeFile       *connect.Client[v1.WriteFileRequest, v1.WriteFileResponse]
+	deleteFile      *connect.Client[v1.DeleteFileRequest, v1.WriteFileResponse]
 }
 
 // CreateWorkspace calls graphene.management.v1.WorkspacesAPI.CreateWorkspace.
@@ -126,6 +170,26 @@ func (c *workspacesAPIClient) ListRuntimes(ctx context.Context, req *connect.Req
 	return c.listRuntimes.CallUnary(ctx, req)
 }
 
+// ListFiles calls graphene.management.v1.WorkspacesAPI.ListFiles.
+func (c *workspacesAPIClient) ListFiles(ctx context.Context, req *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return c.listFiles.CallUnary(ctx, req)
+}
+
+// ReadFile calls graphene.management.v1.WorkspacesAPI.ReadFile.
+func (c *workspacesAPIClient) ReadFile(ctx context.Context, req *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return c.readFile.CallUnary(ctx, req)
+}
+
+// WriteFile calls graphene.management.v1.WorkspacesAPI.WriteFile.
+func (c *workspacesAPIClient) WriteFile(ctx context.Context, req *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
+	return c.writeFile.CallUnary(ctx, req)
+}
+
+// DeleteFile calls graphene.management.v1.WorkspacesAPI.DeleteFile.
+func (c *workspacesAPIClient) DeleteFile(ctx context.Context, req *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
+	return c.deleteFile.CallUnary(ctx, req)
+}
+
 // WorkspacesAPIHandler is an implementation of the graphene.management.v1.WorkspacesAPI service.
 type WorkspacesAPIHandler interface {
 	CreateWorkspace(context.Context, *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error)
@@ -137,6 +201,13 @@ type WorkspacesAPIHandler interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
+	// The working tree is EDITABLE: Studio reads and writes files
+	// straight into the workspace, and every write is durable — that is
+	// the whole point of the tree living on the server.
+	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
+	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
+	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
+	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
 }
 
 // NewWorkspacesAPIHandler builds an HTTP handler from the service implementation. It returns the
@@ -170,6 +241,30 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workspacesAPIMethods.ByName("ListRuntimes")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workspacesAPIListFilesHandler := connect.NewUnaryHandler(
+		WorkspacesAPIListFilesProcedure,
+		svc.ListFiles,
+		connect.WithSchema(workspacesAPIMethods.ByName("ListFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workspacesAPIReadFileHandler := connect.NewUnaryHandler(
+		WorkspacesAPIReadFileProcedure,
+		svc.ReadFile,
+		connect.WithSchema(workspacesAPIMethods.ByName("ReadFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workspacesAPIWriteFileHandler := connect.NewUnaryHandler(
+		WorkspacesAPIWriteFileProcedure,
+		svc.WriteFile,
+		connect.WithSchema(workspacesAPIMethods.ByName("WriteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workspacesAPIDeleteFileHandler := connect.NewUnaryHandler(
+		WorkspacesAPIDeleteFileProcedure,
+		svc.DeleteFile,
+		connect.WithSchema(workspacesAPIMethods.ByName("DeleteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/graphene.management.v1.WorkspacesAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkspacesAPICreateWorkspaceProcedure:
@@ -180,6 +275,14 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 			workspacesAPIDownloadSourceHandler.ServeHTTP(w, r)
 		case WorkspacesAPIListRuntimesProcedure:
 			workspacesAPIListRuntimesHandler.ServeHTTP(w, r)
+		case WorkspacesAPIListFilesProcedure:
+			workspacesAPIListFilesHandler.ServeHTTP(w, r)
+		case WorkspacesAPIReadFileProcedure:
+			workspacesAPIReadFileHandler.ServeHTTP(w, r)
+		case WorkspacesAPIWriteFileProcedure:
+			workspacesAPIWriteFileHandler.ServeHTTP(w, r)
+		case WorkspacesAPIDeleteFileProcedure:
+			workspacesAPIDeleteFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -203,4 +306,20 @@ func (UnimplementedWorkspacesAPIHandler) DownloadSource(context.Context, *connec
 
 func (UnimplementedWorkspacesAPIHandler) ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.ListRuntimes is not implemented"))
+}
+
+func (UnimplementedWorkspacesAPIHandler) ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.ListFiles is not implemented"))
+}
+
+func (UnimplementedWorkspacesAPIHandler) ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.ReadFile is not implemented"))
+}
+
+func (UnimplementedWorkspacesAPIHandler) WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.WriteFile is not implemented"))
+}
+
+func (UnimplementedWorkspacesAPIHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.DeleteFile is not implemented"))
 }
