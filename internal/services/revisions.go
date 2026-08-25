@@ -50,22 +50,56 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 	if err != nil {
 		return err
 	}
-	if req.GetPipelineId() == "" {
-		return status.Error(codes.InvalidArgument, "pipeline_id is required")
-	}
-	if len(req.GetSource()) == 0 || len(req.GetSource()) > maxSourceBytes {
-		return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
+	pipelineId := req.GetPipelineId()
+	sourceLocation, digest := "", ""
+	workspaceId := req.GetWorkspaceId()
+
+	switch {
+	case workspaceId != "":
+		// Building a WORKSPACE: its own working tree is the source and
+		// the pipeline is the one it publishes. Nothing is uploaded
+		// here — the tree already lives on the server.
+		_, spec, st, err := b.Worker.DescribeWorkspace(ctx, workspaceId)
+		if err != nil {
+			return status.Errorf(codes.NotFound, "workspace %s: %v", workspaceId, err)
+		}
+		if st.TreeLocation == "" {
+			return status.Errorf(codes.FailedPrecondition, "workspace %s has no working tree yet", workspaceId)
+		}
+		if pipelineId == "" {
+			pipelineId = st.PipelineRef
+			if pipelineId == "" {
+				pipelineId = spec.PipelineId
+			}
+		}
+		if pipelineId == "" {
+			return status.Error(codes.InvalidArgument, "workspace publishes no pipeline yet: name one with pipeline_id")
+		}
+		sourceLocation = st.TreeLocation
+		digest = strings.TrimPrefix(st.TreeDigest, "sha256:")
+	case len(req.GetSource()) > 0:
+		if len(req.GetSource()) > maxSourceBytes {
+			return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
+		}
+		if pipelineId == "" {
+			return status.Error(codes.InvalidArgument, "pipeline_id is required")
+		}
+		sum := sha256.Sum256(req.GetSource())
+		digest = hex.EncodeToString(sum[:])
+		sourceLocation = fmt.Sprintf("sources/%s/%s.tgz", pipelineId, digest[:16])
+		if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(req.GetSource())); err != nil {
+			return status.Errorf(codes.Internal, "store source: %v", err)
+		}
+	default:
+		return status.Error(codes.InvalidArgument, "materialize needs a workspace_id or a source tree")
 	}
 
 	// The revision id IS the source digest: the same tree declares the
 	// same record, and create-or-attach makes deduplication free.
-	sum := sha256.Sum256(req.GetSource())
-	digest := hex.EncodeToString(sum[:])
-	revisionId := digest[:16]
-	sourceLocation := fmt.Sprintf("sources/%s/%s.tgz", req.GetPipelineId(), revisionId)
-	if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(req.GetSource())); err != nil {
-		return status.Errorf(codes.Internal, "store source: %v", err)
+	if len(digest) < 16 {
+		return status.Error(codes.FailedPrecondition, "source has no digest")
 	}
+	revisionId := digest[:16]
 	if err := stream.Send(&managementv1.MaterializeEvent{
 		Stage: "upload", Message: "source stored, declaring revision " + revisionId,
 	}); err != nil {
@@ -75,8 +109,8 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 	// Declaring is fire-and-forget: the record's Init runs the build.
 	declared := make(chan error, 1)
 	go func() {
-		declared <- b.Worker.DeclareRevision(context.WithoutCancel(ctx), req.GetPipelineId(), revisionId, revisionflow.Spec{
-			PipelineId:     req.GetPipelineId(),
+		declared <- b.Worker.DeclareRevision(context.WithoutCancel(ctx), pipelineId, revisionId, revisionflow.Spec{
+			PipelineId:     pipelineId,
 			SourceLocation: sourceLocation,
 			SourceDigest:   "sha256:" + digest,
 		})
@@ -96,12 +130,12 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			return ctx.Err()
 		case <-tick.C:
 		}
-		phase, _, st, err := b.Worker.DescribeRevision(ctx, req.GetPipelineId(), revisionId)
+		phase, _, st, err := b.Worker.DescribeRevision(ctx, pipelineId, revisionId)
 		if err != nil {
 			// The record may not be visible for a moment after declare.
 			continue
 		}
-		if beat := b.Worker.RevisionProgress(ctx, req.GetPipelineId(), revisionId); beat != "" && beat != lastBeat {
+		if beat := b.Worker.RevisionProgress(ctx, pipelineId, revisionId); beat != "" && beat != lastBeat {
 			lastBeat = beat
 			stage, message, _ := strings.Cut(beat, ": ")
 			if err := stream.Send(&managementv1.MaterializeEvent{Stage: stage, Message: message}); err != nil {
@@ -116,7 +150,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			}
 			m.Log.Info("revision materialized",
 				xlog.String("namespace", b.Namespace),
-				xlog.String("pipeline", req.GetPipelineId()),
+				xlog.String("pipeline", pipelineId),
 				xlog.String("revision", revisionId))
 			return stream.Send(&managementv1.MaterializeEvent{
 				Stage:   "done",
@@ -135,7 +169,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		case entity.PhaseCreating:
 			if time.Since(started) > buildDeadline {
 				return status.Errorf(codes.DeadlineExceeded, "revision %s is still building; watch it with `graphenectl get revision %s.%s`",
-					revisionId, req.GetPipelineId(), revisionId)
+					revisionId, pipelineId, revisionId)
 			}
 		}
 	}
@@ -273,6 +307,13 @@ func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request
 	}
 	if err := b.Worker.PublishManifest(ctx, req.GetPipelineId(), manifest, rev.Image); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	// A workspace publishes ONE pipeline: activation is where that
+	// binding is recorded (and a second pipeline refused).
+	if workspaceId := req.GetWorkspaceId(); workspaceId != "" {
+		if err := b.Worker.BindWorkspacePipeline(ctx, workspaceId, req.GetPipelineId()); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "bind pipeline: %v", err)
+		}
 	}
 	m.Log.Info("revision activated",
 		xlog.String("namespace", b.Namespace),

@@ -33,8 +33,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
+	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
+	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
@@ -65,7 +67,9 @@ type Deps struct {
 	Materializer *materialize.Materializer
 	// Blobs holds uploaded sources, manifests and build logs.
 	Blobs blob.Store
-	Log   *xlog.Logger
+	// Secrets resolves this namespace's secret values (git credentials).
+	Secrets secrets.Store
+	Log     *xlog.Logger
 }
 
 // RunStarter starts one run — wired by the bundle after the managed
@@ -74,14 +78,15 @@ type RunStarter func(ctx context.Context, runId, pipelineId string, params []byt
 
 // Worker is the assembled server worker.
 type Worker struct {
-	w           worker.Worker
-	deps        Deps
-	agentDef    *entdefine.Definition[pipeline.AgentSpec, agentflow.State]
-	artifactDef *entdefine.Definition[pipeline.ArtifactSpec, artifact.State]
-	standDef    *entdefine.Definition[standflow.Spec, standflow.State]
-	pipelineDef *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
-	triggerDef  *entdefine.Definition[triggerflow.Spec, triggerflow.State]
-	revisionDef *entdefine.Definition[revisionflow.Spec, revisionflow.State]
+	w            worker.Worker
+	deps         Deps
+	agentDef     *entdefine.Definition[pipeline.AgentSpec, agentflow.State]
+	artifactDef  *entdefine.Definition[pipeline.ArtifactSpec, artifact.State]
+	standDef     *entdefine.Definition[standflow.Spec, standflow.State]
+	pipelineDef  *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
+	triggerDef   *entdefine.Definition[triggerflow.Spec, triggerflow.State]
+	revisionDef  *entdefine.Definition[revisionflow.Spec, revisionflow.State]
+	workspaceDef *entdefine.Definition[workspaceflow.Spec, workspaceflow.State]
 
 	startRun RunStarter
 }
@@ -98,20 +103,22 @@ func New(deps Deps) (*Worker, error) {
 		standTick = 30 * time.Second
 	}
 	s := &Worker{
-		w:           w,
-		deps:        deps,
-		agentDef:    agentflow.Definition(agentflow.Options{}),
-		artifactDef: artifact.Definition(),
-		standDef:    standflow.New(standTick),
-		pipelineDef: pipelineflow.New(standTick),
-		triggerDef:  triggerflow.New(standTick),
-		revisionDef: revisionflow.New(),
+		w:            w,
+		deps:         deps,
+		agentDef:     agentflow.Definition(agentflow.Options{}),
+		artifactDef:  artifact.Definition(),
+		standDef:     standflow.New(standTick),
+		pipelineDef:  pipelineflow.New(standTick),
+		triggerDef:   triggerflow.New(standTick),
+		revisionDef:  revisionflow.New(),
+		workspaceDef: workspaceflow.New(),
 	}
 
 	if err := errors.Join(
 		s.agentDef.Register(w), s.artifactDef.Register(w),
 		s.standDef.Register(w), s.pipelineDef.Register(w),
 		s.triggerDef.Register(w), s.revisionDef.Register(w),
+		s.workspaceDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -143,6 +150,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
+	w.RegisterActivityWithOptions(s.fetchWorkspaceSource, activity.RegisterOptions{Name: workspaceflow.FetchActivity})
 	return s, nil
 }
 
@@ -390,6 +398,82 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 	res.Image = out.ImageRef
 	res.ManifestLocation = out.ManifestLocation
 	return res, nil
+}
+
+// fetchWorkspaceSource resolves a workspace's source into a working
+// tree: a Git checkout in an ephemeral container, or the uploaded
+// snapshot taken as it is.
+func (s *Worker) fetchWorkspaceSource(ctx context.Context, req workspaceflow.FetchReq) (workspaceflow.FetchRes, error) {
+	var res workspaceflow.FetchRes
+	switch {
+	case req.Spec.Snapshot != nil:
+		// The upload already sits in the store; the workspace adopts it.
+		res.TreeLocation = req.Spec.Snapshot.Location
+		res.TreeDigest = req.Spec.Snapshot.Digest
+		return res, nil
+	case req.Spec.Git == nil:
+		return res, fmt.Errorf("workspace has no source")
+	}
+	if s.deps.Materializer == nil {
+		return res, fmt.Errorf("git checkout needs an execution backend on this installation")
+	}
+	git := req.Spec.Git
+	credential := ""
+	if git.CredentialRef != "" {
+		v, err := s.deps.Secrets.Get(id.SecretId(git.CredentialRef))
+		if err != nil {
+			return res, fmt.Errorf("git credential %q: %w", git.CredentialRef, err)
+		}
+		credential = v
+	}
+	out, err := s.deps.Materializer.FetchGit(ctx, materialize.GitRequest{
+		Url:        git.Url,
+		Ref:        git.Ref,
+		Subdir:     git.Subdir,
+		Credential: credential,
+		Location:   fmt.Sprintf("workspaces/%s/tree.tgz", req.WorkspaceId),
+		Namespace:  s.deps.Namespace,
+	}, func(stage, message string) { activity.RecordHeartbeat(ctx, stage+": "+message) })
+	if err != nil {
+		return res, err
+	}
+	return workspaceflow.FetchRes{
+		TreeLocation: out.TreeLocation,
+		TreeDigest:   out.TreeDigest,
+		GitCommit:    out.Commit,
+	}, nil
+}
+
+// DeclareWorkspace creates (or attaches to) one workspace record.
+func (s *Worker) DeclareWorkspace(ctx context.Context, workspaceId string, spec workspaceflow.Spec) error {
+	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
+	_, err := workspaces.CreateOrAttach(ctx, entity.ResourceID(workspaceId), spec)
+	return err
+}
+
+// DescribeWorkspace reads one workspace record.
+func (s *Worker) DescribeWorkspace(ctx context.Context, workspaceId string) (entity.Phase, workspaceflow.Spec, workspaceflow.State, error) {
+	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
+	out, err := workspaces.Describe(ctx, entity.ResourceID(workspaceId))
+	if err != nil {
+		return "", workspaceflow.Spec{}, workspaceflow.State{}, err
+	}
+	return out.Phase, out.Spec, out.State, nil
+}
+
+// SyncWorkspace re-resolves a workspace's source (or adopts a fresh
+// upload) and returns the resulting tree.
+func (s *Worker) SyncWorkspace(ctx context.Context, workspaceId string, cmd workspaceflow.SyncCmd) (workspaceflow.TreeRes, error) {
+	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
+	return entclient.Exec(ctx, workspaces, entity.ResourceID(workspaceId), cmd)
+}
+
+// BindWorkspacePipeline records the pipeline a workspace publishes.
+func (s *Worker) BindWorkspacePipeline(ctx context.Context, workspaceId, pipelineId string) error {
+	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.Exec(ctx, workspaces, entity.ResourceID(workspaceId),
+		workspaceflow.BindPipelineCmd{PipelineId: pipelineId})
+	return err
 }
 
 // DeclareRevision creates (or attaches to) one revision record: the
