@@ -32,6 +32,8 @@ const (
 	ResourcesAPI_Delete_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Delete"
 	ResourcesAPI_Transfer_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Transfer"
 	ResourcesAPI_Invoke_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Invoke"
+	ResourcesAPI_Apply_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Apply"
+	ResourcesAPI_Kinds_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Kinds"
 )
 
 // ResourcesAPIClient is the client API for ResourcesAPI service.
@@ -66,6 +68,14 @@ type ResourcesAPIClient interface {
 	// returns the raw JSON result. The entity's validators still run; the
 	// request id deduplicates retries.
 	Invoke(ctx context.Context, in *InvokeRequest, opts ...grpc.CallOption) (*InvokeResponse, error)
+	// Apply declares a record of ANY kind: the one door creation goes
+	// through, so a new kind never needs an API of its own.
+	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
+	// Kinds answers what this installation can declare and command, with
+	// the schema of every spec and payload — what a CLI validates
+	// against and a UI builds forms from, instead of hard-coding a
+	// vocabulary it should be discovering.
+	Kinds(ctx context.Context, in *KindsRequest, opts ...grpc.CallOption) (*KindsResponse, error)
 }
 
 type resourcesAPIClient struct {
@@ -156,6 +166,26 @@ func (c *resourcesAPIClient) Invoke(ctx context.Context, in *InvokeRequest, opts
 	return out, nil
 }
 
+func (c *resourcesAPIClient) Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyResponse)
+	err := c.cc.Invoke(ctx, ResourcesAPI_Apply_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcesAPIClient) Kinds(ctx context.Context, in *KindsRequest, opts ...grpc.CallOption) (*KindsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KindsResponse)
+	err := c.cc.Invoke(ctx, ResourcesAPI_Kinds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ResourcesAPIServer is the server API for ResourcesAPI service.
 // All implementations must embed UnimplementedResourcesAPIServer
 // for forward compatibility.
@@ -188,6 +218,14 @@ type ResourcesAPIServer interface {
 	// returns the raw JSON result. The entity's validators still run; the
 	// request id deduplicates retries.
 	Invoke(context.Context, *InvokeRequest) (*InvokeResponse, error)
+	// Apply declares a record of ANY kind: the one door creation goes
+	// through, so a new kind never needs an API of its own.
+	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
+	// Kinds answers what this installation can declare and command, with
+	// the schema of every spec and payload — what a CLI validates
+	// against and a UI builds forms from, instead of hard-coding a
+	// vocabulary it should be discovering.
+	Kinds(context.Context, *KindsRequest) (*KindsResponse, error)
 	mustEmbedUnimplementedResourcesAPIServer()
 }
 
@@ -221,6 +259,12 @@ func (UnimplementedResourcesAPIServer) Transfer(context.Context, *TransferReques
 }
 func (UnimplementedResourcesAPIServer) Invoke(context.Context, *InvokeRequest) (*InvokeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Invoke not implemented")
+}
+func (UnimplementedResourcesAPIServer) Apply(context.Context, *ApplyRequest) (*ApplyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Apply not implemented")
+}
+func (UnimplementedResourcesAPIServer) Kinds(context.Context, *KindsRequest) (*KindsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Kinds not implemented")
 }
 func (UnimplementedResourcesAPIServer) mustEmbedUnimplementedResourcesAPIServer() {}
 func (UnimplementedResourcesAPIServer) testEmbeddedByValue()                      {}
@@ -387,6 +431,42 @@ func _ResourcesAPI_Invoke_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ResourcesAPI_Apply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesAPIServer).Apply(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcesAPI_Apply_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesAPIServer).Apply(ctx, req.(*ApplyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcesAPI_Kinds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KindsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesAPIServer).Kinds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcesAPI_Kinds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesAPIServer).Kinds(ctx, req.(*KindsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ResourcesAPI_ServiceDesc is the grpc.ServiceDesc for ResourcesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -425,6 +505,14 @@ var ResourcesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Invoke",
 			Handler:    _ResourcesAPI_Invoke_Handler,
+		},
+		{
+			MethodName: "Apply",
+			Handler:    _ResourcesAPI_Apply_Handler,
+		},
+		{
+			MethodName: "Kinds",
+			Handler:    _ResourcesAPI_Kinds_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

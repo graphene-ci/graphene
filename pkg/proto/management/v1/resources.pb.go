@@ -1087,6 +1087,200 @@ func (x *InvokeResponse) GetResult() []byte {
 	return nil
 }
 
+type ApplyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Id    string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Spec is the declaration, in the shape the kind defines.
+	Spec          []byte            `protobuf:"bytes,3,opt,name=spec,proto3" json:"spec,omitempty"`
+	Labels        map[string]string `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyRequest) Reset() {
+	*x = ApplyRequest{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyRequest) ProtoMessage() {}
+
+func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyRequest.ProtoReflect.Descriptor instead.
+func (*ApplyRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ApplyRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ApplyRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ApplyRequest) GetSpec() []byte {
+	if x != nil {
+		return x.Spec
+	}
+	return nil
+}
+
+func (x *ApplyRequest) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+type ApplyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ref is the record's address ("workspace/delivery").
+	Ref           string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyResponse) Reset() {
+	*x = ApplyResponse{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyResponse) ProtoMessage() {}
+
+func (x *ApplyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyResponse.ProtoReflect.Descriptor instead.
+func (*ApplyResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ApplyResponse) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+type KindsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KindsRequest) Reset() {
+	*x = KindsRequest{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KindsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KindsRequest) ProtoMessage() {}
+
+func (x *KindsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KindsRequest.ProtoReflect.Descriptor instead.
+func (*KindsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{21}
+}
+
+type KindsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kinds         []*KindsResponse_Kind  `protobuf:"bytes,1,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KindsResponse) Reset() {
+	*x = KindsResponse{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KindsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KindsResponse) ProtoMessage() {}
+
+func (x *KindsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KindsResponse.ProtoReflect.Descriptor instead.
+func (*KindsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *KindsResponse) GetKinds() []*KindsResponse_Kind {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
 type CountResponse_Group struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Status is the Temporal execution status ("Running", ...).
@@ -1098,7 +1292,7 @@ type CountResponse_Group struct {
 
 func (x *CountResponse_Group) Reset() {
 	*x = CountResponse_Group{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +1304,7 @@ func (x *CountResponse_Group) String() string {
 func (*CountResponse_Group) ProtoMessage() {}
 
 func (x *CountResponse_Group) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1138,6 +1332,138 @@ func (x *CountResponse_Group) GetCount() int64 {
 		return x.Count
 	}
 	return 0
+}
+
+type KindsResponse_Command struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// PayloadSchema is a schemapb schema as protojson; empty when the
+	// command takes nothing.
+	PayloadSchema []byte `protobuf:"bytes,2,opt,name=payload_schema,json=payloadSchema,proto3" json:"payload_schema,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KindsResponse_Command) Reset() {
+	*x = KindsResponse_Command{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KindsResponse_Command) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KindsResponse_Command) ProtoMessage() {}
+
+func (x *KindsResponse_Command) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KindsResponse_Command.ProtoReflect.Descriptor instead.
+func (*KindsResponse_Command) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{22, 0}
+}
+
+func (x *KindsResponse_Command) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *KindsResponse_Command) GetPayloadSchema() []byte {
+	if x != nil {
+		return x.PayloadSchema
+	}
+	return nil
+}
+
+type KindsResponse_Kind struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Declarable says whether Apply may create this kind directly.
+	Declarable bool `protobuf:"varint,2,opt,name=declarable,proto3" json:"declarable,omitempty"`
+	// SpecSchema is a schemapb schema as protojson.
+	SpecSchema    []byte                   `protobuf:"bytes,3,opt,name=spec_schema,json=specSchema,proto3" json:"spec_schema,omitempty"`
+	Commands      []*KindsResponse_Command `protobuf:"bytes,4,rep,name=commands,proto3" json:"commands,omitempty"`
+	Description   string                   `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KindsResponse_Kind) Reset() {
+	*x = KindsResponse_Kind{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KindsResponse_Kind) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KindsResponse_Kind) ProtoMessage() {}
+
+func (x *KindsResponse_Kind) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KindsResponse_Kind.ProtoReflect.Descriptor instead.
+func (*KindsResponse_Kind) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{22, 1}
+}
+
+func (x *KindsResponse_Kind) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *KindsResponse_Kind) GetDeclarable() bool {
+	if x != nil {
+		return x.Declarable
+	}
+	return false
+}
+
+func (x *KindsResponse_Kind) GetSpecSchema() []byte {
+	if x != nil {
+		return x.SpecSchema
+	}
+	return nil
+}
+
+func (x *KindsResponse_Kind) GetCommands() []*KindsResponse_Command {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+func (x *KindsResponse_Kind) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
 }
 
 var File_proto_management_v1_resources_proto protoreflect.FileDescriptor
@@ -1224,7 +1550,32 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tR\trequestId\"(\n" +
 	"\x0eInvokeResponse\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\fR\x06result2\xd0\x05\n" +
+	"\x06result\x18\x01 \x01(\fR\x06result\"\xcb\x01\n" +
+	"\fApplyRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04spec\x18\x03 \x01(\fR\x04spec\x12H\n" +
+	"\x06labels\x18\x04 \x03(\v20.graphene.management.v1.ApplyRequest.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"!\n" +
+	"\rApplyResponse\x12\x10\n" +
+	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x0e\n" +
+	"\fKindsRequest\"\xe2\x02\n" +
+	"\rKindsResponse\x12@\n" +
+	"\x05kinds\x18\x01 \x03(\v2*.graphene.management.v1.KindsResponse.KindR\x05kinds\x1aD\n" +
+	"\aCommand\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
+	"\x0epayload_schema\x18\x02 \x01(\fR\rpayloadSchema\x1a\xc8\x01\n" +
+	"\x04Kind\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"declarable\x18\x02 \x01(\bR\n" +
+	"declarable\x12\x1f\n" +
+	"\vspec_schema\x18\x03 \x01(\fR\n" +
+	"specSchema\x12I\n" +
+	"\bcommands\x18\x04 \x03(\v2-.graphene.management.v1.KindsResponse.CommandR\bcommands\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription2\xfc\x06\n" +
 	"\fResourcesAPI\x12Q\n" +
 	"\x04List\x12#.graphene.management.v1.ListRequest\x1a$.graphene.management.v1.ListResponse\x12T\n" +
 	"\x05Count\x12$.graphene.management.v1.CountRequest\x1a%.graphene.management.v1.CountResponse\x12c\n" +
@@ -1234,7 +1585,9 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x04Tree\x12#.graphene.management.v1.TreeRequest\x1a$.graphene.management.v1.TreeResponse\x12W\n" +
 	"\x06Delete\x12%.graphene.management.v1.DeleteRequest\x1a&.graphene.management.v1.DeleteResponse\x12]\n" +
 	"\bTransfer\x12'.graphene.management.v1.TransferRequest\x1a(.graphene.management.v1.TransferResponse\x12W\n" +
-	"\x06Invoke\x12%.graphene.management.v1.InvokeRequest\x1a&.graphene.management.v1.InvokeResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\x06Invoke\x12%.graphene.management.v1.InvokeRequest\x1a&.graphene.management.v1.InvokeResponse\x12T\n" +
+	"\x05Apply\x12$.graphene.management.v1.ApplyRequest\x1a%.graphene.management.v1.ApplyResponse\x12T\n" +
+	"\x05Kinds\x12$.graphene.management.v1.KindsRequest\x1a%.graphene.management.v1.KindsResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_resources_proto_rawDescOnce sync.Once
@@ -1248,7 +1601,7 @@ func file_proto_management_v1_resources_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_resources_proto_rawDescData
 }
 
-var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_proto_management_v1_resources_proto_goTypes = []any{
 	(*Selector)(nil),              // 0: graphene.management.v1.Selector
 	(*ListRequest)(nil),           // 1: graphene.management.v1.ListRequest
@@ -1269,47 +1622,61 @@ var file_proto_management_v1_resources_proto_goTypes = []any{
 	(*TransferResponse)(nil),      // 16: graphene.management.v1.TransferResponse
 	(*InvokeRequest)(nil),         // 17: graphene.management.v1.InvokeRequest
 	(*InvokeResponse)(nil),        // 18: graphene.management.v1.InvokeResponse
-	nil,                           // 19: graphene.management.v1.Selector.LabelsEntry
-	nil,                           // 20: graphene.management.v1.CountOwnedResponse.CountsEntry
-	(*CountResponse_Group)(nil),   // 21: graphene.management.v1.CountResponse.Group
-	nil,                           // 22: graphene.management.v1.Resource.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
+	(*ApplyRequest)(nil),          // 19: graphene.management.v1.ApplyRequest
+	(*ApplyResponse)(nil),         // 20: graphene.management.v1.ApplyResponse
+	(*KindsRequest)(nil),          // 21: graphene.management.v1.KindsRequest
+	(*KindsResponse)(nil),         // 22: graphene.management.v1.KindsResponse
+	nil,                           // 23: graphene.management.v1.Selector.LabelsEntry
+	nil,                           // 24: graphene.management.v1.CountOwnedResponse.CountsEntry
+	(*CountResponse_Group)(nil),   // 25: graphene.management.v1.CountResponse.Group
+	nil,                           // 26: graphene.management.v1.Resource.LabelsEntry
+	nil,                           // 27: graphene.management.v1.ApplyRequest.LabelsEntry
+	(*KindsResponse_Command)(nil), // 28: graphene.management.v1.KindsResponse.Command
+	(*KindsResponse_Kind)(nil),    // 29: graphene.management.v1.KindsResponse.Kind
+	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
 }
 var file_proto_management_v1_resources_proto_depIdxs = []int32{
-	19, // 0: graphene.management.v1.Selector.labels:type_name -> graphene.management.v1.Selector.LabelsEntry
+	23, // 0: graphene.management.v1.Selector.labels:type_name -> graphene.management.v1.Selector.LabelsEntry
 	0,  // 1: graphene.management.v1.ListRequest.selector:type_name -> graphene.management.v1.Selector
 	0,  // 2: graphene.management.v1.CountRequest.selector:type_name -> graphene.management.v1.Selector
-	20, // 3: graphene.management.v1.CountOwnedResponse.counts:type_name -> graphene.management.v1.CountOwnedResponse.CountsEntry
-	21, // 4: graphene.management.v1.CountResponse.groups:type_name -> graphene.management.v1.CountResponse.Group
-	22, // 5: graphene.management.v1.Resource.labels:type_name -> graphene.management.v1.Resource.LabelsEntry
-	23, // 6: graphene.management.v1.Resource.started_at:type_name -> google.protobuf.Timestamp
-	23, // 7: graphene.management.v1.Resource.finished_at:type_name -> google.protobuf.Timestamp
+	24, // 3: graphene.management.v1.CountOwnedResponse.counts:type_name -> graphene.management.v1.CountOwnedResponse.CountsEntry
+	25, // 4: graphene.management.v1.CountResponse.groups:type_name -> graphene.management.v1.CountResponse.Group
+	26, // 5: graphene.management.v1.Resource.labels:type_name -> graphene.management.v1.Resource.LabelsEntry
+	30, // 6: graphene.management.v1.Resource.started_at:type_name -> google.protobuf.Timestamp
+	30, // 7: graphene.management.v1.Resource.finished_at:type_name -> google.protobuf.Timestamp
 	6,  // 8: graphene.management.v1.ListResponse.resources:type_name -> graphene.management.v1.Resource
 	6,  // 9: graphene.management.v1.GetResponse.resource:type_name -> graphene.management.v1.Resource
 	6,  // 10: graphene.management.v1.TreeNode.resource:type_name -> graphene.management.v1.Resource
 	11, // 11: graphene.management.v1.TreeNode.children:type_name -> graphene.management.v1.TreeNode
 	11, // 12: graphene.management.v1.TreeResponse.roots:type_name -> graphene.management.v1.TreeNode
-	1,  // 13: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
-	2,  // 14: graphene.management.v1.ResourcesAPI.Count:input_type -> graphene.management.v1.CountRequest
-	3,  // 15: graphene.management.v1.ResourcesAPI.CountOwned:input_type -> graphene.management.v1.CountOwnedRequest
-	8,  // 16: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
-	10, // 17: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
-	13, // 18: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
-	15, // 19: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
-	17, // 20: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
-	7,  // 21: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
-	5,  // 22: graphene.management.v1.ResourcesAPI.Count:output_type -> graphene.management.v1.CountResponse
-	4,  // 23: graphene.management.v1.ResourcesAPI.CountOwned:output_type -> graphene.management.v1.CountOwnedResponse
-	9,  // 24: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
-	12, // 25: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
-	14, // 26: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
-	16, // 27: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
-	18, // 28: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	27, // 13: graphene.management.v1.ApplyRequest.labels:type_name -> graphene.management.v1.ApplyRequest.LabelsEntry
+	29, // 14: graphene.management.v1.KindsResponse.kinds:type_name -> graphene.management.v1.KindsResponse.Kind
+	28, // 15: graphene.management.v1.KindsResponse.Kind.commands:type_name -> graphene.management.v1.KindsResponse.Command
+	1,  // 16: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
+	2,  // 17: graphene.management.v1.ResourcesAPI.Count:input_type -> graphene.management.v1.CountRequest
+	3,  // 18: graphene.management.v1.ResourcesAPI.CountOwned:input_type -> graphene.management.v1.CountOwnedRequest
+	8,  // 19: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
+	10, // 20: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
+	13, // 21: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
+	15, // 22: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
+	17, // 23: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
+	19, // 24: graphene.management.v1.ResourcesAPI.Apply:input_type -> graphene.management.v1.ApplyRequest
+	21, // 25: graphene.management.v1.ResourcesAPI.Kinds:input_type -> graphene.management.v1.KindsRequest
+	7,  // 26: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
+	5,  // 27: graphene.management.v1.ResourcesAPI.Count:output_type -> graphene.management.v1.CountResponse
+	4,  // 28: graphene.management.v1.ResourcesAPI.CountOwned:output_type -> graphene.management.v1.CountOwnedResponse
+	9,  // 29: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
+	12, // 30: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
+	14, // 31: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
+	16, // 32: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
+	18, // 33: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
+	20, // 34: graphene.management.v1.ResourcesAPI.Apply:output_type -> graphene.management.v1.ApplyResponse
+	22, // 35: graphene.management.v1.ResourcesAPI.Kinds:output_type -> graphene.management.v1.KindsResponse
+	26, // [26:36] is the sub-list for method output_type
+	16, // [16:26] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_resources_proto_init() }
@@ -1323,7 +1690,7 @@ func file_proto_management_v1_resources_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_resources_proto_rawDesc), len(file_proto_management_v1_resources_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

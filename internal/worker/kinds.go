@@ -1,0 +1,202 @@
+package worker
+
+// The kind registry: what this installation knows how to declare, and
+// what each kind can be asked to do. Without it a generic Apply has
+// nowhere to look, and a UI has to hard-code the vocabulary it should
+// be discovering.
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"sort"
+
+	"github.com/gopherex/schemapb/go/schemapb"
+	"github.com/graphene-ci/temporal-entity/pkg/entclient"
+	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
+
+	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/rbacflow"
+	"github.com/graphene-ci/graphene/internal/revisionflow"
+	"github.com/graphene-ci/graphene/internal/standflow"
+	"github.com/graphene-ci/graphene/internal/triggerflow"
+	"github.com/graphene-ci/graphene/internal/workspaceflow"
+	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
+	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
+	"github.com/graphene-ci/pipeline/pkg/manifest"
+	"github.com/graphene-ci/pipeline/pkg/pipeline"
+	"github.com/graphene-ci/pipeline/pkg/wire"
+)
+
+// KindInfo describes one kind to whoever asks: what its spec looks
+// like and which commands it answers. The schemas come from the Go
+// types themselves, so they cannot drift from the code.
+type KindInfo struct {
+	Name string `json:"name"`
+	// Declarable says whether a caller may create this kind directly.
+	// A revision is declared, a run is fired, an artifact is produced
+	// by a pipeline — not everything is a thing you make on request.
+	Declarable bool `json:"declarable"`
+	// Spec is the schema of the declaration.
+	Spec *schemapb.Schema `json:"-"`
+	// Commands are what the kind can be asked to do, with the schema
+	// of each payload.
+	Commands []CommandInfo `json:"commands"`
+	// Description is one line for a human.
+	Description string `json:"description"`
+}
+
+// CommandInfo is one command of a kind.
+type CommandInfo struct {
+	Name    string           `json:"name"`
+	Payload *schemapb.Schema `json:"-"`
+}
+
+// kindEntry is the registry's own record of a kind.
+type kindEntry struct {
+	info KindInfo
+	// specType turns a JSON spec into the kind's own Go type — the
+	// validation a generic Apply would otherwise skip.
+	specType reflect.Type
+}
+
+// Kinds lists what this installation can declare and command.
+func (s *Worker) Kinds() []KindInfo {
+	out := make([]KindInfo, 0, len(s.kinds))
+	for _, e := range s.kinds {
+		out = append(out, e.info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// Apply declares a record of any registered kind. The spec is checked
+// against the kind's Go type here — a typo fails at the door instead
+// of inside a workflow that then sits in create-failed.
+func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessage, labels map[string]string) (string, error) {
+	entry, ok := s.kinds[kind]
+	if !ok {
+		return "", fmt.Errorf("unknown kind %q; this installation knows %s", kind, s.kindNames())
+	}
+	if !entry.info.Declarable {
+		return "", fmt.Errorf("a %s is not declared directly: %s", kind, entry.info.Description)
+	}
+	if len(spec) > 0 && entry.specType != nil {
+		probe := reflect.New(entry.specType).Interface()
+		dec := json.NewDecoder(bytes.NewReader(spec))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(probe); err != nil {
+			return "", fmt.Errorf("spec does not fit kind %q: %w", kind, err)
+		}
+	}
+	return entclient.ApplyRaw(ctx, s.deps.Client, entity.KindName(kind), entity.ResourceID(id), wire.ServerQueue, spec, labels)
+}
+
+func (s *Worker) kindNames() string {
+	names := make([]string, 0, len(s.kinds))
+	for name := range s.kinds {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := ""
+	for i, n := range names {
+		if i > 0 {
+			out += ", "
+		}
+		out += n
+	}
+	return out
+}
+
+// buildKinds assembles the registry. Every entry names its spec type
+// and its commands; the schemas are reflected from those types, the
+// same way a pipeline's params schema is.
+func buildKinds() map[string]*kindEntry {
+	reg := map[string]*kindEntry{}
+	add := func(name, description string, declarable bool, specType reflect.Type, commands ...commandDef) {
+		e := &kindEntry{
+			info:     KindInfo{Name: name, Declarable: declarable, Description: description},
+			specType: specType,
+		}
+		if specType != nil {
+			if schema, err := manifest.SchemaOf(specType, schemapb.ID("graphene", schemapb.SchemaName(name+"-spec"), schemapb.Ver(0, 1, 0))); err == nil {
+				e.info.Spec = schema
+			}
+		}
+		for _, c := range commands {
+			ci := CommandInfo{Name: c.name}
+			if c.payload != nil {
+				if schema, err := manifest.SchemaOf(c.payload, schemapb.ID("graphene", schemapb.SchemaName(name+"-"+c.name), schemapb.Ver(0, 1, 0))); err == nil {
+					ci.Payload = schema
+				}
+			}
+			e.info.Commands = append(e.info.Commands, ci)
+		}
+		reg[name] = e
+	}
+
+	add("workspace", "the project's working area: one source, one runtime, one pipeline", true,
+		reflect.TypeFor[workspaceflow.Spec](),
+		cmd("sync", reflect.TypeFor[workspaceflow.SyncCmd]()),
+		cmd("bind-pipeline", reflect.TypeFor[workspaceflow.BindPipelineCmd]()))
+
+	add("pipeline", "what a workspace publishes; the arbiter of its runs", false,
+		reflect.TypeFor[pipelineflow.Spec](),
+		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
+		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()))
+
+	add("revision", "one immutable build of a source tree", true,
+		reflect.TypeFor[revisionflow.Spec]())
+
+	add("trigger", "what starts runs besides a human", true,
+		reflect.TypeFor[triggerflow.Spec](),
+		cmd("pause", nil), cmd("resume", nil),
+		cmd("hook", reflect.TypeFor[triggerflow.HookCmd]()))
+
+	add("stand", "the project's standing ground: what outlives a run", true,
+		reflect.TypeFor[standflow.Spec](),
+		cmd("accept", reflect.TypeFor[standflow.AcceptCmd]()),
+		cmd("extend", reflect.TypeFor[standflow.ExtendCmd]()),
+		cmd("release", reflect.TypeFor[standflow.ReleaseCmd]()))
+
+	add("agent", "a machine's identity and the process on it", true,
+		reflect.TypeFor[pipeline.AgentSpec]())
+
+	add("artifact", "bytes a run produced, kept with their record", true,
+		reflect.TypeFor[pipeline.ArtifactSpec]())
+
+	add("role", "a set of rules: what may be done", true,
+		reflect.TypeFor[rbacflow.RoleSpec](),
+		cmd("set-rules", reflect.TypeFor[rbacflow.SetRulesCmd]()))
+
+	add("rolebinding", "who gets a role, and where", true,
+		reflect.TypeFor[rbacflow.BindingSpec](),
+		cmd("set-subjects", reflect.TypeFor[rbacflow.SetSubjectsCmd]()))
+
+	add("serviceaccount", "a machine of this installation and its tokens", true,
+		reflect.TypeFor[rbacflow.AccountSpec](),
+		cmd("issue-token", reflect.TypeFor[rbacflow.IssueTokenCmd]()),
+		cmd("revoke-token", reflect.TypeFor[rbacflow.RevokeTokenCmd]()))
+
+	add("run", "the execution of a pipeline — fired, not declared", false, nil)
+
+	// Every kind serves the built-in label patch.
+	for _, e := range reg {
+		e.info.Commands = append(e.info.Commands, CommandInfo{Name: entity.SetLabelsCommandName})
+	}
+	return reg
+}
+
+type commandDef struct {
+	name    string
+	payload reflect.Type
+}
+
+func cmd(name string, payload reflect.Type) commandDef {
+	return commandDef{name: name, payload: payload}
+}
+
+var _ = agentflow.Kind
+var _ = artifact.Kind

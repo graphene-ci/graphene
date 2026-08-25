@@ -93,6 +93,10 @@ type Worker struct {
 	bindingDef   *entdefine.Definition[rbacflow.BindingSpec, rbacflow.BindingState]
 	accountDef   *entdefine.Definition[rbacflow.AccountSpec, rbacflow.AccountState]
 
+	// kinds is what this installation knows how to declare and command
+	// — the vocabulary a generic Apply and a UI both read.
+	kinds map[string]*kindEntry
+
 	startRun RunStarter
 }
 
@@ -120,6 +124,7 @@ func New(deps Deps) (*Worker, error) {
 		roleDef:      rbacflow.NewRole(),
 		bindingDef:   rbacflow.NewBinding(),
 		accountDef:   rbacflow.NewAccount(),
+		kinds:        buildKinds(),
 	}
 
 	if err := errors.Join(
