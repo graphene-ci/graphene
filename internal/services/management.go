@@ -1,8 +1,6 @@
 package services
 
 import (
-	"regexp"
-
 	"connectrpc.com/connect"
 	"context"
 	"encoding/base64"
@@ -255,50 +253,23 @@ func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[manage
 }
 
 // listedKind reads the kind a listing is narrowed to. The SELECTOR is
-// trusted: it is a typed field the server turns into a query itself.
-// A raw query is not — narrowing it by a substring would let
-// "EntityKind='pipeline' OR EntityKind='secret'" pass as a listing of
-// pipelines and return the secrets too. So a raw query yields a
-// specific kind only when it PROVABLY pins exactly one: a conjunction
-// with one equality on EntityKind and no negation, no disjunction, no
-// set membership. Anything else needs the right to list everything.
-func listedKind(selector *managementv1.Selector, query string) authz.Kind {
-	if k := selector.GetKind(); k != "" {
+// trusted: it is a typed field the server compiles itself. A query
+// string is parsed by the SAME parser the listing uses, and it narrows
+// authorization only when it provably pins one kind — `kind in (a, b)`
+// or `kind!=x` name a set, so they need the right to list everything.
+func listedKind(sel *managementv1.Selector, query string) authz.Kind {
+	if k := sel.GetKind(); k != "" {
 		return authz.KindOf(k + "/")
 	}
-	if pinned, ok := pinnedKind(query); ok {
-		return authz.KindOf(pinned + "/")
+	parsed, err := selector.Parse(query)
+	if err != nil {
+		return authz.KindAll
+	}
+	if kind, ok := parsed.PinnedKind(); ok {
+		return authz.KindOf(kind + "/")
 	}
 	return authz.KindAll
 }
-
-// pinnedKind reports the single kind a query is provably restricted
-// to, if any.
-func pinnedKind(query string) (string, bool) {
-	if strings.TrimSpace(query) == "" {
-		return "", false
-	}
-	upper := strings.ToUpper(query)
-	// A disjunction or a negation widens the result beyond whatever
-	// equality we would find.
-	for _, widening := range []string{" OR ", "\tOR ", " OR\t", "NOT ", "!=", "STARTS_WITH", " IN ", " IN(", "("} {
-		if strings.Contains(upper, widening) {
-			return "", false
-		}
-	}
-	// Exactly one mention of the attribute, and it must be the
-	// equality we matched.
-	if strings.Count(upper, "ENTITYKIND") != 1 {
-		return "", false
-	}
-	m := kindInQuery.FindStringSubmatch(query)
-	if m == nil {
-		return "", false
-	}
-	return m[1], true
-}
-
-var kindInQuery = regexp.MustCompile(`EntityKind\s*=\s*'([^']+)'`)
 
 // listQuery resolves a request's query/selector duality into one
 // visibility query. Exactly one of the two may be set.
