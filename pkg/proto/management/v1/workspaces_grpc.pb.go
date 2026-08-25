@@ -22,6 +22,7 @@ const (
 	WorkspacesAPI_CreateWorkspace_FullMethodName = "/graphene.management.v1.WorkspacesAPI/CreateWorkspace"
 	WorkspacesAPI_SyncWorkspace_FullMethodName   = "/graphene.management.v1.WorkspacesAPI/SyncWorkspace"
 	WorkspacesAPI_DownloadSource_FullMethodName  = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
+	WorkspacesAPI_ListRuntimes_FullMethodName    = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
 )
 
 // WorkspacesAPIClient is the client API for WorkspacesAPI service.
@@ -40,6 +41,9 @@ type WorkspacesAPIClient interface {
 	SyncWorkspace(ctx context.Context, in *SyncWorkspaceRequest, opts ...grpc.CallOption) (*SyncWorkspaceResponse, error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(ctx context.Context, in *DownloadSourceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadSourceChunk], error)
+	// ListRuntimes answers "which languages can I write a pipeline in
+	// on THIS installation".
+	ListRuntimes(ctx context.Context, in *ListRuntimesRequest, opts ...grpc.CallOption) (*ListRuntimesResponse, error)
 }
 
 type workspacesAPIClient struct {
@@ -89,6 +93,16 @@ func (c *workspacesAPIClient) DownloadSource(ctx context.Context, in *DownloadSo
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WorkspacesAPI_DownloadSourceClient = grpc.ServerStreamingClient[DownloadSourceChunk]
 
+func (c *workspacesAPIClient) ListRuntimes(ctx context.Context, in *ListRuntimesRequest, opts ...grpc.CallOption) (*ListRuntimesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRuntimesResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_ListRuntimes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkspacesAPIServer is the server API for WorkspacesAPI service.
 // All implementations must embed UnimplementedWorkspacesAPIServer
 // for forward compatibility.
@@ -105,6 +119,9 @@ type WorkspacesAPIServer interface {
 	SyncWorkspace(context.Context, *SyncWorkspaceRequest) (*SyncWorkspaceResponse, error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(*DownloadSourceRequest, grpc.ServerStreamingServer[DownloadSourceChunk]) error
+	// ListRuntimes answers "which languages can I write a pipeline in
+	// on THIS installation".
+	ListRuntimes(context.Context, *ListRuntimesRequest) (*ListRuntimesResponse, error)
 	mustEmbedUnimplementedWorkspacesAPIServer()
 }
 
@@ -123,6 +140,9 @@ func (UnimplementedWorkspacesAPIServer) SyncWorkspace(context.Context, *SyncWork
 }
 func (UnimplementedWorkspacesAPIServer) DownloadSource(*DownloadSourceRequest, grpc.ServerStreamingServer[DownloadSourceChunk]) error {
 	return status.Error(codes.Unimplemented, "method DownloadSource not implemented")
+}
+func (UnimplementedWorkspacesAPIServer) ListRuntimes(context.Context, *ListRuntimesRequest) (*ListRuntimesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRuntimes not implemented")
 }
 func (UnimplementedWorkspacesAPIServer) mustEmbedUnimplementedWorkspacesAPIServer() {}
 func (UnimplementedWorkspacesAPIServer) testEmbeddedByValue()                       {}
@@ -192,6 +212,24 @@ func _WorkspacesAPI_DownloadSource_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WorkspacesAPI_DownloadSourceServer = grpc.ServerStreamingServer[DownloadSourceChunk]
 
+func _WorkspacesAPI_ListRuntimes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRuntimesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspacesAPIServer).ListRuntimes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspacesAPI_ListRuntimes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspacesAPIServer).ListRuntimes(ctx, req.(*ListRuntimesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkspacesAPI_ServiceDesc is the grpc.ServiceDesc for WorkspacesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -206,6 +244,10 @@ var WorkspacesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncWorkspace",
 			Handler:    _WorkspacesAPI_SyncWorkspace_Handler,
+		},
+		{
+			MethodName: "ListRuntimes",
+			Handler:    _WorkspacesAPI_ListRuntimes_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

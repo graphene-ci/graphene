@@ -51,7 +51,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		return err
 	}
 	pipelineId := req.GetPipelineId()
-	sourceLocation, digest := "", ""
+	sourceLocation, digest, runtimeName := "", "", ""
 	workspaceId := req.GetWorkspaceId()
 
 	switch {
@@ -77,6 +77,8 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		}
 		sourceLocation = st.TreeLocation
 		digest = strings.TrimPrefix(st.TreeDigest, "sha256:")
+		// The project's language is the workspace's, not the build's.
+		runtimeName = spec.Runtime
 	case len(req.GetSource()) > 0:
 		if len(req.GetSource()) > maxSourceBytes {
 			return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
@@ -113,6 +115,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			PipelineId:     pipelineId,
 			SourceLocation: sourceLocation,
 			SourceDigest:   "sha256:" + digest,
+			Runtime:        runtimeName,
 		})
 	}()
 

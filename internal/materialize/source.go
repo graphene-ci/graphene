@@ -35,6 +35,9 @@ type GitRequest struct {
 	// Location is where the resulting tar.gz goes in the blob store.
 	Location  string
 	Namespace string
+	// Runtime names the toolchain image that does the checkout (it
+	// carries git); empty takes the installation's default.
+	Runtime string
 }
 
 // GitResult is the resolved checkout.
@@ -53,13 +56,11 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	if progress == nil {
 		progress = func(string, string) {}
 	}
-	runtimeImage := m.GitRuntime
-	if runtimeImage == "" {
-		runtimeImage = m.Runtime
+	rt, err := m.runtime(req.Runtime)
+	if err != nil {
+		return res, err
 	}
-	if runtimeImage == "" {
-		runtimeImage = DefaultRuntime
-	}
+	runtimeImage := rt.Image
 	if err := m.ensureImage(ctx, runtimeImage, progress); err != nil {
 		return res, err
 	}

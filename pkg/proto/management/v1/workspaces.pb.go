@@ -507,6 +507,154 @@ func (x *DownloadSourceChunk) GetData() []byte {
 	return nil
 }
 
+type ListRuntimesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRuntimesRequest) Reset() {
+	*x = ListRuntimesRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRuntimesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRuntimesRequest) ProtoMessage() {}
+
+func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRuntimesRequest.ProtoReflect.Descriptor instead.
+func (*ListRuntimesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{8}
+}
+
+type ListRuntimesResponse struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Runtimes      []*ListRuntimesResponse_Runtime `protobuf:"bytes,1,rep,name=runtimes,proto3" json:"runtimes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRuntimesResponse) Reset() {
+	*x = ListRuntimesResponse{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRuntimesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRuntimesResponse) ProtoMessage() {}
+
+func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRuntimesResponse.ProtoReflect.Descriptor instead.
+func (*ListRuntimesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
+	if x != nil {
+		return x.Runtimes
+	}
+	return nil
+}
+
+type ListRuntimesResponse_Runtime struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Image         string                 `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
+	IsDefault     bool                   `protobuf:"varint,4,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRuntimesResponse_Runtime) Reset() {
+	*x = ListRuntimesResponse_Runtime{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRuntimesResponse_Runtime) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRuntimesResponse_Runtime) ProtoMessage() {}
+
+func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRuntimesResponse_Runtime.ProtoReflect.Descriptor instead.
+func (*ListRuntimesResponse_Runtime) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9, 0}
+}
+
+func (x *ListRuntimesResponse_Runtime) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ListRuntimesResponse_Runtime) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ListRuntimesResponse_Runtime) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ListRuntimesResponse_Runtime) GetIsDefault() bool {
+	if x != nil {
+		return x.IsDefault
+	}
+	return false
+}
+
 var File_proto_management_v1_workspaces_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_workspaces_proto_rawDesc = "" +
@@ -547,11 +695,21 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"\x15DownloadSourceRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\")\n" +
 	"\x13DownloadSourceChunk\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\xe1\x02\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"\x15\n" +
+	"\x13ListRuntimesRequest\"\xd6\x01\n" +
+	"\x14ListRuntimesResponse\x12P\n" +
+	"\bruntimes\x18\x01 \x03(\v24.graphene.management.v1.ListRuntimesResponse.RuntimeR\bruntimes\x1al\n" +
+	"\aRuntime\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
+	"\n" +
+	"is_default\x18\x04 \x01(\bR\tisDefault2\xcc\x03\n" +
 	"\rWorkspacesAPI\x12r\n" +
 	"\x0fCreateWorkspace\x12..graphene.management.v1.CreateWorkspaceRequest\x1a/.graphene.management.v1.CreateWorkspaceResponse\x12l\n" +
 	"\rSyncWorkspace\x12,.graphene.management.v1.SyncWorkspaceRequest\x1a-.graphene.management.v1.SyncWorkspaceResponse\x12n\n" +
-	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01BFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01\x12i\n" +
+	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_workspaces_proto_rawDescOnce sync.Once
@@ -565,31 +723,37 @@ func file_proto_management_v1_workspaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_workspaces_proto_rawDescData
 }
 
-var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_management_v1_workspaces_proto_goTypes = []any{
-	(*GitSource)(nil),               // 0: graphene.management.v1.GitSource
-	(*SnapshotSource)(nil),          // 1: graphene.management.v1.SnapshotSource
-	(*CreateWorkspaceRequest)(nil),  // 2: graphene.management.v1.CreateWorkspaceRequest
-	(*CreateWorkspaceResponse)(nil), // 3: graphene.management.v1.CreateWorkspaceResponse
-	(*SyncWorkspaceRequest)(nil),    // 4: graphene.management.v1.SyncWorkspaceRequest
-	(*SyncWorkspaceResponse)(nil),   // 5: graphene.management.v1.SyncWorkspaceResponse
-	(*DownloadSourceRequest)(nil),   // 6: graphene.management.v1.DownloadSourceRequest
-	(*DownloadSourceChunk)(nil),     // 7: graphene.management.v1.DownloadSourceChunk
+	(*GitSource)(nil),                    // 0: graphene.management.v1.GitSource
+	(*SnapshotSource)(nil),               // 1: graphene.management.v1.SnapshotSource
+	(*CreateWorkspaceRequest)(nil),       // 2: graphene.management.v1.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil),      // 3: graphene.management.v1.CreateWorkspaceResponse
+	(*SyncWorkspaceRequest)(nil),         // 4: graphene.management.v1.SyncWorkspaceRequest
+	(*SyncWorkspaceResponse)(nil),        // 5: graphene.management.v1.SyncWorkspaceResponse
+	(*DownloadSourceRequest)(nil),        // 6: graphene.management.v1.DownloadSourceRequest
+	(*DownloadSourceChunk)(nil),          // 7: graphene.management.v1.DownloadSourceChunk
+	(*ListRuntimesRequest)(nil),          // 8: graphene.management.v1.ListRuntimesRequest
+	(*ListRuntimesResponse)(nil),         // 9: graphene.management.v1.ListRuntimesResponse
+	(*ListRuntimesResponse_Runtime)(nil), // 10: graphene.management.v1.ListRuntimesResponse.Runtime
 }
 var file_proto_management_v1_workspaces_proto_depIdxs = []int32{
-	0, // 0: graphene.management.v1.CreateWorkspaceRequest.git:type_name -> graphene.management.v1.GitSource
-	1, // 1: graphene.management.v1.CreateWorkspaceRequest.snapshot:type_name -> graphene.management.v1.SnapshotSource
-	2, // 2: graphene.management.v1.WorkspacesAPI.CreateWorkspace:input_type -> graphene.management.v1.CreateWorkspaceRequest
-	4, // 3: graphene.management.v1.WorkspacesAPI.SyncWorkspace:input_type -> graphene.management.v1.SyncWorkspaceRequest
-	6, // 4: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
-	3, // 5: graphene.management.v1.WorkspacesAPI.CreateWorkspace:output_type -> graphene.management.v1.CreateWorkspaceResponse
-	5, // 6: graphene.management.v1.WorkspacesAPI.SyncWorkspace:output_type -> graphene.management.v1.SyncWorkspaceResponse
-	7, // 7: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: graphene.management.v1.CreateWorkspaceRequest.git:type_name -> graphene.management.v1.GitSource
+	1,  // 1: graphene.management.v1.CreateWorkspaceRequest.snapshot:type_name -> graphene.management.v1.SnapshotSource
+	10, // 2: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
+	2,  // 3: graphene.management.v1.WorkspacesAPI.CreateWorkspace:input_type -> graphene.management.v1.CreateWorkspaceRequest
+	4,  // 4: graphene.management.v1.WorkspacesAPI.SyncWorkspace:input_type -> graphene.management.v1.SyncWorkspaceRequest
+	6,  // 5: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
+	8,  // 6: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
+	3,  // 7: graphene.management.v1.WorkspacesAPI.CreateWorkspace:output_type -> graphene.management.v1.CreateWorkspaceResponse
+	5,  // 8: graphene.management.v1.WorkspacesAPI.SyncWorkspace:output_type -> graphene.management.v1.SyncWorkspaceResponse
+	7,  // 9: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
+	9,  // 10: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
+	7,  // [7:11] is the sub-list for method output_type
+	3,  // [3:7] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_workspaces_proto_init() }
@@ -607,7 +771,7 @@ func file_proto_management_v1_workspaces_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_workspaces_proto_rawDesc), len(file_proto_management_v1_workspaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -29,28 +29,26 @@ import (
 	"github.com/gopherex/xlog"
 
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
+	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/pipeline/pkg/selfbuild"
 )
 
-// DefaultRuntime builds Go pipelines; mirror.gcr.io serves regions
-// docker.io does not.
-const DefaultRuntime = "mirror.gcr.io/library/golang:1.26"
-
-// modCacheVolume persists the module cache across materializations.
-const modCacheVolume = "graphene-materialize-go-mod"
+// modCacheVolume persists a toolchain's dependency cache across
+// materializations; one volume per runtime.
+const modCacheVolume = "graphene-materialize-cache"
 
 // Materializer runs source builds on the installation's execution
 // backend (the same docker host the managed contour drives).
 type Materializer struct {
-	Docker  *dockerclient.Client
-	Runtime string
-	// GitRuntime carries git for source checkouts.
-	GitRuntime string
-	Registry   string // the installation's /v2 door, host:port
-	Token      string // a run-scoped token for the registry and blobs
-	Insecure   bool
-	Blobs      blob.Store
-	Log        *xlog.Logger
+	Docker *dockerclient.Client
+	// Runtimes is the installation's toolchain catalogue: which
+	// languages a pipeline may be written in.
+	Runtimes *runtimes.Catalogue
+	Registry string // the installation's /v2 door, host:port
+	Token    string // a run-scoped token for the registry and blobs
+	Insecure bool
+	Blobs    blob.Store
+	Log      *xlog.Logger
 }
 
 // Progress receives one progress line; stage is "runtime", "build",
@@ -74,7 +72,7 @@ type Result struct {
 // Materialize builds one source tree (a tar.gz) into a revision,
 // reporting progress as it goes — a build takes minutes and a silent
 // request dies on the first idle NAT.
-func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId string, srcTarGz []byte, progress Progress) (Result, error) {
+func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId, runtimeName string, srcTarGz []byte, progress Progress) (Result, error) {
 	var res Result
 	if progress == nil {
 		progress = func(string, string) {}
@@ -83,11 +81,12 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	sum := sha256.Sum256(srcTarGz)
 	res.SourceDigest = "sha256:" + hex.EncodeToString(sum[:])
 
-	runtimeImage := m.Runtime
-	if runtimeImage == "" {
-		runtimeImage = DefaultRuntime
+	rt, err := m.runtime(runtimeName)
+	if err != nil {
+		return res, err
 	}
-	if err := m.ensureImage(ctx, runtimeImage, progress); err != nil {
+	progress("runtime", fmt.Sprintf("%s %s", rt.Name, rt.Version))
+	if err := m.ensureImage(ctx, rt.Image, progress); err != nil {
 		return res, err
 	}
 	progress("runtime", "runtime container starting")
@@ -96,13 +95,17 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	// through the docker API (no shared host paths), the binary comes
 	// back the same way.
 	cont, err := m.Docker.ContainerCreate(ctx, &container.Config{
-		Image:      runtimeImage,
+		Image:      rt.Image,
 		Entrypoint: []string{"sleep", "3600"},
-		Env:        []string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64", "GOFLAGS=-mod=mod"},
+		Env:        buildEnv(rt),
 		WorkingDir: "/src",
 		Labels:     map[string]string{labelKey: pipelineId},
 	}, &container.HostConfig{
-		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: modCacheVolume, Target: "/go/pkg/mod"}},
+		Mounts: []mount.Mount{{
+			Type:   mount.TypeVolume,
+			Source: modCacheVolume + "-" + rt.Name,
+			Target: cachePath(rt),
+		}},
 	}, nil, nil, "")
 	if err != nil {
 		return res, fmt.Errorf("materialize container: %w", err)
@@ -122,26 +125,20 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 		return res, fmt.Errorf("copy source: %w", err)
 	}
 
-	// The fixed layout: the workspace root IS the entrypoint —
-	// `go build .`, one package main, no entrypoint discovery. The
-	// download runs first so its progress is visible on its own.
-	depLog, err := m.exec(ctx, cont.ID, nil, "go mod download -x 2>&1 | tail -200",
+	// The fixed layout: the workspace root IS the build root — one
+	// command from the catalogue, no entrypoint discovery, whatever the
+	// language.
+	buildLog, err := m.exec(ctx, cont.ID, nil, rt.Build+" 2>&1",
 		func(line string) { progress("build", line) })
-	if err != nil {
-		return res, fmt.Errorf("dependencies failed: %w\n%s", err, tail(depLog, 4000))
-	}
-	buildLog, err := m.exec(ctx, cont.ID, nil,
-		"go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/app . 2>&1",
-		func(line string) { progress("build", line) })
-	res.BuildLog = depLog + buildLog
+	res.BuildLog = buildLog
 	if err != nil {
 		return res, fmt.Errorf("build failed: %w\n%s", err, tail(buildLog, 4000))
 	}
-	progress("describe", "reading the manifest from the binary")
+	progress("describe", "reading the manifest from the artifact")
 
-	// The manifest comes from the binary itself — the same recording
+	// The manifest comes from the artifact itself — the same recording
 	// pass the local CLI used, now in describe mode on the server.
-	manifestOut, err := m.exec(ctx, cont.ID, []string{"GRAPHENE_MANIFEST=1"}, "/tmp/app", nil)
+	manifestOut, err := m.exec(ctx, cont.ID, []string{"GRAPHENE_MANIFEST=1"}, rt.Describe, nil)
 	if err != nil {
 		return res, fmt.Errorf("describe failed: %w\n%s", err, tail(manifestOut, 4000))
 	}
@@ -151,7 +148,7 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	}
 	res.Manifest = manifest
 
-	binPath, err := m.copyOut(ctx, cont.ID, "/tmp/app")
+	binPath, err := m.copyOut(ctx, cont.ID, rt.Artifact)
 	if err != nil {
 		return res, err
 	}
@@ -164,6 +161,7 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 		PipelineId: pipelineId,
 		Token:      m.Token,
 		Insecure:   m.Insecure,
+		BaseImage:  rt.Base,
 		Log: func(format string, args ...any) {
 			line := fmt.Sprintf(format, args...)
 			m.Log.Info("materialize: " + line)
@@ -183,6 +181,32 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 		return res, fmt.Errorf("store manifest: %w", err)
 	}
 	return res, nil
+}
+
+// runtime resolves the toolchain of one build.
+func (m *Materializer) runtime(name string) (runtimes.Runtime, error) {
+	catalogue := m.Runtimes
+	if catalogue == nil {
+		catalogue = runtimes.New(nil)
+	}
+	return catalogue.Resolve(name)
+}
+
+// buildEnv is the toolchain's environment: a reproducible static
+// build for Go, nothing special for the rest.
+func buildEnv(rt runtimes.Runtime) []string {
+	if rt.Name == "go" {
+		return []string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64", "GOFLAGS=-mod=mod"}
+	}
+	return nil
+}
+
+// cachePath is where a toolchain keeps its dependency cache.
+func cachePath(rt runtimes.Runtime) string {
+	if rt.Name == "go" {
+		return "/go/pkg/mod"
+	}
+	return "/cache"
 }
 
 // reapOrphans removes materialization containers left by killed

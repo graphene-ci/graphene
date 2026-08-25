@@ -31,6 +31,7 @@ import (
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -53,6 +54,8 @@ type Management struct {
 	Materializer *materialize.Materializer
 	// Blobs reads revision manifests.
 	Blobs blob.Store
+	// Runtimes is the installation's toolchain catalogue.
+	Runtimes *runtimes.Catalogue
 	// Version is the server build version, for ServerInfo.
 	Version string
 	Log     *xlog.Logger
