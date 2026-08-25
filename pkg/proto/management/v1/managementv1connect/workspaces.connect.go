@@ -33,12 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// WorkspacesAPICreateWorkspaceProcedure is the fully-qualified name of the WorkspacesAPI's
-	// CreateWorkspace RPC.
-	WorkspacesAPICreateWorkspaceProcedure = "/graphene.management.v1.WorkspacesAPI/CreateWorkspace"
-	// WorkspacesAPISyncWorkspaceProcedure is the fully-qualified name of the WorkspacesAPI's
-	// SyncWorkspace RPC.
-	WorkspacesAPISyncWorkspaceProcedure = "/graphene.management.v1.WorkspacesAPI/SyncWorkspace"
+	// WorkspacesAPIUploadSourceProcedure is the fully-qualified name of the WorkspacesAPI's
+	// UploadSource RPC.
+	WorkspacesAPIUploadSourceProcedure = "/graphene.management.v1.WorkspacesAPI/UploadSource"
 	// WorkspacesAPIDownloadSourceProcedure is the fully-qualified name of the WorkspacesAPI's
 	// DownloadSource RPC.
 	WorkspacesAPIDownloadSourceProcedure = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
@@ -58,10 +55,10 @@ const (
 
 // WorkspacesAPIClient is a client for the graphene.management.v1.WorkspacesAPI service.
 type WorkspacesAPIClient interface {
-	CreateWorkspace(context.Context, *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error)
-	// SyncWorkspace re-resolves the source: a Git workspace fetches its
-	// ref again, a snapshot workspace takes a freshly uploaded tree.
-	SyncWorkspace(context.Context, *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error)
+	// UploadSource stores a source tree and returns its reference. Bytes
+	// do not travel in commands: a command's payload becomes an event in
+	// the record's history, and a source tree would bury it.
+	UploadSource(context.Context, *connect.Request[v1.UploadSourceRequest]) (*connect.Response[v1.UploadSourceResponse], error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest]) (*connect.ServerStreamForClient[v1.DownloadSourceChunk], error)
 	// ListRuntimes answers "which languages can I write a pipeline in
@@ -87,16 +84,10 @@ func NewWorkspacesAPIClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workspacesAPIMethods := v1.File_proto_management_v1_workspaces_proto.Services().ByName("WorkspacesAPI").Methods()
 	return &workspacesAPIClient{
-		createWorkspace: connect.NewClient[v1.CreateWorkspaceRequest, v1.CreateWorkspaceResponse](
+		uploadSource: connect.NewClient[v1.UploadSourceRequest, v1.UploadSourceResponse](
 			httpClient,
-			baseURL+WorkspacesAPICreateWorkspaceProcedure,
-			connect.WithSchema(workspacesAPIMethods.ByName("CreateWorkspace")),
-			connect.WithClientOptions(opts...),
-		),
-		syncWorkspace: connect.NewClient[v1.SyncWorkspaceRequest, v1.SyncWorkspaceResponse](
-			httpClient,
-			baseURL+WorkspacesAPISyncWorkspaceProcedure,
-			connect.WithSchema(workspacesAPIMethods.ByName("SyncWorkspace")),
+			baseURL+WorkspacesAPIUploadSourceProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("UploadSource")),
 			connect.WithClientOptions(opts...),
 		),
 		downloadSource: connect.NewClient[v1.DownloadSourceRequest, v1.DownloadSourceChunk](
@@ -140,24 +131,18 @@ func NewWorkspacesAPIClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workspacesAPIClient implements WorkspacesAPIClient.
 type workspacesAPIClient struct {
-	createWorkspace *connect.Client[v1.CreateWorkspaceRequest, v1.CreateWorkspaceResponse]
-	syncWorkspace   *connect.Client[v1.SyncWorkspaceRequest, v1.SyncWorkspaceResponse]
-	downloadSource  *connect.Client[v1.DownloadSourceRequest, v1.DownloadSourceChunk]
-	listRuntimes    *connect.Client[v1.ListRuntimesRequest, v1.ListRuntimesResponse]
-	listFiles       *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
-	readFile        *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
-	writeFile       *connect.Client[v1.WriteFileRequest, v1.WriteFileResponse]
-	deleteFile      *connect.Client[v1.DeleteFileRequest, v1.WriteFileResponse]
+	uploadSource   *connect.Client[v1.UploadSourceRequest, v1.UploadSourceResponse]
+	downloadSource *connect.Client[v1.DownloadSourceRequest, v1.DownloadSourceChunk]
+	listRuntimes   *connect.Client[v1.ListRuntimesRequest, v1.ListRuntimesResponse]
+	listFiles      *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
+	readFile       *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
+	writeFile      *connect.Client[v1.WriteFileRequest, v1.WriteFileResponse]
+	deleteFile     *connect.Client[v1.DeleteFileRequest, v1.WriteFileResponse]
 }
 
-// CreateWorkspace calls graphene.management.v1.WorkspacesAPI.CreateWorkspace.
-func (c *workspacesAPIClient) CreateWorkspace(ctx context.Context, req *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error) {
-	return c.createWorkspace.CallUnary(ctx, req)
-}
-
-// SyncWorkspace calls graphene.management.v1.WorkspacesAPI.SyncWorkspace.
-func (c *workspacesAPIClient) SyncWorkspace(ctx context.Context, req *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error) {
-	return c.syncWorkspace.CallUnary(ctx, req)
+// UploadSource calls graphene.management.v1.WorkspacesAPI.UploadSource.
+func (c *workspacesAPIClient) UploadSource(ctx context.Context, req *connect.Request[v1.UploadSourceRequest]) (*connect.Response[v1.UploadSourceResponse], error) {
+	return c.uploadSource.CallUnary(ctx, req)
 }
 
 // DownloadSource calls graphene.management.v1.WorkspacesAPI.DownloadSource.
@@ -192,10 +177,10 @@ func (c *workspacesAPIClient) DeleteFile(ctx context.Context, req *connect.Reque
 
 // WorkspacesAPIHandler is an implementation of the graphene.management.v1.WorkspacesAPI service.
 type WorkspacesAPIHandler interface {
-	CreateWorkspace(context.Context, *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error)
-	// SyncWorkspace re-resolves the source: a Git workspace fetches its
-	// ref again, a snapshot workspace takes a freshly uploaded tree.
-	SyncWorkspace(context.Context, *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error)
+	// UploadSource stores a source tree and returns its reference. Bytes
+	// do not travel in commands: a command's payload becomes an event in
+	// the record's history, and a source tree would bury it.
+	UploadSource(context.Context, *connect.Request[v1.UploadSourceRequest]) (*connect.Response[v1.UploadSourceResponse], error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest], *connect.ServerStream[v1.DownloadSourceChunk]) error
 	// ListRuntimes answers "which languages can I write a pipeline in
@@ -217,16 +202,10 @@ type WorkspacesAPIHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workspacesAPIMethods := v1.File_proto_management_v1_workspaces_proto.Services().ByName("WorkspacesAPI").Methods()
-	workspacesAPICreateWorkspaceHandler := connect.NewUnaryHandler(
-		WorkspacesAPICreateWorkspaceProcedure,
-		svc.CreateWorkspace,
-		connect.WithSchema(workspacesAPIMethods.ByName("CreateWorkspace")),
-		connect.WithHandlerOptions(opts...),
-	)
-	workspacesAPISyncWorkspaceHandler := connect.NewUnaryHandler(
-		WorkspacesAPISyncWorkspaceProcedure,
-		svc.SyncWorkspace,
-		connect.WithSchema(workspacesAPIMethods.ByName("SyncWorkspace")),
+	workspacesAPIUploadSourceHandler := connect.NewUnaryHandler(
+		WorkspacesAPIUploadSourceProcedure,
+		svc.UploadSource,
+		connect.WithSchema(workspacesAPIMethods.ByName("UploadSource")),
 		connect.WithHandlerOptions(opts...),
 	)
 	workspacesAPIDownloadSourceHandler := connect.NewServerStreamHandler(
@@ -267,10 +246,8 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 	)
 	return "/graphene.management.v1.WorkspacesAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case WorkspacesAPICreateWorkspaceProcedure:
-			workspacesAPICreateWorkspaceHandler.ServeHTTP(w, r)
-		case WorkspacesAPISyncWorkspaceProcedure:
-			workspacesAPISyncWorkspaceHandler.ServeHTTP(w, r)
+		case WorkspacesAPIUploadSourceProcedure:
+			workspacesAPIUploadSourceHandler.ServeHTTP(w, r)
 		case WorkspacesAPIDownloadSourceProcedure:
 			workspacesAPIDownloadSourceHandler.ServeHTTP(w, r)
 		case WorkspacesAPIListRuntimesProcedure:
@@ -292,12 +269,8 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 // UnimplementedWorkspacesAPIHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkspacesAPIHandler struct{}
 
-func (UnimplementedWorkspacesAPIHandler) CreateWorkspace(context.Context, *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.CreateWorkspace is not implemented"))
-}
-
-func (UnimplementedWorkspacesAPIHandler) SyncWorkspace(context.Context, *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.SyncWorkspace is not implemented"))
+func (UnimplementedWorkspacesAPIHandler) UploadSource(context.Context, *connect.Request[v1.UploadSourceRequest]) (*connect.Response[v1.UploadSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.UploadSource is not implemented"))
 }
 
 func (UnimplementedWorkspacesAPIHandler) DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest], *connect.ServerStream[v1.DownloadSourceChunk]) error {

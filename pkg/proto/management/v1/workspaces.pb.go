@@ -21,315 +21,30 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type GitSource struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Url   string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	// Branch, tag or commit; empty takes the default branch.
-	Ref string `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
-	// The pipeline's root inside a monorepo.
-	Subdir string `protobuf:"bytes,3,opt,name=subdir,proto3" json:"subdir,omitempty"`
-	// Name of the secret holding the token; only the name travels.
-	CredentialSecret string `protobuf:"bytes,4,opt,name=credential_secret,json=credentialSecret,proto3" json:"credential_secret,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *GitSource) Reset() {
-	*x = GitSource{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GitSource) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GitSource) ProtoMessage() {}
-
-func (x *GitSource) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GitSource.ProtoReflect.Descriptor instead.
-func (*GitSource) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *GitSource) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *GitSource) GetRef() string {
-	if x != nil {
-		return x.Ref
-	}
-	return ""
-}
-
-func (x *GitSource) GetSubdir() string {
-	if x != nil {
-		return x.Subdir
-	}
-	return ""
-}
-
-func (x *GitSource) GetCredentialSecret() string {
-	if x != nil {
-		return x.CredentialSecret
-	}
-	return ""
-}
-
-type SnapshotSource struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The uploaded tree as tar.gz.
-	Source        []byte `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SnapshotSource) Reset() {
-	*x = SnapshotSource{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SnapshotSource) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SnapshotSource) ProtoMessage() {}
-
-func (x *SnapshotSource) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SnapshotSource.ProtoReflect.Descriptor instead.
-func (*SnapshotSource) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *SnapshotSource) GetSource() []byte {
-	if x != nil {
-		return x.Source
-	}
-	return nil
-}
-
-type CreateWorkspaceRequest struct {
+type UploadSourceRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	// Types that are valid to be assigned to Source:
-	//
-	//	*CreateWorkspaceRequest_Git
-	//	*CreateWorkspaceRequest_Snapshot
-	Source isCreateWorkspaceRequest_Source `protobuf_oneof:"source"`
-	// Runtime of this project ("go"); empty takes the installation's.
-	Runtime string `protobuf:"bytes,4,opt,name=runtime,proto3" json:"runtime,omitempty"`
-	// The pipeline this workspace publishes.
-	PipelineId    string `protobuf:"bytes,5,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateWorkspaceRequest) Reset() {
-	*x = CreateWorkspaceRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateWorkspaceRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateWorkspaceRequest) ProtoMessage() {}
-
-func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateWorkspaceRequest.ProtoReflect.Descriptor instead.
-func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *CreateWorkspaceRequest) GetWorkspaceId() string {
-	if x != nil {
-		return x.WorkspaceId
-	}
-	return ""
-}
-
-func (x *CreateWorkspaceRequest) GetSource() isCreateWorkspaceRequest_Source {
-	if x != nil {
-		return x.Source
-	}
-	return nil
-}
-
-func (x *CreateWorkspaceRequest) GetGit() *GitSource {
-	if x != nil {
-		if x, ok := x.Source.(*CreateWorkspaceRequest_Git); ok {
-			return x.Git
-		}
-	}
-	return nil
-}
-
-func (x *CreateWorkspaceRequest) GetSnapshot() *SnapshotSource {
-	if x != nil {
-		if x, ok := x.Source.(*CreateWorkspaceRequest_Snapshot); ok {
-			return x.Snapshot
-		}
-	}
-	return nil
-}
-
-func (x *CreateWorkspaceRequest) GetRuntime() string {
-	if x != nil {
-		return x.Runtime
-	}
-	return ""
-}
-
-func (x *CreateWorkspaceRequest) GetPipelineId() string {
-	if x != nil {
-		return x.PipelineId
-	}
-	return ""
-}
-
-type isCreateWorkspaceRequest_Source interface {
-	isCreateWorkspaceRequest_Source()
-}
-
-type CreateWorkspaceRequest_Git struct {
-	Git *GitSource `protobuf:"bytes,2,opt,name=git,proto3,oneof"`
-}
-
-type CreateWorkspaceRequest_Snapshot struct {
-	Snapshot *SnapshotSource `protobuf:"bytes,3,opt,name=snapshot,proto3,oneof"`
-}
-
-func (*CreateWorkspaceRequest_Git) isCreateWorkspaceRequest_Source() {}
-
-func (*CreateWorkspaceRequest_Snapshot) isCreateWorkspaceRequest_Source() {}
-
-type CreateWorkspaceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	TreeDigest    string                 `protobuf:"bytes,2,opt,name=tree_digest,json=treeDigest,proto3" json:"tree_digest,omitempty"`
-	GitCommit     string                 `protobuf:"bytes,3,opt,name=git_commit,json=gitCommit,proto3" json:"git_commit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateWorkspaceResponse) Reset() {
-	*x = CreateWorkspaceResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateWorkspaceResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateWorkspaceResponse) ProtoMessage() {}
-
-func (x *CreateWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateWorkspaceResponse.ProtoReflect.Descriptor instead.
-func (*CreateWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *CreateWorkspaceResponse) GetWorkspaceId() string {
-	if x != nil {
-		return x.WorkspaceId
-	}
-	return ""
-}
-
-func (x *CreateWorkspaceResponse) GetTreeDigest() string {
-	if x != nil {
-		return x.TreeDigest
-	}
-	return ""
-}
-
-func (x *CreateWorkspaceResponse) GetGitCommit() string {
-	if x != nil {
-		return x.GitCommit
-	}
-	return ""
-}
-
-type SyncWorkspaceRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	// A fresh tree replaces the working tree (snapshot workspaces);
-	// empty re-fetches the Git ref.
+	// The tree as tar.gz.
 	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SyncWorkspaceRequest) Reset() {
-	*x = SyncWorkspaceRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
+func (x *UploadSourceRequest) Reset() {
+	*x = UploadSourceRequest{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SyncWorkspaceRequest) String() string {
+func (x *UploadSourceRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SyncWorkspaceRequest) ProtoMessage() {}
+func (*UploadSourceRequest) ProtoMessage() {}
 
-func (x *SyncWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
+func (x *UploadSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -340,49 +55,50 @@ func (x *SyncWorkspaceRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SyncWorkspaceRequest.ProtoReflect.Descriptor instead.
-func (*SyncWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use UploadSourceRequest.ProtoReflect.Descriptor instead.
+func (*UploadSourceRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *SyncWorkspaceRequest) GetWorkspaceId() string {
+func (x *UploadSourceRequest) GetWorkspaceId() string {
 	if x != nil {
 		return x.WorkspaceId
 	}
 	return ""
 }
 
-func (x *SyncWorkspaceRequest) GetSource() []byte {
+func (x *UploadSourceRequest) GetSource() []byte {
 	if x != nil {
 		return x.Source
 	}
 	return nil
 }
 
-type SyncWorkspaceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TreeDigest    string                 `protobuf:"bytes,1,opt,name=tree_digest,json=treeDigest,proto3" json:"tree_digest,omitempty"`
-	GitCommit     string                 `protobuf:"bytes,2,opt,name=git_commit,json=gitCommit,proto3" json:"git_commit,omitempty"`
-	Generation    uint64                 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
+type UploadSourceResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Location is where the tree was stored; a declaration or a sync
+	// command carries this reference instead of the bytes.
+	Location      string `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Digest        string `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SyncWorkspaceResponse) Reset() {
-	*x = SyncWorkspaceResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
+func (x *UploadSourceResponse) Reset() {
+	*x = UploadSourceResponse{}
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SyncWorkspaceResponse) String() string {
+func (x *UploadSourceResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SyncWorkspaceResponse) ProtoMessage() {}
+func (*UploadSourceResponse) ProtoMessage() {}
 
-func (x *SyncWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
+func (x *UploadSourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,30 +109,23 @@ func (x *SyncWorkspaceResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SyncWorkspaceResponse.ProtoReflect.Descriptor instead.
-func (*SyncWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{5}
+// Deprecated: Use UploadSourceResponse.ProtoReflect.Descriptor instead.
+func (*UploadSourceResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *SyncWorkspaceResponse) GetTreeDigest() string {
+func (x *UploadSourceResponse) GetLocation() string {
 	if x != nil {
-		return x.TreeDigest
+		return x.Location
 	}
 	return ""
 }
 
-func (x *SyncWorkspaceResponse) GetGitCommit() string {
+func (x *UploadSourceResponse) GetDigest() string {
 	if x != nil {
-		return x.GitCommit
+		return x.Digest
 	}
 	return ""
-}
-
-func (x *SyncWorkspaceResponse) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
 }
 
 type DownloadSourceRequest struct {
@@ -428,7 +137,7 @@ type DownloadSourceRequest struct {
 
 func (x *DownloadSourceRequest) Reset() {
 	*x = DownloadSourceRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -440,7 +149,7 @@ func (x *DownloadSourceRequest) String() string {
 func (*DownloadSourceRequest) ProtoMessage() {}
 
 func (x *DownloadSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -453,7 +162,7 @@ func (x *DownloadSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadSourceRequest.ProtoReflect.Descriptor instead.
 func (*DownloadSourceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DownloadSourceRequest) GetWorkspaceId() string {
@@ -472,7 +181,7 @@ type DownloadSourceChunk struct {
 
 func (x *DownloadSourceChunk) Reset() {
 	*x = DownloadSourceChunk{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +193,7 @@ func (x *DownloadSourceChunk) String() string {
 func (*DownloadSourceChunk) ProtoMessage() {}
 
 func (x *DownloadSourceChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +206,7 @@ func (x *DownloadSourceChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadSourceChunk.ProtoReflect.Descriptor instead.
 func (*DownloadSourceChunk) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{7}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DownloadSourceChunk) GetData() []byte {
@@ -515,7 +224,7 @@ type ListRuntimesRequest struct {
 
 func (x *ListRuntimesRequest) Reset() {
 	*x = ListRuntimesRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -527,7 +236,7 @@ func (x *ListRuntimesRequest) String() string {
 func (*ListRuntimesRequest) ProtoMessage() {}
 
 func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -540,7 +249,7 @@ func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesRequest.ProtoReflect.Descriptor instead.
 func (*ListRuntimesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{8}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{4}
 }
 
 type ListRuntimesResponse struct {
@@ -552,7 +261,7 @@ type ListRuntimesResponse struct {
 
 func (x *ListRuntimesResponse) Reset() {
 	*x = ListRuntimesResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -564,7 +273,7 @@ func (x *ListRuntimesResponse) String() string {
 func (*ListRuntimesResponse) ProtoMessage() {}
 
 func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -577,7 +286,7 @@ func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesResponse.ProtoReflect.Descriptor instead.
 func (*ListRuntimesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
@@ -596,7 +305,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +317,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +330,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{10}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListFilesRequest) GetWorkspaceId() string {
@@ -641,7 +350,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +362,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +375,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListFilesResponse) GetFiles() []*ListFilesResponse_File {
@@ -693,7 +402,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +414,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +427,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{12}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReadFileRequest) GetWorkspaceId() string {
@@ -744,7 +453,7 @@ type ReadFileResponse struct {
 
 func (x *ReadFileResponse) Reset() {
 	*x = ReadFileResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +465,7 @@ func (x *ReadFileResponse) String() string {
 func (*ReadFileResponse) ProtoMessage() {}
 
 func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +478,7 @@ func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{13}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReadFileResponse) GetContent() []byte {
@@ -790,7 +499,7 @@ type WriteFileRequest struct {
 
 func (x *WriteFileRequest) Reset() {
 	*x = WriteFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +511,7 @@ func (x *WriteFileRequest) String() string {
 func (*WriteFileRequest) ProtoMessage() {}
 
 func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +524,7 @@ func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{14}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WriteFileRequest) GetWorkspaceId() string {
@@ -849,7 +558,7 @@ type WriteFileResponse struct {
 
 func (x *WriteFileResponse) Reset() {
 	*x = WriteFileResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[15]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -861,7 +570,7 @@ func (x *WriteFileResponse) String() string {
 func (*WriteFileResponse) ProtoMessage() {}
 
 func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[15]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -874,7 +583,7 @@ func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
 func (*WriteFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{15}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WriteFileResponse) GetTreeDigest() string {
@@ -901,7 +610,7 @@ type DeleteFileRequest struct {
 
 func (x *DeleteFileRequest) Reset() {
 	*x = DeleteFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[16]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +622,7 @@ func (x *DeleteFileRequest) String() string {
 func (*DeleteFileRequest) ProtoMessage() {}
 
 func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[16]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +635,7 @@ func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{16}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteFileRequest) GetWorkspaceId() string {
@@ -955,7 +664,7 @@ type ListRuntimesResponse_Runtime struct {
 
 func (x *ListRuntimesResponse_Runtime) Reset() {
 	*x = ListRuntimesResponse_Runtime{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[17]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -967,7 +676,7 @@ func (x *ListRuntimesResponse_Runtime) String() string {
 func (*ListRuntimesResponse_Runtime) ProtoMessage() {}
 
 func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[17]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -980,7 +689,7 @@ func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesResponse_Runtime.ProtoReflect.Descriptor instead.
 func (*ListRuntimesResponse_Runtime) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9, 0}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{5, 0}
 }
 
 func (x *ListRuntimesResponse_Runtime) GetName() string {
@@ -1021,7 +730,7 @@ type ListFilesResponse_File struct {
 
 func (x *ListFilesResponse_File) Reset() {
 	*x = ListFilesResponse_File{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[18]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1033,7 +742,7 @@ func (x *ListFilesResponse_File) String() string {
 func (*ListFilesResponse_File) ProtoMessage() {}
 
 func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[18]
+	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1046,7 +755,7 @@ func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse_File.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse_File) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11, 0}
+	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{7, 0}
 }
 
 func (x *ListFilesResponse_File) GetPath() string {
@@ -1067,39 +776,13 @@ var File_proto_management_v1_workspaces_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"\n" +
-	"$proto/management/v1/workspaces.proto\x12\x16graphene.management.v1\"t\n" +
-	"\tGitSource\x12\x10\n" +
-	"\x03url\x18\x01 \x01(\tR\x03url\x12\x10\n" +
-	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x16\n" +
-	"\x06subdir\x18\x03 \x01(\tR\x06subdir\x12+\n" +
-	"\x11credential_secret\x18\x04 \x01(\tR\x10credentialSecret\"(\n" +
-	"\x0eSnapshotSource\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\fR\x06source\"\xfd\x01\n" +
-	"\x16CreateWorkspaceRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x125\n" +
-	"\x03git\x18\x02 \x01(\v2!.graphene.management.v1.GitSourceH\x00R\x03git\x12D\n" +
-	"\bsnapshot\x18\x03 \x01(\v2&.graphene.management.v1.SnapshotSourceH\x00R\bsnapshot\x12\x18\n" +
-	"\aruntime\x18\x04 \x01(\tR\aruntime\x12\x1f\n" +
-	"\vpipeline_id\x18\x05 \x01(\tR\n" +
-	"pipelineIdB\b\n" +
-	"\x06source\"|\n" +
-	"\x17CreateWorkspaceResponse\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x1f\n" +
-	"\vtree_digest\x18\x02 \x01(\tR\n" +
-	"treeDigest\x12\x1d\n" +
-	"\n" +
-	"git_commit\x18\x03 \x01(\tR\tgitCommit\"Q\n" +
-	"\x14SyncWorkspaceRequest\x12!\n" +
+	"$proto/management/v1/workspaces.proto\x12\x16graphene.management.v1\"P\n" +
+	"\x13UploadSourceRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\fR\x06source\"w\n" +
-	"\x15SyncWorkspaceResponse\x12\x1f\n" +
-	"\vtree_digest\x18\x01 \x01(\tR\n" +
-	"treeDigest\x12\x1d\n" +
-	"\n" +
-	"git_commit\x18\x02 \x01(\tR\tgitCommit\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x03 \x01(\x04R\n" +
-	"generation\":\n" +
+	"\x06source\x18\x02 \x01(\fR\x06source\"J\n" +
+	"\x14UploadSourceResponse\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x16\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\":\n" +
 	"\x15DownloadSourceRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\")\n" +
 	"\x13DownloadSourceChunk\x12\x12\n" +
@@ -1139,10 +822,9 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"generation\"J\n" +
 	"\x11DeleteFileRequest\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path2\xd3\x06\n" +
-	"\rWorkspacesAPI\x12r\n" +
-	"\x0fCreateWorkspace\x12..graphene.management.v1.CreateWorkspaceRequest\x1a/.graphene.management.v1.CreateWorkspaceResponse\x12l\n" +
-	"\rSyncWorkspace\x12,.graphene.management.v1.SyncWorkspaceRequest\x1a-.graphene.management.v1.SyncWorkspaceResponse\x12n\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path2\xdc\x05\n" +
+	"\rWorkspacesAPI\x12i\n" +
+	"\fUploadSource\x12+.graphene.management.v1.UploadSourceRequest\x1a,.graphene.management.v1.UploadSourceResponse\x12n\n" +
 	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01\x12i\n" +
 	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponse\x12`\n" +
 	"\tListFiles\x12(.graphene.management.v1.ListFilesRequest\x1a).graphene.management.v1.ListFilesResponse\x12]\n" +
@@ -1163,54 +845,46 @@ func file_proto_management_v1_workspaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_workspaces_proto_rawDescData
 }
 
-var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_management_v1_workspaces_proto_goTypes = []any{
-	(*GitSource)(nil),                    // 0: graphene.management.v1.GitSource
-	(*SnapshotSource)(nil),               // 1: graphene.management.v1.SnapshotSource
-	(*CreateWorkspaceRequest)(nil),       // 2: graphene.management.v1.CreateWorkspaceRequest
-	(*CreateWorkspaceResponse)(nil),      // 3: graphene.management.v1.CreateWorkspaceResponse
-	(*SyncWorkspaceRequest)(nil),         // 4: graphene.management.v1.SyncWorkspaceRequest
-	(*SyncWorkspaceResponse)(nil),        // 5: graphene.management.v1.SyncWorkspaceResponse
-	(*DownloadSourceRequest)(nil),        // 6: graphene.management.v1.DownloadSourceRequest
-	(*DownloadSourceChunk)(nil),          // 7: graphene.management.v1.DownloadSourceChunk
-	(*ListRuntimesRequest)(nil),          // 8: graphene.management.v1.ListRuntimesRequest
-	(*ListRuntimesResponse)(nil),         // 9: graphene.management.v1.ListRuntimesResponse
-	(*ListFilesRequest)(nil),             // 10: graphene.management.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),            // 11: graphene.management.v1.ListFilesResponse
-	(*ReadFileRequest)(nil),              // 12: graphene.management.v1.ReadFileRequest
-	(*ReadFileResponse)(nil),             // 13: graphene.management.v1.ReadFileResponse
-	(*WriteFileRequest)(nil),             // 14: graphene.management.v1.WriteFileRequest
-	(*WriteFileResponse)(nil),            // 15: graphene.management.v1.WriteFileResponse
-	(*DeleteFileRequest)(nil),            // 16: graphene.management.v1.DeleteFileRequest
-	(*ListRuntimesResponse_Runtime)(nil), // 17: graphene.management.v1.ListRuntimesResponse.Runtime
-	(*ListFilesResponse_File)(nil),       // 18: graphene.management.v1.ListFilesResponse.File
+	(*UploadSourceRequest)(nil),          // 0: graphene.management.v1.UploadSourceRequest
+	(*UploadSourceResponse)(nil),         // 1: graphene.management.v1.UploadSourceResponse
+	(*DownloadSourceRequest)(nil),        // 2: graphene.management.v1.DownloadSourceRequest
+	(*DownloadSourceChunk)(nil),          // 3: graphene.management.v1.DownloadSourceChunk
+	(*ListRuntimesRequest)(nil),          // 4: graphene.management.v1.ListRuntimesRequest
+	(*ListRuntimesResponse)(nil),         // 5: graphene.management.v1.ListRuntimesResponse
+	(*ListFilesRequest)(nil),             // 6: graphene.management.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),            // 7: graphene.management.v1.ListFilesResponse
+	(*ReadFileRequest)(nil),              // 8: graphene.management.v1.ReadFileRequest
+	(*ReadFileResponse)(nil),             // 9: graphene.management.v1.ReadFileResponse
+	(*WriteFileRequest)(nil),             // 10: graphene.management.v1.WriteFileRequest
+	(*WriteFileResponse)(nil),            // 11: graphene.management.v1.WriteFileResponse
+	(*DeleteFileRequest)(nil),            // 12: graphene.management.v1.DeleteFileRequest
+	(*ListRuntimesResponse_Runtime)(nil), // 13: graphene.management.v1.ListRuntimesResponse.Runtime
+	(*ListFilesResponse_File)(nil),       // 14: graphene.management.v1.ListFilesResponse.File
 }
 var file_proto_management_v1_workspaces_proto_depIdxs = []int32{
-	0,  // 0: graphene.management.v1.CreateWorkspaceRequest.git:type_name -> graphene.management.v1.GitSource
-	1,  // 1: graphene.management.v1.CreateWorkspaceRequest.snapshot:type_name -> graphene.management.v1.SnapshotSource
-	17, // 2: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
-	18, // 3: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
-	2,  // 4: graphene.management.v1.WorkspacesAPI.CreateWorkspace:input_type -> graphene.management.v1.CreateWorkspaceRequest
-	4,  // 5: graphene.management.v1.WorkspacesAPI.SyncWorkspace:input_type -> graphene.management.v1.SyncWorkspaceRequest
-	6,  // 6: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
-	8,  // 7: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
-	10, // 8: graphene.management.v1.WorkspacesAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
-	12, // 9: graphene.management.v1.WorkspacesAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
-	14, // 10: graphene.management.v1.WorkspacesAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
-	16, // 11: graphene.management.v1.WorkspacesAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
-	3,  // 12: graphene.management.v1.WorkspacesAPI.CreateWorkspace:output_type -> graphene.management.v1.CreateWorkspaceResponse
-	5,  // 13: graphene.management.v1.WorkspacesAPI.SyncWorkspace:output_type -> graphene.management.v1.SyncWorkspaceResponse
-	7,  // 14: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
-	9,  // 15: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
-	11, // 16: graphene.management.v1.WorkspacesAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
-	13, // 17: graphene.management.v1.WorkspacesAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
-	15, // 18: graphene.management.v1.WorkspacesAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
-	15, // 19: graphene.management.v1.WorkspacesAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	13, // 0: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
+	14, // 1: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
+	0,  // 2: graphene.management.v1.WorkspacesAPI.UploadSource:input_type -> graphene.management.v1.UploadSourceRequest
+	2,  // 3: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
+	4,  // 4: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
+	6,  // 5: graphene.management.v1.WorkspacesAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
+	8,  // 6: graphene.management.v1.WorkspacesAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
+	10, // 7: graphene.management.v1.WorkspacesAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
+	12, // 8: graphene.management.v1.WorkspacesAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
+	1,  // 9: graphene.management.v1.WorkspacesAPI.UploadSource:output_type -> graphene.management.v1.UploadSourceResponse
+	3,  // 10: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
+	5,  // 11: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
+	7,  // 12: graphene.management.v1.WorkspacesAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
+	9,  // 13: graphene.management.v1.WorkspacesAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
+	11, // 14: graphene.management.v1.WorkspacesAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
+	11, // 15: graphene.management.v1.WorkspacesAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
+	9,  // [9:16] is the sub-list for method output_type
+	2,  // [2:9] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_workspaces_proto_init() }
@@ -1218,17 +892,13 @@ func file_proto_management_v1_workspaces_proto_init() {
 	if File_proto_management_v1_workspaces_proto != nil {
 		return
 	}
-	file_proto_management_v1_workspaces_proto_msgTypes[2].OneofWrappers = []any{
-		(*CreateWorkspaceRequest_Git)(nil),
-		(*CreateWorkspaceRequest_Snapshot)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_workspaces_proto_rawDesc), len(file_proto_management_v1_workspaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
