@@ -33,6 +33,7 @@ import (
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/httpapi"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
@@ -182,7 +183,10 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Version:  cfg.Version,
 		Blobs:    blobStore,
 		Runtimes: runtimes.New(cfg.Runtimes),
-		Log:      log.With(xlog.String("component", "management")),
+		// Authorization reads the namespace's roles and bindings — the
+		// default namespace's worker is the store.
+		Authz: authz.NewResolver(defaultBundle.Worker),
+		Log:   log.With(xlog.String("component", "management")),
 	}
 
 	observe := &services.Observe{

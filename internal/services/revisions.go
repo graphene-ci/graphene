@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -46,7 +46,7 @@ const pollEvery = 3 * time.Second
 // in this connection.
 func (m *Management) Materialize(ctx context.Context, creq *connect.Request[managementv1.MaterializeRequest], stream *connect.ServerStream[managementv1.MaterializeEvent]) error {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbBuild, authz.KindRevision)
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func tailBytes(b []byte, n int) string {
 // ListRevisions lists the pipeline's materialized revisions; the
 // active one is whichever image the pipeline currently points at.
 func (m *Management) ListRevisions(ctx context.Context, creq *connect.Request[managementv1.ListRevisionsRequest]) (*connect.Response[managementv1.ListRevisionsResponse], error) {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +243,7 @@ func (m *Management) ListRevisions(ctx context.Context, creq *connect.Request[ma
 // image — active or not.
 func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[managementv1.RunRevisionRequest]) (*connect.Response[managementv1.RunRevisionResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbRun, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 // reconcile against the NEW declaration set.
 func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request[managementv1.ActivateRevisionRequest]) (*connect.Response[managementv1.ActivateRevisionResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbActivate, authz.KindRevision)
 	if err != nil {
 		return nil, err
 	}

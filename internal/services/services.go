@@ -20,7 +20,9 @@ import (
 // NamespaceHeader picks the namespace for cluster-wide admin tokens.
 const NamespaceHeader = "x-graphene-namespace"
 
-// scope resolves the caller's namespace and checks the role.
+// scope resolves the caller's namespace and checks the role. Kept for
+// the worker plane, whose callers are runs holding a run token; the
+// management doors go through authorization instead.
 func scope(ctx context.Context, roles ...auth.Role) (string, error) {
 	p, ok := auth.FromContext(ctx)
 	if !ok {
@@ -36,6 +38,12 @@ func scope(ctx context.Context, roles ...auth.Role) (string, error) {
 	if !allowed {
 		return "", status.Errorf(codes.PermissionDenied, "role %s may not call this", p.Role)
 	}
+	return namespaceFor(ctx, p)
+}
+
+// namespaceFor resolves which namespace a principal acts in: its own,
+// or the one an installation-wide admin picked with the header.
+func namespaceFor(ctx context.Context, p auth.Principal) (string, error) {
 	namespace := p.Namespace
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if hdr := md.Get(NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {

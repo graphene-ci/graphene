@@ -1,0 +1,93 @@
+package services
+
+// Every door asks the same question before it acts: may THIS caller do
+// THIS verb on THIS kind, here. The answer comes from the namespace's
+// roles and bindings — records like everything else.
+//
+// Static tokens of the configuration keep working: each maps onto a
+// built-in role, so an installation does not lose its agents the day
+// authorization arrives.
+
+import (
+	"context"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
+	"github.com/graphene-ci/graphene/internal/nsbundle"
+)
+
+// identityOf builds the authorization identity of the caller: a minted
+// token or an OIDC user brings its own, a configured static token is
+// mapped onto the matching built-in role.
+func identityOf(ctx context.Context, namespace string) (authz.Identity, string, error) {
+	if id, ok := auth.IdentityFrom(ctx); ok {
+		out := id.Identity
+		out.Namespace = namespace
+		return out, id.BoundRole, nil
+	}
+	p, ok := auth.FromContext(ctx)
+	if !ok {
+		return authz.Identity{}, "", status.Error(codes.Unauthenticated, "no principal")
+	}
+	// A configured token IS a service account, named after what it is.
+	name := string(p.Role)
+	if p.AgentId != "" {
+		name = "agent/" + string(p.AgentId)
+	}
+	return authz.Identity{
+		Subject:   authz.Subject{Kind: authz.SubjectServiceAccount, Name: name},
+		Namespace: namespace,
+	}, string(p.Role), nil
+}
+
+// allow resolves the caller's namespace, checks the right, and returns
+// the bundle to act in.
+func (m *Management) allow(ctx context.Context, verb authz.Verb, kind authz.Kind) (*nsbundle.Bundle, error) {
+	namespace, err := callerNamespace(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := m.Bundles.Get(namespace)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("namespace %s: %v", namespace, err))
+	}
+	id, boundRole, err := identityOf(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	resolver := m.Authz
+	if resolver == nil {
+		// No resolver wired: fall back to the built-ins over the
+		// caller's own role, so a partially configured installation
+		// still enforces something rather than nothing.
+		if rules, ok := authz.Builtins()[boundRole]; ok && rules.Allows(verb, kind) {
+			return b, nil
+		}
+		return nil, status.Errorf(codes.PermissionDenied, "%s may not %s %s", id.Subject, verb, kind)
+	}
+	if d := resolver.Allow(ctx, id, boundRole, verb, kind); !d.Allowed {
+		return nil, status.Errorf(codes.PermissionDenied, "%s", d.Reason)
+	}
+	return b, nil
+}
+
+// callerNamespace is the namespace the call acts in: the token's own,
+// or the one an installation-wide admin picked with the header.
+func callerNamespace(ctx context.Context) (string, error) {
+	if p, ok := auth.FromContext(ctx); ok {
+		return namespaceFor(ctx, p)
+	}
+	if _, ok := auth.IdentityFrom(ctx); ok {
+		// An OIDC user or a minted token names its namespace itself.
+		id, _ := auth.IdentityFrom(ctx)
+		if id.Namespace != "" {
+			return id.Namespace, nil
+		}
+		return "default", nil
+	}
+	return "", status.Error(codes.Unauthenticated, "no principal")
+}

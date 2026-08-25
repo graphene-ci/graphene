@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -33,7 +33,7 @@ const downloadChunk = 512 << 10
 // working tree as part of the record's own creation.
 func (m *Management) CreateWorkspace(ctx context.Context, creq *connect.Request[managementv1.CreateWorkspaceRequest]) (*connect.Response[managementv1.CreateWorkspaceResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbCreate, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (m *Management) CreateWorkspace(ctx context.Context, creq *connect.Request[
 // tree — the working tree is mutable, the source spec is not.
 func (m *Management) SyncWorkspace(ctx context.Context, creq *connect.Request[managementv1.SyncWorkspaceRequest]) (*connect.Response[managementv1.SyncWorkspaceResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (m *Management) SyncWorkspace(ctx context.Context, creq *connect.Request[ma
 // DownloadSource streams the workspace's current working tree back —
 // the source of any revision is recoverable, git or not.
 func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[managementv1.DownloadSourceRequest], stream *connect.ServerStream[managementv1.DownloadSourceChunk]) error {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[m
 
 // ListRuntimes answers which languages this installation carries.
 func (m *Management) ListRuntimes(ctx context.Context, _ *connect.Request[managementv1.ListRuntimesRequest]) (*connect.Response[managementv1.ListRuntimesResponse], error) {
-	if _, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun); err != nil {
+	if _, err := m.allow(ctx, authz.VerbList, authz.KindWorkspace); err != nil {
 		return nil, err
 	}
 	catalogue := m.Runtimes

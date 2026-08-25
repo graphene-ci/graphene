@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
@@ -56,6 +57,9 @@ type Management struct {
 	Blobs blob.Store
 	// Runtimes is the installation's toolchain catalogue.
 	Runtimes *runtimes.Catalogue
+	// Authz decides what a caller may do; nil falls back to the
+	// built-in roles of the caller's own token.
+	Authz *authz.Resolver
 	// Version is the server build version, for ServerInfo.
 	Version string
 	Log     *xlog.Logger
@@ -67,7 +71,7 @@ type Management struct {
 // the server launches the worker container itself.
 func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managementv1.StartRunRequest]) (*connect.Response[managementv1.StartRunResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbRun, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +174,7 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 // GetRun reports the run's status.
 func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managementv1.GetRunRequest]) (*connect.Response[managementv1.GetRunResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindRun)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +189,7 @@ func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managemen
 
 // WatchRun streams status transitions until a terminal one.
 func (m *Management) WatchRun(ctx context.Context, creq *connect.Request[managementv1.WatchRunRequest], stream *connect.ServerStream[managementv1.WatchRunEvent]) error {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbWatch, authz.KindRun)
 	if err != nil {
 		return err
 	}
@@ -224,7 +228,7 @@ func watchRunCore(ctx context.Context, b *nsbundle.Bundle, runId string, send fu
 // RunResult waits for the run and returns its typed result as JSON.
 func (m *Management) RunResult(ctx context.Context, creq *connect.Request[managementv1.RunResultRequest]) (*connect.Response[managementv1.RunResultResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindRun)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +242,7 @@ func (m *Management) RunResult(ctx context.Context, creq *connect.Request[manage
 // CancelRun asks the run to stop; the guaranteed-teardown path runs.
 func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[managementv1.CancelRunRequest]) (*connect.Response[managementv1.CancelRunResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbInvoke, authz.KindRun)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +312,7 @@ func decodePageToken(s string) ([]byte, error) {
 // List returns the resources matching the selector.
 func (m *Management) List(ctx context.Context, creq *connect.Request[managementv1.ListRequest]) (*connect.Response[managementv1.ListResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindAll)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +359,7 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 // execution status — visibility's CountWorkflow, no rows fetched.
 func (m *Management) Count(ctx context.Context, creq *connect.Request[managementv1.CountRequest]) (*connect.Response[managementv1.CountResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindAll)
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +393,7 @@ func (m *Management) Count(ctx context.Context, creq *connect.Request[management
 // one parallel sweep of cheap visibility counts.
 func (m *Management) CountOwned(ctx context.Context, creq *connect.Request[managementv1.CountOwnedRequest]) (*connect.Response[managementv1.CountOwnedResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindAll)
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +431,7 @@ func (m *Management) CountOwned(ctx context.Context, creq *connect.Request[manag
 // Get describes one resource.
 func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1.GetRequest]) (*connect.Response[managementv1.GetResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +445,7 @@ func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1
 // Tree returns the ownership subtree under an owner.
 func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv1.TreeRequest]) (*connect.Response[managementv1.TreeResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindOf(req.GetOwner()))
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +482,7 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 // Delete tears the resource down with its subtree, deepest first.
 func (m *Management) Delete(ctx context.Context, creq *connect.Request[managementv1.DeleteRequest]) (*connect.Response[managementv1.DeleteResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbDelete, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +498,7 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 // Transfer gives the resource to a new owner.
 func (m *Management) Transfer(ctx context.Context, creq *connect.Request[managementv1.TransferRequest]) (*connect.Response[managementv1.TransferResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbTransfer, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +515,7 @@ func (m *Management) Transfer(ctx context.Context, creq *connect.Request[managem
 // Invoke sends an entity command by wire identity.
 func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managementv1.InvokeRequest]) (*connect.Response[managementv1.InvokeResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbInvoke, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, err
 	}

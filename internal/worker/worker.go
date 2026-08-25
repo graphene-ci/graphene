@@ -28,10 +28,12 @@ import (
 
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/rbacflow"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/standflow"
@@ -87,6 +89,9 @@ type Worker struct {
 	triggerDef   *entdefine.Definition[triggerflow.Spec, triggerflow.State]
 	revisionDef  *entdefine.Definition[revisionflow.Spec, revisionflow.State]
 	workspaceDef *entdefine.Definition[workspaceflow.Spec, workspaceflow.State]
+	roleDef      *entdefine.Definition[rbacflow.RoleSpec, rbacflow.RoleState]
+	bindingDef   *entdefine.Definition[rbacflow.BindingSpec, rbacflow.BindingState]
+	accountDef   *entdefine.Definition[rbacflow.AccountSpec, rbacflow.AccountState]
 
 	startRun RunStarter
 }
@@ -112,6 +117,9 @@ func New(deps Deps) (*Worker, error) {
 		triggerDef:   triggerflow.New(standTick),
 		revisionDef:  revisionflow.New(),
 		workspaceDef: workspaceflow.New(),
+		roleDef:      rbacflow.NewRole(),
+		bindingDef:   rbacflow.NewBinding(),
+		accountDef:   rbacflow.NewAccount(),
 	}
 
 	if err := errors.Join(
@@ -119,6 +127,7 @@ func New(deps Deps) (*Worker, error) {
 		s.standDef.Register(w), s.pipelineDef.Register(w),
 		s.triggerDef.Register(w), s.revisionDef.Register(w),
 		s.workspaceDef.Register(w),
+		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -515,6 +524,136 @@ func (s *Worker) DescribeRevision(ctx context.Context, pipelineId, revisionId st
 		return "", revisionflow.Spec{}, revisionflow.State{}, err
 	}
 	return out.Phase, out.Spec, out.State, nil
+}
+
+// --- the authorization store (authz.Store) ---
+
+// Roles returns the namespace's roles: the built-ins, then whatever
+// the installation wrote over them.
+func (s *Worker) Roles(ctx context.Context, namespace string) (map[string]authz.Rules, error) {
+	out := authz.Builtins()
+	ids, err := s.listKind(ctx, string(rbacflow.RoleKind))
+	if err != nil {
+		return out, err
+	}
+	roles := entclient.Bind(s.roleDef, s.deps.Client, wire.ServerQueue)
+	for _, id := range ids {
+		desc, err := roles.Describe(ctx, entity.ResourceID(id))
+		if err != nil || desc.Phase != entity.PhaseReady {
+			continue
+		}
+		out[id] = desc.State.Rules
+	}
+	return out, nil
+}
+
+// Bindings returns the namespace's role bindings.
+func (s *Worker) Bindings(ctx context.Context, namespace string) ([]authz.Binding, error) {
+	ids, err := s.listKind(ctx, string(rbacflow.BindingKind))
+	if err != nil {
+		return nil, err
+	}
+	bindings := entclient.Bind(s.bindingDef, s.deps.Client, wire.ServerQueue)
+	out := make([]authz.Binding, 0, len(ids))
+	for _, id := range ids {
+		desc, err := bindings.Describe(ctx, entity.ResourceID(id))
+		if err != nil || desc.Phase != entity.PhaseReady {
+			continue
+		}
+		st := desc.State
+		out = append(out, authz.Binding{Role: st.Role, Subjects: st.Subjects, Namespace: st.Namespace})
+	}
+	return out, nil
+}
+
+// listKind lists the ids of one kind from visibility.
+func (s *Worker) listKind(ctx context.Context, kind string) ([]string, error) {
+	page, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("%s = %q AND ExecutionStatus = 'Running'", entdefine.SearchAttrKind.GetName(), kind),
+	})
+	if err != nil {
+		return nil, err
+	}
+	prefix := kind + "/"
+	out := make([]string, 0, len(page.GetExecutions()))
+	for _, e := range page.GetExecutions() {
+		id := e.GetExecution().GetWorkflowId()
+		if len(id) > len(prefix) {
+			out = append(out, id[len(prefix):])
+		}
+	}
+	return out, nil
+}
+
+// DeclareRole writes one role; its rules are validated by the record.
+func (s *Worker) DeclareRole(ctx context.Context, name string, spec rbacflow.RoleSpec) error {
+	roles := entclient.Bind(s.roleDef, s.deps.Client, wire.ServerQueue)
+	if _, err := roles.CreateOrAttach(ctx, entity.ResourceID(name), spec); err != nil {
+		return err
+	}
+	// An existing role takes the new rules through its own command, so
+	// the change lands in its history.
+	_, err := entclient.Exec(ctx, roles, entity.ResourceID(name), rbacflow.SetRulesCmd{Rules: spec.Rules})
+	return err
+}
+
+// DeclareBinding writes one role binding.
+func (s *Worker) DeclareBinding(ctx context.Context, name string, spec rbacflow.BindingSpec) error {
+	bindings := entclient.Bind(s.bindingDef, s.deps.Client, wire.ServerQueue)
+	if _, err := bindings.CreateOrAttach(ctx, entity.ResourceID(name), spec); err != nil {
+		return err
+	}
+	_, err := entclient.Exec(ctx, bindings, entity.ResourceID(name), rbacflow.SetSubjectsCmd{Subjects: spec.Subjects})
+	return err
+}
+
+// DeclareAccount creates a service account.
+func (s *Worker) DeclareAccount(ctx context.Context, name string, spec rbacflow.AccountSpec) error {
+	accounts := entclient.Bind(s.accountDef, s.deps.Client, wire.ServerQueue)
+	_, err := accounts.CreateOrAttach(ctx, entity.ResourceID(name), spec)
+	return err
+}
+
+// IssueAccountToken records a minted token on its account, by hash.
+func (s *Worker) IssueAccountToken(ctx context.Context, account string, cmd rbacflow.IssueTokenCmd) error {
+	accounts := entclient.Bind(s.accountDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.Exec(ctx, accounts, entity.ResourceID(account), cmd)
+	return err
+}
+
+// RevokeAccountToken forgets one token of an account.
+func (s *Worker) RevokeAccountToken(ctx context.Context, account, tokenId string) error {
+	accounts := entclient.Bind(s.accountDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.Exec(ctx, accounts, entity.ResourceID(account), rbacflow.RevokeTokenCmd{Id: tokenId})
+	return err
+}
+
+// AccountForToken finds the service account a token hash belongs to.
+func (s *Worker) AccountForToken(ctx context.Context, hash string) (string, bool) {
+	ids, err := s.listKind(ctx, string(rbacflow.ServiceAccountKind))
+	if err != nil {
+		return "", false
+	}
+	accounts := entclient.Bind(s.accountDef, s.deps.Client, wire.ServerQueue)
+	now := time.Now()
+	for _, id := range ids {
+		desc, err := accounts.Describe(ctx, entity.ResourceID(id))
+		if err != nil {
+			continue
+		}
+		for _, t := range desc.State.Tokens {
+			if t.Hash != hash {
+				continue
+			}
+			if t.Expires != "" {
+				if exp, err := time.Parse(time.RFC3339, t.Expires); err == nil && now.After(exp) {
+					continue
+				}
+			}
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // RevisionProgress reads the build's last heartbeat — the record's own

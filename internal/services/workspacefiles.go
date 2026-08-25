@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
@@ -33,7 +33,7 @@ const maxFileBytes = 8 << 20
 
 // ListFiles lists the working tree.
 func (m *Management) ListFiles(ctx context.Context, creq *connect.Request[managementv1.ListFilesRequest]) (*connect.Response[managementv1.ListFilesResponse], error) {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (m *Management) ListFiles(ctx context.Context, creq *connect.Request[manage
 
 // ReadFile returns one file of the working tree.
 func (m *Management) ReadFile(ctx context.Context, creq *connect.Request[managementv1.ReadFileRequest]) (*connect.Response[managementv1.ReadFileResponse], error) {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (m *Management) DeleteFile(ctx context.Context, creq *connect.Request[manag
 // editTree applies one change to the working tree and stores the
 // result as the workspace's new tree.
 func (m *Management) editTree(ctx context.Context, workspaceId, rawPath string, edit func(map[string][]byte, string) error) (*connect.Response[managementv1.WriteFileResponse], error) {
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
