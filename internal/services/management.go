@@ -1,6 +1,8 @@
 package services
 
 import (
+	"regexp"
+
 	"connectrpc.com/connect"
 	"context"
 	"encoding/base64"
@@ -252,6 +254,19 @@ func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[manage
 	return connect.NewResponse(&managementv1.CancelRunResponse{}), nil
 }
 
+// kindFromQuery reads the kind a listing is narrowed to. A listing of
+// ONE kind is authorized against that kind; a listing of everything
+// needs the right to see everything.
+func kindFromQuery(query string) authz.Kind {
+	m := kindInQuery.FindStringSubmatch(query)
+	if m == nil {
+		return authz.KindAll
+	}
+	return authz.KindOf(m[1] + "/")
+}
+
+var kindInQuery = regexp.MustCompile(`EntityKind\s*=\s*'([^']+)'`)
+
 // listQuery resolves a request's query/selector duality into one
 // visibility query. Exactly one of the two may be set.
 func listQuery(query string, sel *managementv1.Selector) (string, error) {
@@ -312,7 +327,7 @@ func decodePageToken(s string) ([]byte, error) {
 // List returns the resources matching the selector.
 func (m *Management) List(ctx context.Context, creq *connect.Request[managementv1.ListRequest]) (*connect.Response[managementv1.ListResponse], error) {
 	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbList, authz.KindAll)
+	b, err := m.allow(ctx, authz.VerbList, kindFromQuery(req.GetQuery()))
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +374,7 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 // execution status — visibility's CountWorkflow, no rows fetched.
 func (m *Management) Count(ctx context.Context, creq *connect.Request[managementv1.CountRequest]) (*connect.Response[managementv1.CountResponse], error) {
 	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbList, authz.KindAll)
+	b, err := m.allow(ctx, authz.VerbList, kindFromQuery(req.GetQuery()))
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +547,7 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 // attributes and starts its runtime bundle.
 func (m *Management) CreateNamespace(ctx context.Context, creq *connect.Request[managementv1.CreateNamespaceRequest]) (*connect.Response[managementv1.CreateNamespaceResponse], error) {
 	req := creq.Msg
-	if _, err := scope(ctx, auth.RoleAdmin); err != nil {
+	if _, err := m.allow(ctx, authz.VerbCreate, authz.KindNamespace); err != nil {
 		return nil, err
 	}
 	if err := m.Bundles.CreateNamespace(ctx, m.Base, req.GetName(), req.GetRetentionDays()); err != nil {
@@ -576,7 +591,7 @@ func (m *Management) ServerInfo(ctx context.Context, _ *connect.Request[manageme
 
 // ListNamespaces lists the registered namespaces.
 func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[managementv1.ListNamespacesRequest]) (*connect.Response[managementv1.ListNamespacesResponse], error) {
-	if _, err := scope(ctx, auth.RoleAdmin); err != nil {
+	if _, err := m.allow(ctx, authz.VerbList, authz.KindNamespace); err != nil {
 		return nil, err
 	}
 	names, err := m.Bundles.ListNamespaces(ctx, m.Base)
@@ -591,10 +606,11 @@ func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[mana
 // SetSecret stores a value; it never comes back through this plane.
 func (m *Management) SetSecret(ctx context.Context, creq *connect.Request[managementv1.SetSecretRequest]) (*connect.Response[managementv1.SetSecretResponse], error) {
 	req := creq.Msg
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbCreate, authz.KindSecret)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
@@ -605,20 +621,22 @@ func (m *Management) SetSecret(ctx context.Context, creq *connect.Request[manage
 // DeleteSecret forgets a name.
 func (m *Management) DeleteSecret(ctx context.Context, creq *connect.Request[managementv1.DeleteSecretRequest]) (*connect.Response[managementv1.DeleteSecretResponse], error) {
 	req := creq.Msg
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbDelete, authz.KindSecret)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	m.Secrets.Delete(namespace, req.GetName())
 	return connect.NewResponse(&managementv1.DeleteSecretResponse{}), nil
 }
 
 // ListSecrets lists names — never values.
 func (m *Management) ListSecrets(ctx context.Context, _ *connect.Request[managementv1.ListSecretsRequest]) (*connect.Response[managementv1.ListSecretsResponse], error) {
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindSecret)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	return connect.NewResponse(&managementv1.ListSecretsResponse{Names: m.Secrets.List(namespace)}), nil
 }
 
@@ -627,10 +645,11 @@ func (m *Management) ListSecrets(ctx context.Context, _ *connect.Request[managem
 // SetVar stores a variable — the visible sibling of a secret.
 func (m *Management) SetVar(ctx context.Context, creq *connect.Request[managementv1.SetVarRequest]) (*connect.Response[managementv1.SetVarResponse], error) {
 	req := creq.Msg
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbCreate, authz.KindVar)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
@@ -641,10 +660,11 @@ func (m *Management) SetVar(ctx context.Context, creq *connect.Request[managemen
 // DeleteVar forgets a name.
 func (m *Management) DeleteVar(ctx context.Context, creq *connect.Request[managementv1.DeleteVarRequest]) (*connect.Response[managementv1.DeleteVarResponse], error) {
 	req := creq.Msg
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbDelete, authz.KindVar)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	m.Vars.Delete(namespace, req.GetName())
 	return connect.NewResponse(&managementv1.DeleteVarResponse{}), nil
 }
@@ -652,10 +672,11 @@ func (m *Management) DeleteVar(ctx context.Context, creq *connect.Request[manage
 // ListVars returns names AND values — that is the plane's difference
 // from secrets.
 func (m *Management) ListVars(ctx context.Context, _ *connect.Request[managementv1.ListVarsRequest]) (*connect.Response[managementv1.ListVarsResponse], error) {
-	namespace, err := scope(ctx, auth.RoleAdmin)
+	b, err := m.allow(ctx, authz.VerbList, authz.KindVar)
 	if err != nil {
 		return nil, err
 	}
+	namespace := b.Namespace
 	items := m.Vars.Items(namespace)
 	names := make([]string, 0, len(items))
 	for name := range items {
