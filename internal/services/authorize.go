@@ -18,6 +18,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/pipeline/pkg/id"
 )
 
 // identityOf builds the authorization identity of the caller: a minted
@@ -90,4 +91,15 @@ func callerNamespace(ctx context.Context) (string, error) {
 		return "default", nil
 	}
 	return "", status.Error(codes.Unauthenticated, "no principal")
+}
+
+// mintRunToken issues the token a starting run will carry: scoped to
+// that one run, bound to the "run" role, and dead when the run is.
+// An installation without a signing key falls back to its configured
+// token, which the runner supplies itself.
+func mintRunToken(b *nsbundle.Bundle, runId id.RunId) string {
+	if b.MintRunToken == nil {
+		return ""
+	}
+	return b.MintRunToken(b.Namespace, string(runId))
 }

@@ -45,8 +45,12 @@ type Deps struct {
 	Materializer *materialize.Materializer
 	Blobs        blob.Store
 	External     string
-	// RunTokenFor returns the run token of a namespace.
+	// RunTokenFor returns the run token of a namespace — the fallback
+	// for an installation without a signing key.
 	RunTokenFor func(namespace string) string
+	// MintRunToken issues a token scoped to ONE run, living as long as
+	// the run may; empty when the installation cannot mint.
+	MintRunToken func(namespace, runId string) string
 	// UserDataFor renders the agent install script.
 	UserDataFor func(namespace string, agentId id.AgentId) (string, error)
 	SweepEvery  time.Duration
@@ -64,9 +68,11 @@ type Deps struct {
 // Bundle is one namespace's runtime.
 type Bundle struct {
 	Namespace string
-	Client    client.Client
-	Worker    *worker.Worker
-	Runner    *managed.Runner
+	// MintRunToken issues the token a starting run carries.
+	MintRunToken func(namespace, runId string) string
+	Client       client.Client
+	Worker       *worker.Worker
+	Runner       *managed.Runner
 	// Secrets and Vars are the namespace-bound value stores: on run
 	// start the door substitutes ${var:...} params and checks that
 	// secret-typed params name existing secrets.
@@ -154,7 +160,8 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 
 	b := &Bundle{
 		Namespace: namespace, Client: c, Worker: w, Runner: runner,
-		Secrets: m.deps.Secrets.In(namespace), Vars: m.deps.Vars.In(namespace),
+		MintRunToken: m.deps.MintRunToken,
+		Secrets:      m.deps.Secrets.In(namespace), Vars: m.deps.Vars.In(namespace),
 	}
 	if m.deps.MakeRunStarter != nil {
 		// Trigger-driven starts go through the same door logic as the
