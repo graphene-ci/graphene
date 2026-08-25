@@ -152,15 +152,7 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	if trigger != "" {
 		withTrigger[syslabels.Trigger] = trigger
 	}
-	// A run is a NODE OF THE TREE: it owns what the pipeline declares,
-	// so it carries the same attributes every record does — kind to be
-	// listed by, owner to be found under its pipeline. Its phase is the
-	// execution status, which visibility already keeps.
-	opts.TypedSearchAttributes = temporal.NewSearchAttributes(
-		entdefine.SearchAttrLabels.ValueSet(labelPairs(withTrigger)),
-		entdefine.SearchAttrKind.ValueSet("run"),
-		wire.SearchAttrOwner.ValueSet("pipeline/"+pipelineName),
-	)
+	opts.TypedSearchAttributes = runAttributes(pipelineName, withTrigger)
 	var args []any
 	if len(params) > 0 {
 		args = append(args, json.RawMessage(params))
@@ -727,6 +719,20 @@ func (m *Management) ListVars(ctx context.Context, _ *connect.Request[management
 }
 
 // --- helpers ---
+
+// runAttributes is what makes a run a NODE OF THE TREE: it owns what
+// the pipeline declares, so it carries the same attributes every
+// record does — a kind to be listed by, an owner to be found under.
+// Its phase stays the execution status, which visibility already
+// keeps. ONE place, because a run started from a revision and a run
+// started from a manifest must look the same in the tree.
+func runAttributes(pipelineId string, labels map[string]string) temporal.SearchAttributes {
+	return temporal.NewSearchAttributes(
+		entdefine.SearchAttrLabels.ValueSet(labelPairs(labels)),
+		entdefine.SearchAttrKind.ValueSet("run"),
+		wire.SearchAttrOwner.ValueSet("pipeline/"+pipelineId),
+	)
+}
 
 // describeOut mirrors temporal-entity's DescribeOut with raw halves.
 type describeOut struct {
