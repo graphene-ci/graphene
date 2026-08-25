@@ -69,61 +69,27 @@ func TestCheckSecretRefs(t *testing.T) {
 
 // A listing narrowed to one kind must be authorized against THAT kind,
 // not against everything: "list pipelines" is not "list the world".
-// The kind comes from the selector a client fills, or from the raw
-// query when someone writes one by hand.
-func TestKindFromQuery(t *testing.T) {
-	for query, want := range map[string]string{
-		"EntityKind = 'pipeline'":                             "pipeline",
-		"EntityKind='revision' AND ExecutionStatus='Running'": "revision",
-		"EntityKind = 'k8s.compute.Instance'":                 "resource",
-		"ExecutionStatus = 'Running'":                         "*",
-		"":                                                    "*",
-	} {
-		if got := string(listedKind(nil, query)); got != want {
-			t.Fatalf("listedKind(nil, %q) = %q, want %q", query, got, want)
-		}
-	}
-}
-
-// The selector is how a client narrows a listing; authorization must
-// read it, not just a hand-written query.
-func TestListedKindFromSelector(t *testing.T) {
+// The kind comes from the typed selector, or from the query parsed by
+// the SAME parser the listing itself uses.
+func TestListedKind(t *testing.T) {
+	// The typed selector is trusted — the server compiles it itself.
 	if got := string(listedKind(&managementv1.Selector{Kind: "pipeline"}, "")); got != "pipeline" {
 		t.Fatalf("selector kind ignored: %q", got)
 	}
 	if got := string(listedKind(&managementv1.Selector{Kind: "docker"}, "")); got != "resource" {
 		t.Fatalf("a user's own kind must be the resource group: %q", got)
 	}
-	if got := string(listedKind(nil, "")); got != "*" {
-		t.Fatalf("an unnarrowed listing must need everything: %q", got)
-	}
-}
-
-// A raw query must never narrow authorization unless it PROVABLY pins
-// one kind: every widening form below would otherwise let a caller
-// authorized for one kind read another.
-func TestListedKindRefusesWideningQueries(t *testing.T) {
-	widening := []string{
-		"EntityKind = 'pipeline' OR EntityKind = 'secret'",
-		"EntityKind='pipeline' or EntityKind='secret'",
-		"ExecutionStatus = 'Running' OR EntityKind = 'pipeline'",
-		"EntityKind != 'secret'",
-		"NOT EntityKind = 'secret'",
-		"EntityKind IN ('pipeline','secret')",
-		"(EntityKind = 'pipeline') OR (EntityKind = 'secret')",
-		"EntityKind STARTS_WITH 'pipe'",
-		"EntityKind = 'pipeline' AND EntityKind = 'secret'",
-	}
-	for _, q := range widening {
-		if got := listedKind(nil, q); got != "*" {
-			t.Fatalf("query %q narrowed authorization to %q — it may return other kinds", q, got)
-		}
-	}
-	// The honest, provably narrow forms still work.
+	// A query pins the kind only by equality on exactly one term.
 	for q, want := range map[string]string{
-		"EntityKind = 'pipeline'":                              "pipeline",
-		"EntityKind='revision' AND ExecutionStatus='Running'":  "revision",
-		"ExecutionStatus = 'Running' AND EntityKind = 'agent'": "agent",
+		"kind=pipeline":              "pipeline",
+		"kind=revision, phase=ready": "revision",
+		"kind=docker":                "resource",
+		"phase=ready":                "*",
+		"kind in (pipeline, secret)": "*",
+		"kind!=secret":               "*",
+		"kind=^pipe":                 "*",
+		"":                           "*",
+		"nonsense((":                 "*",
 	} {
 		if got := string(listedKind(nil, q)); got != want {
 			t.Fatalf("listedKind(%q) = %q, want %q", q, got, want)

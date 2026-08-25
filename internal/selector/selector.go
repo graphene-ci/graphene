@@ -366,3 +366,26 @@ func IsRunQuery(q Query) bool {
 	kinds, err := kindsOf(q)
 	return err == nil && len(kinds) == 1 && kinds[0] == KindRun
 }
+
+// PinnedKind reports the single kind this selector restricts to, if
+// it provably does. Only an equality on `kind` pins it: `in` names
+// several, `!=` and `=^` name a set, and no term at all names
+// everything. Authorization uses this — a listing narrowed to one kind
+// is checked against THAT kind, so the answer must never be a guess.
+func (q Query) PinnedKind() (string, bool) {
+	pinned, found := "", 0
+	for _, t := range q.Terms {
+		if t.Field != "kind" {
+			continue
+		}
+		found++
+		if t.Op != OpEq || len(t.Values) != 1 {
+			return "", false
+		}
+		pinned = t.Values[0]
+	}
+	if found != 1 || pinned == "" {
+		return "", false
+	}
+	return pinned, true
+}
