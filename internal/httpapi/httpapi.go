@@ -5,11 +5,11 @@
 package httpapi
 
 import (
-	"os"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/gopherex/xlog"

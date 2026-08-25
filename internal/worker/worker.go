@@ -262,6 +262,16 @@ func (s *Worker) standCascade(ctx context.Context, held string) error {
 // by content inside). A non-empty image also updates the pipeline's
 // current worker image — that is what a push records.
 func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image string) error {
+	return s.publishManifest(ctx, pipelineId, raw, image, "")
+}
+
+// PublishManifestFromWorkspace publishes AND records the ownership
+// edge: the pipeline belongs to the workspace it is published from.
+func (s *Worker) PublishManifestFromWorkspace(ctx context.Context, pipelineId string, raw json.RawMessage, image, workspaceId string) error {
+	return s.publishManifest(ctx, pipelineId, raw, image, workspaceId)
+}
+
+func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image, workspaceId string) error {
 	var m manifestpb.Manifest
 	if err := protojson.Unmarshal(raw, &m); err != nil {
 		return fmt.Errorf("manifest: %w", err)
@@ -271,9 +281,20 @@ func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw jso
 	}
 	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
 	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
-		pipelineflow.Spec{}, pipelineflow.PublishCmd{Manifest: raw, Image: image, Concurrency: m.GetConcurrency()})
+		pipelineflow.Spec{WorkspaceId: workspaceId},
+		pipelineflow.PublishCmd{Manifest: raw, Image: image, Concurrency: m.GetConcurrency(), WorkspaceId: workspaceId})
 	if err != nil {
 		return err
+	}
+	// A pipeline that predates its workspace joins it now: ownership is
+	// given, never taken, so the transfer is the ordinary command.
+	if workspaceId != "" {
+		if st, derr := s.GetPipeline(ctx, pipelineId); derr == nil && st.Owner == "" {
+			_ = s.Transfer(ctx, wire.TransferResourceRequest{
+				Resource: ref.OwnerRef("pipeline/" + pipelineId),
+				NewOwner: ref.OwnerRef("workspace/" + workspaceId),
+			})
+		}
 	}
 	return s.reconcileTriggers(ctx, pipelineId, m.GetTriggers())
 }
@@ -694,8 +715,15 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		// The stand LIVES the handover: its own timer enforces the
 		// keep, its history records it.
 		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
+		// The stand belongs to the PROJECT: it takes the workspace of
+		// the pipeline it stands for, so re-creating that pipeline
+		// never cascades into what is parked on the stand.
+		workspaceId := ""
+		if st, err := s.GetPipeline(ctx, standId); err == nil {
+			workspaceId = strings.TrimPrefix(string(st.Owner), "workspace/")
+		}
 		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
-			standflow.Spec{PipelineId: standId},
+			standflow.Spec{PipelineId: standId, WorkspaceId: workspaceId},
 			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From})
 		return err
 	}

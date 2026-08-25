@@ -6,8 +6,8 @@
 package standflow
 
 import (
-	"strings"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/ref"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
@@ -29,6 +30,10 @@ const CascadeActivity = "server.stand.cascade"
 // Spec is the stand's identity.
 type Spec struct {
 	PipelineId string `json:"pipelineId"`
+	// WorkspaceId owns the stand: a stand is the PROJECT's standing
+	// ground, so re-creating a pipeline never cascades into a live
+	// machine parked on it.
+	WorkspaceId string `json:"workspaceId,omitempty"`
 }
 
 // Holding is one resource the stand keeps.
@@ -41,6 +46,7 @@ type Holding struct {
 
 // State is the stand's holdings.
 type State struct {
+	ownership.State
 	Holdings map[string]Holding `json:"holdings,omitempty"`
 }
 
@@ -95,8 +101,14 @@ type HoldingsRes struct {
 func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	def := entdefine.New[Spec, State](Kind,
 		entdefine.WithSearchAttributes[Spec, State](true),
-		entdefine.WithInit[Spec, State](func(workflow.Context, Spec) (State, error) {
-			return State{Holdings: map[string]Holding{}}, nil
+		entdefine.WithInit[Spec, State](func(ctx workflow.Context, spec Spec) (State, error) {
+			st := State{Holdings: map[string]Holding{}}
+			owner := ref.OwnerRef("")
+			if spec.WorkspaceId != "" {
+				owner = ref.OwnerRef("workspace/" + spec.WorkspaceId)
+			}
+			ownership.Init(ctx, &st.State, owner)
+			return st, nil
 		}),
 		entdefine.WithReconcileEvery[Spec, State](tick, expireTick),
 		// Deleting the stand releases everything it still holds.
@@ -110,6 +122,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			return nil
 		}),
 	)
+	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
 
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd AcceptCmd) (HoldingsRes, error) {
 		st := ec.State()

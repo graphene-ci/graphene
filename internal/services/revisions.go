@@ -305,12 +305,14 @@ func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	if err := b.Worker.PublishManifest(ctx, req.GetPipelineId(), manifest, rev.Image); err != nil {
+	// A workspace publishes ONE pipeline: activation records the
+	// binding on both sides — the workspace refuses a second pipeline,
+	// the pipeline joins the workspace's tree.
+	workspaceId := req.GetWorkspaceId()
+	if err := b.Worker.PublishManifestFromWorkspace(ctx, req.GetPipelineId(), manifest, rev.Image, workspaceId); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	// A workspace publishes ONE pipeline: activation is where that
-	// binding is recorded (and a second pipeline refused).
-	if workspaceId := req.GetWorkspaceId(); workspaceId != "" {
+	if workspaceId != "" {
 		if err := b.Worker.BindWorkspacePipeline(ctx, workspaceId, req.GetPipelineId()); err != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "bind pipeline: %v", err)
 		}
