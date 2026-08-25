@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	dockerclient "github.com/docker/docker/client"
@@ -50,6 +51,14 @@ type Materializer struct {
 	Log      *xlog.Logger
 }
 
+// Progress receives one progress line; stage is "runtime", "build",
+// "describe" or "publish".
+type Progress func(stage, message string)
+
+// labelKey marks materialization containers so orphans of a killed
+// request are collectable.
+const labelKey = "graphene.materialize"
+
 // Result is one materialized revision.
 type Result struct {
 	RevisionId       string
@@ -60,9 +69,15 @@ type Result struct {
 	BuildLog         string
 }
 
-// Materialize builds one source tree (a tar.gz) into a revision.
-func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId string, srcTarGz []byte) (Result, error) {
+// Materialize builds one source tree (a tar.gz) into a revision,
+// reporting progress as it goes — a build takes minutes and a silent
+// request dies on the first idle NAT.
+func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId string, srcTarGz []byte, progress Progress) (Result, error) {
 	var res Result
+	if progress == nil {
+		progress = func(string, string) {}
+	}
+	m.reapOrphans(ctx)
 	sum := sha256.Sum256(srcTarGz)
 	res.SourceDigest = "sha256:" + hex.EncodeToString(sum[:])
 
@@ -70,9 +85,10 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	if runtimeImage == "" {
 		runtimeImage = DefaultRuntime
 	}
-	if err := m.ensureImage(ctx, runtimeImage); err != nil {
+	if err := m.ensureImage(ctx, runtimeImage, progress); err != nil {
 		return res, err
 	}
+	progress("runtime", "runtime container starting")
 
 	// One ephemeral container per materialization: the source goes in
 	// through the docker API (no shared host paths), the binary comes
@@ -82,6 +98,7 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 		Entrypoint: []string{"sleep", "3600"},
 		Env:        []string{"CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64", "GOFLAGS=-mod=mod"},
 		WorkingDir: "/src",
+		Labels:     map[string]string{labelKey: pipelineId},
 	}, &container.HostConfig{
 		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: modCacheVolume, Target: "/go/pkg/mod"}},
 	}, nil, nil, "")
@@ -104,17 +121,25 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	}
 
 	// The fixed layout: the workspace root IS the entrypoint —
-	// `go build .`, one package main, no entrypoint discovery.
+	// `go build .`, one package main, no entrypoint discovery. The
+	// download runs first so its progress is visible on its own.
+	depLog, err := m.exec(ctx, cont.ID, nil, "go mod download -x 2>&1 | tail -200",
+		func(line string) { progress("build", line) })
+	if err != nil {
+		return res, fmt.Errorf("dependencies failed: %w\n%s", err, tail(depLog, 4000))
+	}
 	buildLog, err := m.exec(ctx, cont.ID, nil,
-		"go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/app .")
-	res.BuildLog = buildLog
+		"go build -trimpath -ldflags '-s -w -buildid=' -o /tmp/app . 2>&1",
+		func(line string) { progress("build", line) })
+	res.BuildLog = depLog + buildLog
 	if err != nil {
 		return res, fmt.Errorf("build failed: %w\n%s", err, tail(buildLog, 4000))
 	}
+	progress("describe", "reading the manifest from the binary")
 
 	// The manifest comes from the binary itself — the same recording
 	// pass the local CLI used, now in describe mode on the server.
-	manifestOut, err := m.exec(ctx, cont.ID, []string{"GRAPHENE_MANIFEST=1"}, "/tmp/app")
+	manifestOut, err := m.exec(ctx, cont.ID, []string{"GRAPHENE_MANIFEST=1"}, "/tmp/app", nil)
 	if err != nil {
 		return res, fmt.Errorf("describe failed: %w\n%s", err, tail(manifestOut, 4000))
 	}
@@ -130,6 +155,7 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	}
 	defer func() { _ = os.RemoveAll(filepath.Dir(binPath)) }()
 
+	progress("publish", "assembling and pushing the worker image")
 	imageRef, _, err := selfbuild.PushBinary(ctx, binPath, selfbuild.Options{
 		Registry:   m.Registry,
 		Namespace:  namespace,
@@ -137,7 +163,9 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 		Token:      m.Token,
 		Insecure:   m.Insecure,
 		Log: func(format string, args ...any) {
-			m.Log.Info("materialize: " + fmt.Sprintf(format, args...))
+			line := fmt.Sprintf(format, args...)
+			m.Log.Info("materialize: " + line)
+			progress("publish", line)
 		},
 	})
 	if err != nil {
@@ -155,11 +183,30 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId st
 	return res, nil
 }
 
+// reapOrphans removes materialization containers left by killed
+// requests — a client that hangs up must not leak a runtime container.
+func (m *Materializer) reapOrphans(ctx context.Context) {
+	list, err := m.Docker.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", labelKey)),
+	})
+	if err != nil {
+		return
+	}
+	for _, c := range list {
+		if time.Since(time.Unix(c.Created, 0)) < time.Hour {
+			continue
+		}
+		_ = m.Docker.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true})
+	}
+}
+
 // ensureImage pulls the runtime image on first use.
-func (m *Materializer) ensureImage(ctx context.Context, ref string) error {
+func (m *Materializer) ensureImage(ctx context.Context, ref string, progress Progress) error {
 	if _, err := m.Docker.ImageInspect(ctx, ref); err == nil {
 		return nil
 	}
+	progress("runtime", "pulling "+ref)
 	m.Log.Info("materialize: pulling runtime image", xlog.String("image", ref))
 	rc, err := m.Docker.ImagePull(ctx, ref, image.PullOptions{})
 	if err != nil {
@@ -170,9 +217,10 @@ func (m *Materializer) ensureImage(ctx context.Context, ref string) error {
 	return err
 }
 
-// exec runs one command in the container and returns its combined
-// output; a non-zero exit is an error.
-func (m *Materializer) exec(ctx context.Context, containerId string, env []string, cmd string) (string, error) {
+// exec runs one command in the container, streaming each output line
+// to onLine as it appears, and returns the collected output; a
+// non-zero exit is an error.
+func (m *Materializer) exec(ctx context.Context, containerId string, env []string, cmd string, onLine func(string)) (string, error) {
 	execId, err := m.Docker.ContainerExecCreate(ctx, containerId, container.ExecOptions{
 		Cmd:          []string{"sh", "-c", cmd},
 		Env:          env,
@@ -188,7 +236,11 @@ func (m *Materializer) exec(ctx context.Context, containerId string, env []strin
 	}
 	defer att.Close()
 	var out bytes.Buffer
-	if _, err := stdcopy.StdCopy(&out, &out, att.Reader); err != nil {
+	var sink io.Writer = &out
+	if onLine != nil {
+		sink = io.MultiWriter(&out, &lineWriter{emit: onLine})
+	}
+	if _, err := stdcopy.StdCopy(sink, sink, att.Reader); err != nil {
 		return out.String(), err
 	}
 	insp, err := m.Docker.ContainerExecInspect(ctx, execId.ID)
@@ -237,6 +289,27 @@ func (m *Materializer) copyOut(ctx context.Context, containerId, path string) (s
 		return out, nil
 	}
 	return "", fmt.Errorf("%s not found in container", path)
+}
+
+// lineWriter turns a byte stream into progress lines.
+type lineWriter struct {
+	buf  bytes.Buffer
+	emit func(string)
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadString('\n')
+		if err != nil {
+			w.buf.WriteString(line) // partial line waits for the rest
+			break
+		}
+		if trimmed := strings.TrimRight(line, "\r\n"); trimmed != "" {
+			w.emit(trimmed)
+		}
+	}
+	return len(p), nil
 }
 
 func gunzip(b []byte) ([]byte, error) {

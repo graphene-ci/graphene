@@ -10,7 +10,10 @@ option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;man
 // PIPELINE REVISION — runnable as a draft, activatable as the version
 // automatic starts use. No user-side push exists on this path.
 service RevisionsAPI {
-  rpc Materialize(MaterializeRequest) returns (MaterializeResponse);
+  // Materialize STREAMS progress: a source build takes minutes, and a
+  // silent request dies on the first idle NAT between the client and
+  // the door. The stream is also the Studio build log.
+  rpc Materialize(MaterializeRequest) returns (stream MaterializeEvent);
   rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
   rpc RunRevision(RunRevisionRequest) returns (RunRevisionResponse);
   rpc ActivateRevision(ActivateRevisionRequest) returns (ActivateRevisionResponse);
@@ -23,12 +26,21 @@ message MaterializeRequest {
   bytes source = 2;
 }
 
-message MaterializeResponse {
+message MaterializeEvent {
+  // Stage: "upload" | "runtime" | "build" | "describe" | "publish" |
+  // "done" — the phase this event reports.
+  string stage = 1;
+  // Message is one progress line (a build log line, a status).
+  string message = 2;
+  // Result is set on the final "done" event.
+  MaterializeResult result = 3;
+}
+
+message MaterializeResult {
   string revision_id = 1;
   string image = 2;
   // The revision's manifest as protojson — what Plan renders.
   bytes manifest = 3;
-  string build_log = 4;
 }
 
 message ListRevisionsRequest {

@@ -49,7 +49,10 @@ const (
 
 // RevisionsAPIClient is a client for the graphene.management.v1.RevisionsAPI service.
 type RevisionsAPIClient interface {
-	Materialize(context.Context, *connect.Request[v1.MaterializeRequest]) (*connect.Response[v1.MaterializeResponse], error)
+	// Materialize STREAMS progress: a source build takes minutes, and a
+	// silent request dies on the first idle NAT between the client and
+	// the door. The stream is also the Studio build log.
+	Materialize(context.Context, *connect.Request[v1.MaterializeRequest]) (*connect.ServerStreamForClient[v1.MaterializeEvent], error)
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	RunRevision(context.Context, *connect.Request[v1.RunRevisionRequest]) (*connect.Response[v1.RunRevisionResponse], error)
 	ActivateRevision(context.Context, *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error)
@@ -66,7 +69,7 @@ func NewRevisionsAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 	baseURL = strings.TrimRight(baseURL, "/")
 	revisionsAPIMethods := v1.File_proto_management_v1_revisions_proto.Services().ByName("RevisionsAPI").Methods()
 	return &revisionsAPIClient{
-		materialize: connect.NewClient[v1.MaterializeRequest, v1.MaterializeResponse](
+		materialize: connect.NewClient[v1.MaterializeRequest, v1.MaterializeEvent](
 			httpClient,
 			baseURL+RevisionsAPIMaterializeProcedure,
 			connect.WithSchema(revisionsAPIMethods.ByName("Materialize")),
@@ -95,15 +98,15 @@ func NewRevisionsAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // revisionsAPIClient implements RevisionsAPIClient.
 type revisionsAPIClient struct {
-	materialize      *connect.Client[v1.MaterializeRequest, v1.MaterializeResponse]
+	materialize      *connect.Client[v1.MaterializeRequest, v1.MaterializeEvent]
 	listRevisions    *connect.Client[v1.ListRevisionsRequest, v1.ListRevisionsResponse]
 	runRevision      *connect.Client[v1.RunRevisionRequest, v1.RunRevisionResponse]
 	activateRevision *connect.Client[v1.ActivateRevisionRequest, v1.ActivateRevisionResponse]
 }
 
 // Materialize calls graphene.management.v1.RevisionsAPI.Materialize.
-func (c *revisionsAPIClient) Materialize(ctx context.Context, req *connect.Request[v1.MaterializeRequest]) (*connect.Response[v1.MaterializeResponse], error) {
-	return c.materialize.CallUnary(ctx, req)
+func (c *revisionsAPIClient) Materialize(ctx context.Context, req *connect.Request[v1.MaterializeRequest]) (*connect.ServerStreamForClient[v1.MaterializeEvent], error) {
+	return c.materialize.CallServerStream(ctx, req)
 }
 
 // ListRevisions calls graphene.management.v1.RevisionsAPI.ListRevisions.
@@ -123,7 +126,10 @@ func (c *revisionsAPIClient) ActivateRevision(ctx context.Context, req *connect.
 
 // RevisionsAPIHandler is an implementation of the graphene.management.v1.RevisionsAPI service.
 type RevisionsAPIHandler interface {
-	Materialize(context.Context, *connect.Request[v1.MaterializeRequest]) (*connect.Response[v1.MaterializeResponse], error)
+	// Materialize STREAMS progress: a source build takes minutes, and a
+	// silent request dies on the first idle NAT between the client and
+	// the door. The stream is also the Studio build log.
+	Materialize(context.Context, *connect.Request[v1.MaterializeRequest], *connect.ServerStream[v1.MaterializeEvent]) error
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	RunRevision(context.Context, *connect.Request[v1.RunRevisionRequest]) (*connect.Response[v1.RunRevisionResponse], error)
 	ActivateRevision(context.Context, *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error)
@@ -136,7 +142,7 @@ type RevisionsAPIHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewRevisionsAPIHandler(svc RevisionsAPIHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	revisionsAPIMethods := v1.File_proto_management_v1_revisions_proto.Services().ByName("RevisionsAPI").Methods()
-	revisionsAPIMaterializeHandler := connect.NewUnaryHandler(
+	revisionsAPIMaterializeHandler := connect.NewServerStreamHandler(
 		RevisionsAPIMaterializeProcedure,
 		svc.Materialize,
 		connect.WithSchema(revisionsAPIMethods.ByName("Materialize")),
@@ -179,8 +185,8 @@ func NewRevisionsAPIHandler(svc RevisionsAPIHandler, opts ...connect.HandlerOpti
 // UnimplementedRevisionsAPIHandler returns CodeUnimplemented from all methods.
 type UnimplementedRevisionsAPIHandler struct{}
 
-func (UnimplementedRevisionsAPIHandler) Materialize(context.Context, *connect.Request[v1.MaterializeRequest]) (*connect.Response[v1.MaterializeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RevisionsAPI.Materialize is not implemented"))
+func (UnimplementedRevisionsAPIHandler) Materialize(context.Context, *connect.Request[v1.MaterializeRequest], *connect.ServerStream[v1.MaterializeEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RevisionsAPI.Materialize is not implemented"))
 }
 
 func (UnimplementedRevisionsAPIHandler) ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error) {

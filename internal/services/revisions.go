@@ -7,6 +7,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -30,44 +32,99 @@ import (
 // maxSourceBytes bounds one uploaded source tree (tar.gz).
 const maxSourceBytes = 64 << 20
 
-// Materialize builds one source tree into a pipeline revision.
-func (m *Management) Materialize(ctx context.Context, creq *connect.Request[managementv1.MaterializeRequest]) (*connect.Response[managementv1.MaterializeResponse], error) {
+// heartbeatEvery keeps a silent build's stream alive: `go build`
+// prints nothing for minutes and an idle connection dies in the first
+// NAT between the client and the door.
+const heartbeatEvery = 15 * time.Second
+
+// Materialize builds one source tree into a pipeline revision,
+// streaming the build as it happens — the Studio build log.
+func (m *Management) Materialize(ctx context.Context, creq *connect.Request[managementv1.MaterializeRequest], stream *connect.ServerStream[managementv1.MaterializeEvent]) error {
 	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if m.Materializer == nil {
-		return nil, status.Error(codes.Unimplemented, "materialization is not configured on this installation")
+		return status.Error(codes.Unimplemented, "materialization is not configured on this installation")
 	}
 	if req.GetPipelineId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "pipeline_id is required")
+		return status.Error(codes.InvalidArgument, "pipeline_id is required")
 	}
 	if len(req.GetSource()) == 0 || len(req.GetSource()) > maxSourceBytes {
-		return nil, status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
+		return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
 	}
-	res, err := m.Materializer.Materialize(ctx, b.Namespace, req.GetPipelineId(), req.GetSource())
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "materialize: %v", err)
+
+	// The build runs in its own goroutine; this one owns the stream —
+	// one writer, no interleaving.
+	type outcome struct {
+		res materialize.Result
+		err error
 	}
+	events := make(chan *managementv1.MaterializeEvent, 256)
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := m.Materializer.Materialize(ctx, b.Namespace, req.GetPipelineId(), req.GetSource(),
+			func(stage, message string) {
+				select {
+				case events <- &managementv1.MaterializeEvent{Stage: stage, Message: message}:
+				default: // a slow reader never blocks the build
+				}
+			})
+		close(events)
+		done <- outcome{res: res, err: err}
+	}()
+
+	started := time.Now()
+	beat := time.NewTicker(heartbeatEvery)
+	defer beat.Stop()
+	for events != nil {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if err := stream.Send(ev); err != nil {
+				return err
+			}
+		case <-beat.C:
+			if err := stream.Send(&managementv1.MaterializeEvent{
+				Stage:   "build",
+				Message: fmt.Sprintf("working… %s elapsed", time.Since(started).Round(time.Second)),
+			}); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	out := <-done
+	if out.err != nil {
+		return status.Errorf(codes.FailedPrecondition, "materialize: %v", out.err)
+	}
+	res := out.res
 	if err := b.Worker.AddRevision(ctx, req.GetPipelineId(), res.RevisionId, pipelineflow.Revision{
 		Image:            res.ImageRef,
 		ManifestLocation: res.ManifestLocation,
 		SourceDigest:     res.SourceDigest,
 		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, err.Error())
 	}
 	m.Log.Info("revision materialized",
 		xlog.String("namespace", b.Namespace),
 		xlog.String("pipeline", req.GetPipelineId()),
 		xlog.String("revision", res.RevisionId))
-	return connect.NewResponse(&managementv1.MaterializeResponse{
-		RevisionId: res.RevisionId,
-		Image:      res.ImageRef,
-		Manifest:   res.Manifest,
-		BuildLog:   res.BuildLog,
-	}), nil
+	return stream.Send(&managementv1.MaterializeEvent{
+		Stage:   "done",
+		Message: fmt.Sprintf("revision %s in %s", res.RevisionId, time.Since(started).Round(time.Second)),
+		Result: &managementv1.MaterializeResult{
+			RevisionId: res.RevisionId,
+			Image:      res.ImageRef,
+			Manifest:   res.Manifest,
+		},
+	})
 }
 
 // ListRevisions lists the pipeline's materialized revisions; the

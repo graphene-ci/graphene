@@ -75,31 +75,33 @@ func (x *MaterializeRequest) GetSource() []byte {
 	return nil
 }
 
-type MaterializeResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	RevisionId string                 `protobuf:"bytes,1,opt,name=revision_id,json=revisionId,proto3" json:"revision_id,omitempty"`
-	Image      string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
-	// The revision's manifest as protojson — what Plan renders.
-	Manifest      []byte `protobuf:"bytes,3,opt,name=manifest,proto3" json:"manifest,omitempty"`
-	BuildLog      string `protobuf:"bytes,4,opt,name=build_log,json=buildLog,proto3" json:"build_log,omitempty"`
+type MaterializeEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stage: "upload" | "runtime" | "build" | "describe" | "publish" |
+	// "done" — the phase this event reports.
+	Stage string `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
+	// Message is one progress line (a build log line, a status).
+	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	// Result is set on the final "done" event.
+	Result        *MaterializeResult `protobuf:"bytes,3,opt,name=result,proto3" json:"result,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MaterializeResponse) Reset() {
-	*x = MaterializeResponse{}
+func (x *MaterializeEvent) Reset() {
+	*x = MaterializeEvent{}
 	mi := &file_proto_management_v1_revisions_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MaterializeResponse) String() string {
+func (x *MaterializeEvent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MaterializeResponse) ProtoMessage() {}
+func (*MaterializeEvent) ProtoMessage() {}
 
-func (x *MaterializeResponse) ProtoReflect() protoreflect.Message {
+func (x *MaterializeEvent) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_management_v1_revisions_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -111,37 +113,91 @@ func (x *MaterializeResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MaterializeResponse.ProtoReflect.Descriptor instead.
-func (*MaterializeResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use MaterializeEvent.ProtoReflect.Descriptor instead.
+func (*MaterializeEvent) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *MaterializeResponse) GetRevisionId() string {
+func (x *MaterializeEvent) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *MaterializeEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *MaterializeEvent) GetResult() *MaterializeResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+type MaterializeResult struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	RevisionId string                 `protobuf:"bytes,1,opt,name=revision_id,json=revisionId,proto3" json:"revision_id,omitempty"`
+	Image      string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	// The revision's manifest as protojson — what Plan renders.
+	Manifest      []byte `protobuf:"bytes,3,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MaterializeResult) Reset() {
+	*x = MaterializeResult{}
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MaterializeResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MaterializeResult) ProtoMessage() {}
+
+func (x *MaterializeResult) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MaterializeResult.ProtoReflect.Descriptor instead.
+func (*MaterializeResult) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MaterializeResult) GetRevisionId() string {
 	if x != nil {
 		return x.RevisionId
 	}
 	return ""
 }
 
-func (x *MaterializeResponse) GetImage() string {
+func (x *MaterializeResult) GetImage() string {
 	if x != nil {
 		return x.Image
 	}
 	return ""
 }
 
-func (x *MaterializeResponse) GetManifest() []byte {
+func (x *MaterializeResult) GetManifest() []byte {
 	if x != nil {
 		return x.Manifest
 	}
 	return nil
-}
-
-func (x *MaterializeResponse) GetBuildLog() string {
-	if x != nil {
-		return x.BuildLog
-	}
-	return ""
 }
 
 type ListRevisionsRequest struct {
@@ -153,7 +209,7 @@ type ListRevisionsRequest struct {
 
 func (x *ListRevisionsRequest) Reset() {
 	*x = ListRevisionsRequest{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[2]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -165,7 +221,7 @@ func (x *ListRevisionsRequest) String() string {
 func (*ListRevisionsRequest) ProtoMessage() {}
 
 func (x *ListRevisionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[2]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -178,7 +234,7 @@ func (x *ListRevisionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRevisionsRequest.ProtoReflect.Descriptor instead.
 func (*ListRevisionsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{2}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListRevisionsRequest) GetPipelineId() string {
@@ -197,7 +253,7 @@ type ListRevisionsResponse struct {
 
 func (x *ListRevisionsResponse) Reset() {
 	*x = ListRevisionsResponse{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[3]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -209,7 +265,7 @@ func (x *ListRevisionsResponse) String() string {
 func (*ListRevisionsResponse) ProtoMessage() {}
 
 func (x *ListRevisionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[3]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -222,7 +278,7 @@ func (x *ListRevisionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRevisionsResponse.ProtoReflect.Descriptor instead.
 func (*ListRevisionsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{3}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListRevisionsResponse) GetRevisions() []*ListRevisionsResponse_Revision {
@@ -245,7 +301,7 @@ type RunRevisionRequest struct {
 
 func (x *RunRevisionRequest) Reset() {
 	*x = RunRevisionRequest{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[4]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +313,7 @@ func (x *RunRevisionRequest) String() string {
 func (*RunRevisionRequest) ProtoMessage() {}
 
 func (x *RunRevisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[4]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,7 +326,7 @@ func (x *RunRevisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRevisionRequest.ProtoReflect.Descriptor instead.
 func (*RunRevisionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{4}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RunRevisionRequest) GetPipelineId() string {
@@ -318,7 +374,7 @@ type RunRevisionResponse struct {
 
 func (x *RunRevisionResponse) Reset() {
 	*x = RunRevisionResponse{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[5]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +386,7 @@ func (x *RunRevisionResponse) String() string {
 func (*RunRevisionResponse) ProtoMessage() {}
 
 func (x *RunRevisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[5]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +399,7 @@ func (x *RunRevisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRevisionResponse.ProtoReflect.Descriptor instead.
 func (*RunRevisionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{5}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RunRevisionResponse) GetWorkflowId() string {
@@ -370,7 +426,7 @@ type ActivateRevisionRequest struct {
 
 func (x *ActivateRevisionRequest) Reset() {
 	*x = ActivateRevisionRequest{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[6]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -382,7 +438,7 @@ func (x *ActivateRevisionRequest) String() string {
 func (*ActivateRevisionRequest) ProtoMessage() {}
 
 func (x *ActivateRevisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[6]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -395,7 +451,7 @@ func (x *ActivateRevisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateRevisionRequest.ProtoReflect.Descriptor instead.
 func (*ActivateRevisionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ActivateRevisionRequest) GetPipelineId() string {
@@ -420,7 +476,7 @@ type ActivateRevisionResponse struct {
 
 func (x *ActivateRevisionResponse) Reset() {
 	*x = ActivateRevisionResponse{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[7]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +488,7 @@ func (x *ActivateRevisionResponse) String() string {
 func (*ActivateRevisionResponse) ProtoMessage() {}
 
 func (x *ActivateRevisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[7]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +501,7 @@ func (x *ActivateRevisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivateRevisionResponse.ProtoReflect.Descriptor instead.
 func (*ActivateRevisionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{7}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{8}
 }
 
 type ListRevisionsResponse_Revision struct {
@@ -461,7 +517,7 @@ type ListRevisionsResponse_Revision struct {
 
 func (x *ListRevisionsResponse_Revision) Reset() {
 	*x = ListRevisionsResponse_Revision{}
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[8]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +529,7 @@ func (x *ListRevisionsResponse_Revision) String() string {
 func (*ListRevisionsResponse_Revision) ProtoMessage() {}
 
 func (x *ListRevisionsResponse_Revision) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_revisions_proto_msgTypes[8]
+	mi := &file_proto_management_v1_revisions_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +542,7 @@ func (x *ListRevisionsResponse_Revision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRevisionsResponse_Revision.ProtoReflect.Descriptor instead.
 func (*ListRevisionsResponse_Revision) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{3, 0}
+	return file_proto_management_v1_revisions_proto_rawDescGZIP(), []int{4, 0}
 }
 
 func (x *ListRevisionsResponse_Revision) GetId() string {
@@ -533,12 +589,15 @@ const file_proto_management_v1_revisions_proto_rawDesc = "" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\fR\x06source\"\x85\x01\n" +
-	"\x13MaterializeResponse\x12\x1f\n" +
+	"\x10MaterializeEvent\x12\x14\n" +
+	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12A\n" +
+	"\x06result\x18\x03 \x01(\v2).graphene.management.v1.MaterializeResultR\x06result\"f\n" +
+	"\x11MaterializeResult\x12\x1f\n" +
 	"\vrevision_id\x18\x01 \x01(\tR\n" +
 	"revisionId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x1a\n" +
-	"\bmanifest\x18\x03 \x01(\fR\bmanifest\x12\x1b\n" +
-	"\tbuild_log\x18\x04 \x01(\tR\bbuildLog\"7\n" +
+	"\bmanifest\x18\x03 \x01(\fR\bmanifest\"7\n" +
 	"\x14ListRevisionsRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\"\xfc\x01\n" +
@@ -571,9 +630,9 @@ const file_proto_management_v1_revisions_proto_rawDesc = "" +
 	"pipelineId\x12\x1f\n" +
 	"\vrevision_id\x18\x02 \x01(\tR\n" +
 	"revisionId\"\x1a\n" +
-	"\x18ActivateRevisionResponse2\xc3\x03\n" +
-	"\fRevisionsAPI\x12f\n" +
-	"\vMaterialize\x12*.graphene.management.v1.MaterializeRequest\x1a+.graphene.management.v1.MaterializeResponse\x12l\n" +
+	"\x18ActivateRevisionResponse2\xc2\x03\n" +
+	"\fRevisionsAPI\x12e\n" +
+	"\vMaterialize\x12*.graphene.management.v1.MaterializeRequest\x1a(.graphene.management.v1.MaterializeEvent0\x01\x12l\n" +
 	"\rListRevisions\x12,.graphene.management.v1.ListRevisionsRequest\x1a-.graphene.management.v1.ListRevisionsResponse\x12f\n" +
 	"\vRunRevision\x12*.graphene.management.v1.RunRevisionRequest\x1a+.graphene.management.v1.RunRevisionResponse\x12u\n" +
 	"\x10ActivateRevision\x12/.graphene.management.v1.ActivateRevisionRequest\x1a0.graphene.management.v1.ActivateRevisionResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
@@ -590,35 +649,37 @@ func file_proto_management_v1_revisions_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_revisions_proto_rawDescData
 }
 
-var file_proto_management_v1_revisions_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_management_v1_revisions_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_management_v1_revisions_proto_goTypes = []any{
 	(*MaterializeRequest)(nil),             // 0: graphene.management.v1.MaterializeRequest
-	(*MaterializeResponse)(nil),            // 1: graphene.management.v1.MaterializeResponse
-	(*ListRevisionsRequest)(nil),           // 2: graphene.management.v1.ListRevisionsRequest
-	(*ListRevisionsResponse)(nil),          // 3: graphene.management.v1.ListRevisionsResponse
-	(*RunRevisionRequest)(nil),             // 4: graphene.management.v1.RunRevisionRequest
-	(*RunRevisionResponse)(nil),            // 5: graphene.management.v1.RunRevisionResponse
-	(*ActivateRevisionRequest)(nil),        // 6: graphene.management.v1.ActivateRevisionRequest
-	(*ActivateRevisionResponse)(nil),       // 7: graphene.management.v1.ActivateRevisionResponse
-	(*ListRevisionsResponse_Revision)(nil), // 8: graphene.management.v1.ListRevisionsResponse.Revision
-	nil,                                    // 9: graphene.management.v1.RunRevisionRequest.LabelsEntry
+	(*MaterializeEvent)(nil),               // 1: graphene.management.v1.MaterializeEvent
+	(*MaterializeResult)(nil),              // 2: graphene.management.v1.MaterializeResult
+	(*ListRevisionsRequest)(nil),           // 3: graphene.management.v1.ListRevisionsRequest
+	(*ListRevisionsResponse)(nil),          // 4: graphene.management.v1.ListRevisionsResponse
+	(*RunRevisionRequest)(nil),             // 5: graphene.management.v1.RunRevisionRequest
+	(*RunRevisionResponse)(nil),            // 6: graphene.management.v1.RunRevisionResponse
+	(*ActivateRevisionRequest)(nil),        // 7: graphene.management.v1.ActivateRevisionRequest
+	(*ActivateRevisionResponse)(nil),       // 8: graphene.management.v1.ActivateRevisionResponse
+	(*ListRevisionsResponse_Revision)(nil), // 9: graphene.management.v1.ListRevisionsResponse.Revision
+	nil,                                    // 10: graphene.management.v1.RunRevisionRequest.LabelsEntry
 }
 var file_proto_management_v1_revisions_proto_depIdxs = []int32{
-	8, // 0: graphene.management.v1.ListRevisionsResponse.revisions:type_name -> graphene.management.v1.ListRevisionsResponse.Revision
-	9, // 1: graphene.management.v1.RunRevisionRequest.labels:type_name -> graphene.management.v1.RunRevisionRequest.LabelsEntry
-	0, // 2: graphene.management.v1.RevisionsAPI.Materialize:input_type -> graphene.management.v1.MaterializeRequest
-	2, // 3: graphene.management.v1.RevisionsAPI.ListRevisions:input_type -> graphene.management.v1.ListRevisionsRequest
-	4, // 4: graphene.management.v1.RevisionsAPI.RunRevision:input_type -> graphene.management.v1.RunRevisionRequest
-	6, // 5: graphene.management.v1.RevisionsAPI.ActivateRevision:input_type -> graphene.management.v1.ActivateRevisionRequest
-	1, // 6: graphene.management.v1.RevisionsAPI.Materialize:output_type -> graphene.management.v1.MaterializeResponse
-	3, // 7: graphene.management.v1.RevisionsAPI.ListRevisions:output_type -> graphene.management.v1.ListRevisionsResponse
-	5, // 8: graphene.management.v1.RevisionsAPI.RunRevision:output_type -> graphene.management.v1.RunRevisionResponse
-	7, // 9: graphene.management.v1.RevisionsAPI.ActivateRevision:output_type -> graphene.management.v1.ActivateRevisionResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2,  // 0: graphene.management.v1.MaterializeEvent.result:type_name -> graphene.management.v1.MaterializeResult
+	9,  // 1: graphene.management.v1.ListRevisionsResponse.revisions:type_name -> graphene.management.v1.ListRevisionsResponse.Revision
+	10, // 2: graphene.management.v1.RunRevisionRequest.labels:type_name -> graphene.management.v1.RunRevisionRequest.LabelsEntry
+	0,  // 3: graphene.management.v1.RevisionsAPI.Materialize:input_type -> graphene.management.v1.MaterializeRequest
+	3,  // 4: graphene.management.v1.RevisionsAPI.ListRevisions:input_type -> graphene.management.v1.ListRevisionsRequest
+	5,  // 5: graphene.management.v1.RevisionsAPI.RunRevision:input_type -> graphene.management.v1.RunRevisionRequest
+	7,  // 6: graphene.management.v1.RevisionsAPI.ActivateRevision:input_type -> graphene.management.v1.ActivateRevisionRequest
+	1,  // 7: graphene.management.v1.RevisionsAPI.Materialize:output_type -> graphene.management.v1.MaterializeEvent
+	4,  // 8: graphene.management.v1.RevisionsAPI.ListRevisions:output_type -> graphene.management.v1.ListRevisionsResponse
+	6,  // 9: graphene.management.v1.RevisionsAPI.RunRevision:output_type -> graphene.management.v1.RunRevisionResponse
+	8,  // 10: graphene.management.v1.RevisionsAPI.ActivateRevision:output_type -> graphene.management.v1.ActivateRevisionResponse
+	7,  // [7:11] is the sub-list for method output_type
+	3,  // [3:7] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_revisions_proto_init() }
@@ -632,7 +693,7 @@ func file_proto_management_v1_revisions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_revisions_proto_rawDesc), len(file_proto_management_v1_revisions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
