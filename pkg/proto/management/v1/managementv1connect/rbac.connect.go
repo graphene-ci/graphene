@@ -33,37 +33,21 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// RbacAPIPutRoleProcedure is the fully-qualified name of the RbacAPI's PutRole RPC.
-	RbacAPIPutRoleProcedure = "/graphene.management.v1.RbacAPI/PutRole"
-	// RbacAPIListRolesProcedure is the fully-qualified name of the RbacAPI's ListRoles RPC.
-	RbacAPIListRolesProcedure = "/graphene.management.v1.RbacAPI/ListRoles"
-	// RbacAPIPutBindingProcedure is the fully-qualified name of the RbacAPI's PutBinding RPC.
-	RbacAPIPutBindingProcedure = "/graphene.management.v1.RbacAPI/PutBinding"
-	// RbacAPIListBindingsProcedure is the fully-qualified name of the RbacAPI's ListBindings RPC.
-	RbacAPIListBindingsProcedure = "/graphene.management.v1.RbacAPI/ListBindings"
-	// RbacAPICreateAccountProcedure is the fully-qualified name of the RbacAPI's CreateAccount RPC.
-	RbacAPICreateAccountProcedure = "/graphene.management.v1.RbacAPI/CreateAccount"
 	// RbacAPIIssueTokenProcedure is the fully-qualified name of the RbacAPI's IssueToken RPC.
 	RbacAPIIssueTokenProcedure = "/graphene.management.v1.RbacAPI/IssueToken"
-	// RbacAPIRevokeTokenProcedure is the fully-qualified name of the RbacAPI's RevokeToken RPC.
-	RbacAPIRevokeTokenProcedure = "/graphene.management.v1.RbacAPI/RevokeToken"
 	// RbacAPIWhoAmIProcedure is the fully-qualified name of the RbacAPI's WhoAmI RPC.
 	RbacAPIWhoAmIProcedure = "/graphene.management.v1.RbacAPI/WhoAmI"
 )
 
 // RbacAPIClient is a client for the graphene.management.v1.RbacAPI service.
 type RbacAPIClient interface {
-	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)
-	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
-	PutBinding(context.Context, *connect.Request[v1.PutBindingRequest]) (*connect.Response[v1.PutBindingResponse], error)
-	ListBindings(context.Context, *connect.Request[v1.ListBindingsRequest]) (*connect.Response[v1.ListBindingsResponse], error)
-	CreateAccount(context.Context, *connect.Request[v1.CreateAccountRequest]) (*connect.Response[v1.CreateAccountResponse], error)
-	// IssueToken mints a token for a service account. The VALUE is
-	// returned exactly once, here: the record keeps only its hash.
+	// IssueToken mints a token for a service account. It cannot be a
+	// command: a command's payload AND its result both land in the
+	// record's history, and a token value must land nowhere. The value
+	// is returned exactly once, here; the record keeps only its hash.
 	IssueToken(context.Context, *connect.Request[v1.IssueTokenRequest]) (*connect.Response[v1.IssueTokenResponse], error)
-	RevokeToken(context.Context, *connect.Request[v1.RevokeTokenRequest]) (*connect.Response[v1.RevokeTokenResponse], error)
-	// Whoami answers who the caller is and what they may do — what a UI
-	// needs to decide which buttons exist.
+	// WhoAmI answers who the caller is and what they may do — a property
+	// of the caller, not of any record.
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 }
 
@@ -78,46 +62,10 @@ func NewRbacAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 	baseURL = strings.TrimRight(baseURL, "/")
 	rbacAPIMethods := v1.File_proto_management_v1_rbac_proto.Services().ByName("RbacAPI").Methods()
 	return &rbacAPIClient{
-		putRole: connect.NewClient[v1.PutRoleRequest, v1.PutRoleResponse](
-			httpClient,
-			baseURL+RbacAPIPutRoleProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("PutRole")),
-			connect.WithClientOptions(opts...),
-		),
-		listRoles: connect.NewClient[v1.ListRolesRequest, v1.ListRolesResponse](
-			httpClient,
-			baseURL+RbacAPIListRolesProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("ListRoles")),
-			connect.WithClientOptions(opts...),
-		),
-		putBinding: connect.NewClient[v1.PutBindingRequest, v1.PutBindingResponse](
-			httpClient,
-			baseURL+RbacAPIPutBindingProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("PutBinding")),
-			connect.WithClientOptions(opts...),
-		),
-		listBindings: connect.NewClient[v1.ListBindingsRequest, v1.ListBindingsResponse](
-			httpClient,
-			baseURL+RbacAPIListBindingsProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("ListBindings")),
-			connect.WithClientOptions(opts...),
-		),
-		createAccount: connect.NewClient[v1.CreateAccountRequest, v1.CreateAccountResponse](
-			httpClient,
-			baseURL+RbacAPICreateAccountProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("CreateAccount")),
-			connect.WithClientOptions(opts...),
-		),
 		issueToken: connect.NewClient[v1.IssueTokenRequest, v1.IssueTokenResponse](
 			httpClient,
 			baseURL+RbacAPIIssueTokenProcedure,
 			connect.WithSchema(rbacAPIMethods.ByName("IssueToken")),
-			connect.WithClientOptions(opts...),
-		),
-		revokeToken: connect.NewClient[v1.RevokeTokenRequest, v1.RevokeTokenResponse](
-			httpClient,
-			baseURL+RbacAPIRevokeTokenProcedure,
-			connect.WithSchema(rbacAPIMethods.ByName("RevokeToken")),
 			connect.WithClientOptions(opts...),
 		),
 		whoAmI: connect.NewClient[v1.WhoAmIRequest, v1.WhoAmIResponse](
@@ -131,49 +79,13 @@ func NewRbacAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 
 // rbacAPIClient implements RbacAPIClient.
 type rbacAPIClient struct {
-	putRole       *connect.Client[v1.PutRoleRequest, v1.PutRoleResponse]
-	listRoles     *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
-	putBinding    *connect.Client[v1.PutBindingRequest, v1.PutBindingResponse]
-	listBindings  *connect.Client[v1.ListBindingsRequest, v1.ListBindingsResponse]
-	createAccount *connect.Client[v1.CreateAccountRequest, v1.CreateAccountResponse]
-	issueToken    *connect.Client[v1.IssueTokenRequest, v1.IssueTokenResponse]
-	revokeToken   *connect.Client[v1.RevokeTokenRequest, v1.RevokeTokenResponse]
-	whoAmI        *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
-}
-
-// PutRole calls graphene.management.v1.RbacAPI.PutRole.
-func (c *rbacAPIClient) PutRole(ctx context.Context, req *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error) {
-	return c.putRole.CallUnary(ctx, req)
-}
-
-// ListRoles calls graphene.management.v1.RbacAPI.ListRoles.
-func (c *rbacAPIClient) ListRoles(ctx context.Context, req *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
-	return c.listRoles.CallUnary(ctx, req)
-}
-
-// PutBinding calls graphene.management.v1.RbacAPI.PutBinding.
-func (c *rbacAPIClient) PutBinding(ctx context.Context, req *connect.Request[v1.PutBindingRequest]) (*connect.Response[v1.PutBindingResponse], error) {
-	return c.putBinding.CallUnary(ctx, req)
-}
-
-// ListBindings calls graphene.management.v1.RbacAPI.ListBindings.
-func (c *rbacAPIClient) ListBindings(ctx context.Context, req *connect.Request[v1.ListBindingsRequest]) (*connect.Response[v1.ListBindingsResponse], error) {
-	return c.listBindings.CallUnary(ctx, req)
-}
-
-// CreateAccount calls graphene.management.v1.RbacAPI.CreateAccount.
-func (c *rbacAPIClient) CreateAccount(ctx context.Context, req *connect.Request[v1.CreateAccountRequest]) (*connect.Response[v1.CreateAccountResponse], error) {
-	return c.createAccount.CallUnary(ctx, req)
+	issueToken *connect.Client[v1.IssueTokenRequest, v1.IssueTokenResponse]
+	whoAmI     *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
 }
 
 // IssueToken calls graphene.management.v1.RbacAPI.IssueToken.
 func (c *rbacAPIClient) IssueToken(ctx context.Context, req *connect.Request[v1.IssueTokenRequest]) (*connect.Response[v1.IssueTokenResponse], error) {
 	return c.issueToken.CallUnary(ctx, req)
-}
-
-// RevokeToken calls graphene.management.v1.RbacAPI.RevokeToken.
-func (c *rbacAPIClient) RevokeToken(ctx context.Context, req *connect.Request[v1.RevokeTokenRequest]) (*connect.Response[v1.RevokeTokenResponse], error) {
-	return c.revokeToken.CallUnary(ctx, req)
 }
 
 // WhoAmI calls graphene.management.v1.RbacAPI.WhoAmI.
@@ -183,17 +95,13 @@ func (c *rbacAPIClient) WhoAmI(ctx context.Context, req *connect.Request[v1.WhoA
 
 // RbacAPIHandler is an implementation of the graphene.management.v1.RbacAPI service.
 type RbacAPIHandler interface {
-	PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error)
-	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
-	PutBinding(context.Context, *connect.Request[v1.PutBindingRequest]) (*connect.Response[v1.PutBindingResponse], error)
-	ListBindings(context.Context, *connect.Request[v1.ListBindingsRequest]) (*connect.Response[v1.ListBindingsResponse], error)
-	CreateAccount(context.Context, *connect.Request[v1.CreateAccountRequest]) (*connect.Response[v1.CreateAccountResponse], error)
-	// IssueToken mints a token for a service account. The VALUE is
-	// returned exactly once, here: the record keeps only its hash.
+	// IssueToken mints a token for a service account. It cannot be a
+	// command: a command's payload AND its result both land in the
+	// record's history, and a token value must land nowhere. The value
+	// is returned exactly once, here; the record keeps only its hash.
 	IssueToken(context.Context, *connect.Request[v1.IssueTokenRequest]) (*connect.Response[v1.IssueTokenResponse], error)
-	RevokeToken(context.Context, *connect.Request[v1.RevokeTokenRequest]) (*connect.Response[v1.RevokeTokenResponse], error)
-	// Whoami answers who the caller is and what they may do — what a UI
-	// needs to decide which buttons exist.
+	// WhoAmI answers who the caller is and what they may do — a property
+	// of the caller, not of any record.
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 }
 
@@ -204,46 +112,10 @@ type RbacAPIHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewRbacAPIHandler(svc RbacAPIHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	rbacAPIMethods := v1.File_proto_management_v1_rbac_proto.Services().ByName("RbacAPI").Methods()
-	rbacAPIPutRoleHandler := connect.NewUnaryHandler(
-		RbacAPIPutRoleProcedure,
-		svc.PutRole,
-		connect.WithSchema(rbacAPIMethods.ByName("PutRole")),
-		connect.WithHandlerOptions(opts...),
-	)
-	rbacAPIListRolesHandler := connect.NewUnaryHandler(
-		RbacAPIListRolesProcedure,
-		svc.ListRoles,
-		connect.WithSchema(rbacAPIMethods.ByName("ListRoles")),
-		connect.WithHandlerOptions(opts...),
-	)
-	rbacAPIPutBindingHandler := connect.NewUnaryHandler(
-		RbacAPIPutBindingProcedure,
-		svc.PutBinding,
-		connect.WithSchema(rbacAPIMethods.ByName("PutBinding")),
-		connect.WithHandlerOptions(opts...),
-	)
-	rbacAPIListBindingsHandler := connect.NewUnaryHandler(
-		RbacAPIListBindingsProcedure,
-		svc.ListBindings,
-		connect.WithSchema(rbacAPIMethods.ByName("ListBindings")),
-		connect.WithHandlerOptions(opts...),
-	)
-	rbacAPICreateAccountHandler := connect.NewUnaryHandler(
-		RbacAPICreateAccountProcedure,
-		svc.CreateAccount,
-		connect.WithSchema(rbacAPIMethods.ByName("CreateAccount")),
-		connect.WithHandlerOptions(opts...),
-	)
 	rbacAPIIssueTokenHandler := connect.NewUnaryHandler(
 		RbacAPIIssueTokenProcedure,
 		svc.IssueToken,
 		connect.WithSchema(rbacAPIMethods.ByName("IssueToken")),
-		connect.WithHandlerOptions(opts...),
-	)
-	rbacAPIRevokeTokenHandler := connect.NewUnaryHandler(
-		RbacAPIRevokeTokenProcedure,
-		svc.RevokeToken,
-		connect.WithSchema(rbacAPIMethods.ByName("RevokeToken")),
 		connect.WithHandlerOptions(opts...),
 	)
 	rbacAPIWhoAmIHandler := connect.NewUnaryHandler(
@@ -254,20 +126,8 @@ func NewRbacAPIHandler(svc RbacAPIHandler, opts ...connect.HandlerOption) (strin
 	)
 	return "/graphene.management.v1.RbacAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case RbacAPIPutRoleProcedure:
-			rbacAPIPutRoleHandler.ServeHTTP(w, r)
-		case RbacAPIListRolesProcedure:
-			rbacAPIListRolesHandler.ServeHTTP(w, r)
-		case RbacAPIPutBindingProcedure:
-			rbacAPIPutBindingHandler.ServeHTTP(w, r)
-		case RbacAPIListBindingsProcedure:
-			rbacAPIListBindingsHandler.ServeHTTP(w, r)
-		case RbacAPICreateAccountProcedure:
-			rbacAPICreateAccountHandler.ServeHTTP(w, r)
 		case RbacAPIIssueTokenProcedure:
 			rbacAPIIssueTokenHandler.ServeHTTP(w, r)
-		case RbacAPIRevokeTokenProcedure:
-			rbacAPIRevokeTokenHandler.ServeHTTP(w, r)
 		case RbacAPIWhoAmIProcedure:
 			rbacAPIWhoAmIHandler.ServeHTTP(w, r)
 		default:
@@ -279,32 +139,8 @@ func NewRbacAPIHandler(svc RbacAPIHandler, opts ...connect.HandlerOption) (strin
 // UnimplementedRbacAPIHandler returns CodeUnimplemented from all methods.
 type UnimplementedRbacAPIHandler struct{}
 
-func (UnimplementedRbacAPIHandler) PutRole(context.Context, *connect.Request[v1.PutRoleRequest]) (*connect.Response[v1.PutRoleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.PutRole is not implemented"))
-}
-
-func (UnimplementedRbacAPIHandler) ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.ListRoles is not implemented"))
-}
-
-func (UnimplementedRbacAPIHandler) PutBinding(context.Context, *connect.Request[v1.PutBindingRequest]) (*connect.Response[v1.PutBindingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.PutBinding is not implemented"))
-}
-
-func (UnimplementedRbacAPIHandler) ListBindings(context.Context, *connect.Request[v1.ListBindingsRequest]) (*connect.Response[v1.ListBindingsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.ListBindings is not implemented"))
-}
-
-func (UnimplementedRbacAPIHandler) CreateAccount(context.Context, *connect.Request[v1.CreateAccountRequest]) (*connect.Response[v1.CreateAccountResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.CreateAccount is not implemented"))
-}
-
 func (UnimplementedRbacAPIHandler) IssueToken(context.Context, *connect.Request[v1.IssueTokenRequest]) (*connect.Response[v1.IssueTokenResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.IssueToken is not implemented"))
-}
-
-func (UnimplementedRbacAPIHandler) RevokeToken(context.Context, *connect.Request[v1.RevokeTokenRequest]) (*connect.Response[v1.RevokeTokenResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RbacAPI.RevokeToken is not implemented"))
 }
 
 func (UnimplementedRbacAPIHandler) WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error) {
