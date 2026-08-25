@@ -7,8 +7,8 @@ import (
 	"github.com/gopherex/schemapb/go/schemapb"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 )
 
 type mapStore map[string]string

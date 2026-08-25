@@ -22,18 +22,26 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
+	"github.com/graphene-ci/pipeline/pkg/ref"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // Kind is the entity kind.
 const Kind entity.KindName = "pipeline"
 
-// Spec is empty — the record's id IS the pipeline id; everything else
-// is state the publications write.
-type Spec struct{}
+// Spec names the workspace this pipeline belongs to; everything else
+// is state the publications write. The record's id IS the pipeline id.
+type Spec struct {
+	// WorkspaceId is the project this pipeline is published from; a
+	// pipeline created before its workspace (a bare push) has none
+	// until an activation records it.
+	WorkspaceId string `json:"workspaceId,omitempty"`
+}
 
 // State holds the current manifest, worker image, and start policy.
 type State struct {
+	ownership.State
 	// Manifest is graphene.manifest.v1.Manifest as protojson.
 	Manifest json.RawMessage `json:"manifest,omitempty"`
 	Digest   string          `json:"digest,omitempty"`
@@ -58,6 +66,9 @@ type Fire struct {
 // PublishCmd replaces the manifest when its content changed.
 type PublishCmd struct {
 	Manifest json.RawMessage `json:"manifest"`
+	// WorkspaceId, when set, records the project this pipeline belongs
+	// to — the ownership edge a first activation establishes.
+	WorkspaceId string `json:"workspaceId,omitempty"`
 	// Image, when set, updates the pipeline's worker image (a push);
 	// empty keeps the current one (a worker start announcement).
 	Image string `json:"image,omitempty"`
@@ -121,8 +132,20 @@ type StartReq struct {
 func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	def := entdefine.New[Spec, State](Kind,
 		entdefine.WithSearchAttributes[Spec, State](true),
+		entdefine.WithInit[Spec, State](func(ctx workflow.Context, spec Spec) (State, error) {
+			var st State
+			// A pipeline belongs to the workspace it is published from;
+			// without one it stands alone until an activation says so.
+			owner := ref.OwnerRef("")
+			if spec.WorkspaceId != "" {
+				owner = ref.OwnerRef("workspace/" + spec.WorkspaceId)
+			}
+			ownership.Init(ctx, &st.State, owner)
+			return st, nil
+		}),
 		entdefine.WithReconcileEvery[Spec, State](tick, pendingTick),
 	)
+	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
 	entdefine.Handle(def, func(_ workflow.Context, ec *entdefine.Ctx[Spec, State], cmd PublishCmd) (PublishRes, error) {
 		sum := sha256.Sum256(cmd.Manifest)
 		digest := "sha256:" + hex.EncodeToString(sum[:])
