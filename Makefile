@@ -25,8 +25,8 @@ build: ## Build the server binary
 	go build ./cmd/graphene-server
 
 .PHONY: generate
-generate: ## Generate Go + TS contracts from proto (needs web/node_modules)
-	PATH="$(CURDIR)/web/node_modules/.bin:$(PATH)" easyp generate
+generate: ## Generate Go contracts from proto
+	easyp generate
 
 .PHONY: help
 help: ## Show available targets
