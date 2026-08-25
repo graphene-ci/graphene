@@ -26,6 +26,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/managed"
+	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/worker"
@@ -39,8 +40,11 @@ type Deps struct {
 	Registry         *agents.Registry
 	Secrets          *secrets.Namespaced
 	Vars             *secrets.Namespaced
-	Blobs            blob.Store
-	External         string
+	// Materializer builds source revisions; nil disables the
+	// source-first contour.
+	Materializer *materialize.Materializer
+	Blobs        blob.Store
+	External     string
 	// RunTokenFor returns the run token of a namespace.
 	RunTokenFor func(namespace string) string
 	// UserDataFor renders the agent install script.
@@ -128,15 +132,17 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		func(agentId id.AgentId) (string, error) { return m.deps.UserDataFor(namespace, agentId) })
 	artifactOps := ops.NewArtifactOps(namespace, m.deps.Blobs)
 	w, err := worker.New(worker.Deps{
-		Namespace:   namespace,
-		Client:      c,
-		Registry:    m.deps.Registry,
-		AgentOps:    agentOps,
-		ArtifactOps: artifactOps,
-		External:    m.deps.External,
-		StandTick:   m.deps.SweepEvery,
-		RunToken:    m.deps.RunTokenFor(namespace),
-		Log:         log.With(xlog.String("component", "worker")),
+		Namespace:    namespace,
+		Client:       c,
+		Registry:     m.deps.Registry,
+		AgentOps:     agentOps,
+		ArtifactOps:  artifactOps,
+		External:     m.deps.External,
+		StandTick:    m.deps.SweepEvery,
+		RunToken:     m.deps.RunTokenFor(namespace),
+		Materializer: m.deps.Materializer,
+		Blobs:        m.deps.Blobs,
+		Log:          log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {
 		c.Close()

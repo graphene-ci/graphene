@@ -46,22 +46,6 @@ type State struct {
 	// Pending is the one deferred firing under the queue policy —
 	// cron semantics: firings do not pile up, the latest wins.
 	Pending *Fire `json:"pending,omitempty"`
-	// Revisions are the MATERIALIZED source revisions of the
-	// source-first contour: what a server build produced. The ACTIVE
-	// one is whichever image the state's Image points at — activation
-	// is the ordinary publish command with that revision's manifest.
-	Revisions map[string]Revision `json:"revisions,omitempty"`
-}
-
-// Revision is one materialized build of the pipeline's source.
-type Revision struct {
-	// Image is the worker OCI reference (content-tagged).
-	Image string `json:"image"`
-	// ManifestLocation names the manifest blob in the store.
-	ManifestLocation string `json:"manifestLocation"`
-	// SourceDigest pins the source tree that produced it.
-	SourceDigest string `json:"sourceDigest,omitempty"`
-	CreatedAt    string `json:"createdAt,omitempty"`
 }
 
 // Fire is one trigger firing awaiting or receiving a decision.
@@ -92,18 +76,6 @@ type PublishRes struct {
 	Digest  string `json:"digest"`
 	Changed bool   `json:"changed"`
 }
-
-// AddRevisionCmd records one materialized revision on the pipeline.
-type AddRevisionCmd struct {
-	Id       string   `json:"id"`
-	Revision Revision `json:"revision"`
-}
-
-// Name is the command's wire identity.
-func (AddRevisionCmd) Name() entity.CommandName { return "add-revision" }
-
-// Result binds the response type.
-func (AddRevisionCmd) Result() PublishRes { return PublishRes{} }
 
 // FireCmd is one trigger firing: the arbiter applies the policy.
 type FireCmd struct {
@@ -151,14 +123,6 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		entdefine.WithSearchAttributes[Spec, State](true),
 		entdefine.WithReconcileEvery[Spec, State](tick, pendingTick),
 	)
-	entdefine.Handle(def, func(_ workflow.Context, ec *entdefine.Ctx[Spec, State], cmd AddRevisionCmd) (PublishRes, error) {
-		st := ec.State()
-		if st.Revisions == nil {
-			st.Revisions = map[string]Revision{}
-		}
-		st.Revisions[cmd.Id] = cmd.Revision
-		return PublishRes{Digest: cmd.Id, Changed: true}, nil
-	})
 	entdefine.Handle(def, func(_ workflow.Context, ec *entdefine.Ctx[Spec, State], cmd PublishCmd) (PublishRes, error) {
 		sum := sha256.Sum256(cmd.Manifest)
 		digest := "sha256:" + hex.EncodeToString(sum[:])

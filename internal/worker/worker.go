@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gopherex/xlog"
+	"io"
 	"strings"
 	"time"
 
@@ -27,8 +28,11 @@ import (
 
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
 	"github.com/graphene-ci/graphene/internal/agents"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
+	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/revisionflow"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
@@ -56,7 +60,12 @@ type Deps struct {
 	// RunToken is handed to machine containers so their worker passes the
 	// Temporal proxy. (Per-run minted tokens replace this static one.)
 	RunToken string
-	Log      *xlog.Logger
+	// Materializer builds source revisions; nil disables the
+	// source-first contour on this installation.
+	Materializer *materialize.Materializer
+	// Blobs holds uploaded sources, manifests and build logs.
+	Blobs blob.Store
+	Log   *xlog.Logger
 }
 
 // RunStarter starts one run — wired by the bundle after the managed
@@ -72,6 +81,7 @@ type Worker struct {
 	standDef    *entdefine.Definition[standflow.Spec, standflow.State]
 	pipelineDef *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
 	triggerDef  *entdefine.Definition[triggerflow.Spec, triggerflow.State]
+	revisionDef *entdefine.Definition[revisionflow.Spec, revisionflow.State]
 
 	startRun RunStarter
 }
@@ -95,12 +105,13 @@ func New(deps Deps) (*Worker, error) {
 		standDef:    standflow.New(standTick),
 		pipelineDef: pipelineflow.New(standTick),
 		triggerDef:  triggerflow.New(standTick),
+		revisionDef: revisionflow.New(),
 	}
 
 	if err := errors.Join(
 		s.agentDef.Register(w), s.artifactDef.Register(w),
 		s.standDef.Register(w), s.pipelineDef.Register(w),
-		s.triggerDef.Register(w),
+		s.triggerDef.Register(w), s.revisionDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -130,6 +141,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
 	w.RegisterActivityWithOptions(s.countRuns, activity.RegisterOptions{Name: pipelineflow.CountActivity})
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
+	// The source-first contour: the revision record's Init calls this.
+	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
 	return s, nil
 }
 
@@ -340,12 +353,103 @@ func (s *Worker) GetPipeline(ctx context.Context, pipelineId string) (pipelinefl
 	return desc.State, nil
 }
 
-// AddRevision records one materialized revision on the pipeline.
-func (s *Worker) AddRevision(ctx context.Context, pipelineId, revisionId string, rev pipelineflow.Revision) error {
-	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
-	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
-		pipelineflow.Spec{}, pipelineflow.AddRevisionCmd{Id: revisionId, Revision: rev})
+// materializeRevision is the activity behind a revision's Init: read
+// the uploaded source, build it, keep the log. Progress goes out as
+// heartbeats — the record's own liveness, readable by anyone watching
+// it, with no connection held open anywhere.
+func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.MaterializeReq) (revisionflow.MaterializeRes, error) {
+	var res revisionflow.MaterializeRes
+	if s.deps.Materializer == nil || s.deps.Blobs == nil {
+		return res, fmt.Errorf("materialization is not configured on this installation")
+	}
+	rc, err := s.deps.Blobs.Get(ctx, s.deps.Namespace, req.SourceLocation)
+	if err != nil {
+		return res, fmt.Errorf("source %s: %w", req.SourceLocation, err)
+	}
+	src, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil {
+		return res, fmt.Errorf("source %s: %w", req.SourceLocation, err)
+	}
+
+	out, buildErr := s.deps.Materializer.Materialize(ctx, s.deps.Namespace, req.PipelineId, src,
+		func(stage, message string) {
+			activity.RecordHeartbeat(ctx, stage+": "+message)
+		})
+	// The log is diagnostics: it is kept for a failed build too — that
+	// is the whole point of the record surviving its failure.
+	if out.BuildLog != "" {
+		location := fmt.Sprintf("revisions/%s/%s/build.log", req.PipelineId, req.RevisionId)
+		if _, err := s.deps.Blobs.Put(ctx, s.deps.Namespace, location, strings.NewReader(out.BuildLog)); err == nil {
+			res.LogLocation = location
+		}
+	}
+	if buildErr != nil {
+		return res, buildErr
+	}
+	res.Image = out.ImageRef
+	res.ManifestLocation = out.ManifestLocation
+	return res, nil
+}
+
+// DeclareRevision creates (or attaches to) one revision record: the
+// build IS its Init, so the same source digest attaches to the running
+// or finished build instead of starting a second one.
+func (s *Worker) DeclareRevision(ctx context.Context, pipelineId, revisionId string, spec revisionflow.Spec) error {
+	revisions := entclient.Bind(s.revisionDef, s.deps.Client, wire.ServerQueue)
+	_, err := revisions.CreateOrAttach(ctx, revisionflow.Id(pipelineId, revisionId), spec)
 	return err
+}
+
+// DescribeRevision reads one revision record.
+func (s *Worker) DescribeRevision(ctx context.Context, pipelineId, revisionId string) (entity.Phase, revisionflow.Spec, revisionflow.State, error) {
+	revisions := entclient.Bind(s.revisionDef, s.deps.Client, wire.ServerQueue)
+	out, err := revisions.Describe(ctx, revisionflow.Id(pipelineId, revisionId))
+	if err != nil {
+		return "", revisionflow.Spec{}, revisionflow.State{}, err
+	}
+	return out.Phase, out.Spec, out.State, nil
+}
+
+// RevisionProgress reads the build's last heartbeat — the record's own
+// liveness, no connection held anywhere. Empty when nothing is
+// building or the detail is unreadable.
+func (s *Worker) RevisionProgress(ctx context.Context, pipelineId, revisionId string) string {
+	workflowId := string(revisionflow.Kind) + "/" + string(revisionflow.Id(pipelineId, revisionId))
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, workflowId, "")
+	if err != nil {
+		return ""
+	}
+	for _, pa := range desc.GetPendingActivities() {
+		if pa.GetActivityType().GetName() != revisionflow.MaterializeActivity {
+			continue
+		}
+		var beat string
+		if err := converter.GetDefaultDataConverter().FromPayloads(pa.GetHeartbeatDetails(), &beat); err == nil {
+			return beat
+		}
+	}
+	return ""
+}
+
+// ListRevisions lists a pipeline's revisions from visibility.
+func (s *Worker) ListRevisions(ctx context.Context, pipelineId string) ([]string, error) {
+	page, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("%s = 'revision' AND %s = %q",
+			entdefine.SearchAttrKind.GetName(), wire.SearchAttrOwner.GetName(), "pipeline/"+pipelineId),
+	})
+	if err != nil {
+		return nil, err
+	}
+	prefix := string(revisionflow.Kind) + "/" + pipelineId + "."
+	out := make([]string, 0, len(page.GetExecutions()))
+	for _, e := range page.GetExecutions() {
+		id := e.GetExecution().GetWorkflowId()
+		if len(id) > len(prefix) {
+			out = append(out, id[len(prefix):])
+		}
+	}
+	return out, nil
 }
 
 // PublishCapability writes a capability onto an agent's record — also
