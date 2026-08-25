@@ -65,3 +65,19 @@ func TestCheckSecretRefs(t *testing.T) {
 		t.Fatal("missing secret must fail the submit")
 	}
 }
+
+// A listing narrowed to one kind must be authorized against THAT kind,
+// not against everything: "list pipelines" is not "list the world".
+func TestKindFromQuery(t *testing.T) {
+	for query, want := range map[string]string{
+		"EntityKind = 'pipeline'":                            "pipeline",
+		"EntityKind='revision' AND ExecutionStatus='Running'": "revision",
+		"EntityKind = 'k8s.compute.Instance'":                "resource",
+		"ExecutionStatus = 'Running'":                        "*",
+		"":                                                   "*",
+	} {
+		if got := string(kindFromQuery(query)); got != want {
+			t.Fatalf("kindFromQuery(%q) = %q, want %q", query, got, want)
+		}
+	}
+}
