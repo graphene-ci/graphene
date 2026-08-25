@@ -116,26 +116,18 @@ func (f *Factory) LiveIds(kind string) []string {
 		return nil
 	}
 	defer cancel()
+	// Runs and entity records list through the same door: the system
+	// kind "run" is translated by the server.
+	resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
+		Query: "kind=" + kind,
+	}))
+	if err != nil {
+		return nil
+	}
 	var ids []string
-	if kind == "run" {
-		resp, err := d.Runs.ListRuns(cctx, connect.NewRequest(&managementv1.ListRunsRequest{}))
-		if err != nil {
-			return nil
-		}
-		for _, r := range resp.Msg.GetRuns() {
-			ids = append(ids, r.GetRunId())
-		}
-	} else {
-		resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
-			Selector: &managementv1.Selector{Kind: kind},
-		}))
-		if err != nil {
-			return nil
-		}
-		for _, r := range resp.Msg.GetResources() {
-			if _, id, ok := strings.Cut(r.GetRef(), "/"); ok {
-				ids = append(ids, id)
-			}
+	for _, r := range resp.Msg.GetResources() {
+		if _, id, ok := strings.Cut(r.GetRef(), "/"); ok {
+			ids = append(ids, id)
 		}
 	}
 	sort.Strings(ids)

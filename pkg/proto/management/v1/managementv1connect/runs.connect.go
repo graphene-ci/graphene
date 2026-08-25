@@ -43,8 +43,6 @@ const (
 	RunsAPIRunResultProcedure = "/graphene.management.v1.RunsAPI/RunResult"
 	// RunsAPICancelRunProcedure is the fully-qualified name of the RunsAPI's CancelRun RPC.
 	RunsAPICancelRunProcedure = "/graphene.management.v1.RunsAPI/CancelRun"
-	// RunsAPIListRunsProcedure is the fully-qualified name of the RunsAPI's ListRuns RPC.
-	RunsAPIListRunsProcedure = "/graphene.management.v1.RunsAPI/ListRuns"
 )
 
 // RunsAPIClient is a client for the graphene.management.v1.RunsAPI service.
@@ -59,8 +57,9 @@ type RunsAPIClient interface {
 	RunResult(context.Context, *connect.Request[v1.RunResultRequest]) (*connect.Response[v1.RunResultResponse], error)
 	// Cancel asks the run to stop; the guaranteed-teardown path still
 	// runs (unlike a terminate).
+	// Listing lives in ResourcesAPI.List under the system kind "run" —
+	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error)
-	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 }
 
 // NewRunsAPIClient constructs a client for the graphene.management.v1.RunsAPI service. By default,
@@ -104,12 +103,6 @@ func NewRunsAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 			connect.WithSchema(runsAPIMethods.ByName("CancelRun")),
 			connect.WithClientOptions(opts...),
 		),
-		listRuns: connect.NewClient[v1.ListRunsRequest, v1.ListRunsResponse](
-			httpClient,
-			baseURL+RunsAPIListRunsProcedure,
-			connect.WithSchema(runsAPIMethods.ByName("ListRuns")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -120,7 +113,6 @@ type runsAPIClient struct {
 	watchRun  *connect.Client[v1.WatchRunRequest, v1.WatchRunEvent]
 	runResult *connect.Client[v1.RunResultRequest, v1.RunResultResponse]
 	cancelRun *connect.Client[v1.CancelRunRequest, v1.CancelRunResponse]
-	listRuns  *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
 }
 
 // StartRun calls graphene.management.v1.RunsAPI.StartRun.
@@ -148,11 +140,6 @@ func (c *runsAPIClient) CancelRun(ctx context.Context, req *connect.Request[v1.C
 	return c.cancelRun.CallUnary(ctx, req)
 }
 
-// ListRuns calls graphene.management.v1.RunsAPI.ListRuns.
-func (c *runsAPIClient) ListRuns(ctx context.Context, req *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error) {
-	return c.listRuns.CallUnary(ctx, req)
-}
-
 // RunsAPIHandler is an implementation of the graphene.management.v1.RunsAPI service.
 type RunsAPIHandler interface {
 	StartRun(context.Context, *connect.Request[v1.StartRunRequest]) (*connect.Response[v1.StartRunResponse], error)
@@ -165,8 +152,9 @@ type RunsAPIHandler interface {
 	RunResult(context.Context, *connect.Request[v1.RunResultRequest]) (*connect.Response[v1.RunResultResponse], error)
 	// Cancel asks the run to stop; the guaranteed-teardown path still
 	// runs (unlike a terminate).
+	// Listing lives in ResourcesAPI.List under the system kind "run" —
+	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error)
-	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 }
 
 // NewRunsAPIHandler builds an HTTP handler from the service implementation. It returns the path on
@@ -206,12 +194,6 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 		connect.WithSchema(runsAPIMethods.ByName("CancelRun")),
 		connect.WithHandlerOptions(opts...),
 	)
-	runsAPIListRunsHandler := connect.NewUnaryHandler(
-		RunsAPIListRunsProcedure,
-		svc.ListRuns,
-		connect.WithSchema(runsAPIMethods.ByName("ListRuns")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/graphene.management.v1.RunsAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RunsAPIStartRunProcedure:
@@ -224,8 +206,6 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 			runsAPIRunResultHandler.ServeHTTP(w, r)
 		case RunsAPICancelRunProcedure:
 			runsAPICancelRunHandler.ServeHTTP(w, r)
-		case RunsAPIListRunsProcedure:
-			runsAPIListRunsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -253,8 +233,4 @@ func (UnimplementedRunsAPIHandler) RunResult(context.Context, *connect.Request[v
 
 func (UnimplementedRunsAPIHandler) CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.CancelRun is not implemented"))
-}
-
-func (UnimplementedRunsAPIHandler) ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.ListRuns is not implemented"))
 }

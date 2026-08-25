@@ -14,6 +14,7 @@ package managementv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -100,8 +101,14 @@ func (x *Selector) GetLabels() map[string]string {
 }
 
 type ListRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Selector *Selector              `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Selector is the structural filter — the machine path.
+	Selector *Selector `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	// Query is the selector LANGUAGE — `kind=run, phase in (Running),
+	// label.env=prod, started>-2h`. Reserved fields: kind, id, phase,
+	// owner, pipeline (runs only), started, finished; labels go as
+	// label.<key>. Exactly one of query and selector may be set.
+	Query string `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
 	// PageSize bounds one reply; 0 returns everything in one go.
 	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// PageToken continues a previous listing (opaque, from the reply).
@@ -147,6 +154,13 @@ func (x *ListRequest) GetSelector() *Selector {
 	return nil
 }
 
+func (x *ListRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
 func (x *ListRequest) GetPageSize() int32 {
 	if x != nil {
 		return x.PageSize
@@ -159,6 +173,210 @@ func (x *ListRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+type CountRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Same duality as ListRequest: one of the two.
+	Selector *Selector `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	Query    string    `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
+	// GroupByStatus splits the count by execution status.
+	GroupByStatus bool `protobuf:"varint,3,opt,name=group_by_status,json=groupByStatus,proto3" json:"group_by_status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountRequest) Reset() {
+	*x = CountRequest{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountRequest) ProtoMessage() {}
+
+func (x *CountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountRequest.ProtoReflect.Descriptor instead.
+func (*CountRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CountRequest) GetSelector() *Selector {
+	if x != nil {
+		return x.Selector
+	}
+	return nil
+}
+
+func (x *CountRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *CountRequest) GetGroupByStatus() bool {
+	if x != nil {
+		return x.GroupByStatus
+	}
+	return false
+}
+
+type CountOwnedRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Owner refs ("run/x", "stand/p"); at most 100 per call.
+	Owners        []string `protobuf:"bytes,1,rep,name=owners,proto3" json:"owners,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountOwnedRequest) Reset() {
+	*x = CountOwnedRequest{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountOwnedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountOwnedRequest) ProtoMessage() {}
+
+func (x *CountOwnedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountOwnedRequest.ProtoReflect.Descriptor instead.
+func (*CountOwnedRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CountOwnedRequest) GetOwners() []string {
+	if x != nil {
+		return x.Owners
+	}
+	return nil
+}
+
+type CountOwnedResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Counts of live records per owner ref; absent — zero.
+	Counts        map[string]int64 `protobuf:"bytes,1,rep,name=counts,proto3" json:"counts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountOwnedResponse) Reset() {
+	*x = CountOwnedResponse{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountOwnedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountOwnedResponse) ProtoMessage() {}
+
+func (x *CountOwnedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountOwnedResponse.ProtoReflect.Descriptor instead.
+func (*CountOwnedResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CountOwnedResponse) GetCounts() map[string]int64 {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+type CountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Total         int64                  `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Groups        []*CountResponse_Group `protobuf:"bytes,2,rep,name=groups,proto3" json:"groups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountResponse) Reset() {
+	*x = CountResponse{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountResponse) ProtoMessage() {}
+
+func (x *CountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountResponse.ProtoReflect.Descriptor instead.
+func (*CountResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CountResponse) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *CountResponse) GetGroups() []*CountResponse_Group {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
 }
 
 type Resource struct {
@@ -175,15 +393,20 @@ type Resource struct {
 	PendingCommands   int32  `protobuf:"varint,7,opt,name=pending_commands,json=pendingCommands,proto3" json:"pending_commands,omitempty"`
 	MarkedForDeletion bool   `protobuf:"varint,8,opt,name=marked_for_deletion,json=markedForDeletion,proto3" json:"marked_for_deletion,omitempty"`
 	// Labels are the record's markers — metric-label semantics; keys
-	// under "graphene.io/" are written by the system.
-	Labels        map[string]string `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// under "graphene.io/" are written by the system. Run rows carry the
+	// synthetic "graphene.io/pipeline" label with the pipeline id.
+	Labels map[string]string `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// StartedAt/FinishedAt come from visibility; FinishedAt is unset
+	// while the workflow is open.
+	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[2]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -195,7 +418,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[2]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -208,7 +431,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{2}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Resource) GetRef() string {
@@ -274,6 +497,20 @@ func (x *Resource) GetLabels() map[string]string {
 	return nil
 }
 
+func (x *Resource) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *Resource) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
 type ListResponse struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Resources []*Resource            `protobuf:"bytes,1,rep,name=resources,proto3" json:"resources,omitempty"`
@@ -285,7 +522,7 @@ type ListResponse struct {
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[3]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -297,7 +534,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[3]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -310,7 +547,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{3}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListResponse) GetResources() []*Resource {
@@ -336,7 +573,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[4]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +585,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[4]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +598,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{4}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetRequest) GetRef() string {
@@ -380,7 +617,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[5]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +629,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[5]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,7 +642,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{5}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetResponse) GetResource() *Resource {
@@ -425,7 +662,7 @@ type TreeRequest struct {
 
 func (x *TreeRequest) Reset() {
 	*x = TreeRequest{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[6]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +674,7 @@ func (x *TreeRequest) String() string {
 func (*TreeRequest) ProtoMessage() {}
 
 func (x *TreeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[6]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +687,7 @@ func (x *TreeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeRequest.ProtoReflect.Descriptor instead.
 func (*TreeRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TreeRequest) GetOwner() string {
@@ -471,7 +708,7 @@ type TreeNode struct {
 
 func (x *TreeNode) Reset() {
 	*x = TreeNode{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[7]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +720,7 @@ func (x *TreeNode) String() string {
 func (*TreeNode) ProtoMessage() {}
 
 func (x *TreeNode) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[7]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +733,7 @@ func (x *TreeNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeNode.ProtoReflect.Descriptor instead.
 func (*TreeNode) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{7}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TreeNode) GetResource() *Resource {
@@ -522,7 +759,7 @@ type TreeResponse struct {
 
 func (x *TreeResponse) Reset() {
 	*x = TreeResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[8]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -534,7 +771,7 @@ func (x *TreeResponse) String() string {
 func (*TreeResponse) ProtoMessage() {}
 
 func (x *TreeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[8]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -547,7 +784,7 @@ func (x *TreeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeResponse.ProtoReflect.Descriptor instead.
 func (*TreeResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{8}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TreeResponse) GetRoots() []*TreeNode {
@@ -566,7 +803,7 @@ type DeleteRequest struct {
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[9]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -578,7 +815,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[9]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -591,7 +828,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{9}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteRequest) GetRef() string {
@@ -609,7 +846,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[10]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -621,7 +858,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[10]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -634,7 +871,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{10}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{14}
 }
 
 type TransferRequest struct {
@@ -650,7 +887,7 @@ type TransferRequest struct {
 
 func (x *TransferRequest) Reset() {
 	*x = TransferRequest{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[11]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +899,7 @@ func (x *TransferRequest) String() string {
 func (*TransferRequest) ProtoMessage() {}
 
 func (x *TransferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[11]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +912,7 @@ func (x *TransferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferRequest.ProtoReflect.Descriptor instead.
 func (*TransferRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{11}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TransferRequest) GetRef() string {
@@ -707,7 +944,7 @@ type TransferResponse struct {
 
 func (x *TransferResponse) Reset() {
 	*x = TransferResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[12]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -719,7 +956,7 @@ func (x *TransferResponse) String() string {
 func (*TransferResponse) ProtoMessage() {}
 
 func (x *TransferResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[12]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -732,7 +969,7 @@ func (x *TransferResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferResponse.ProtoReflect.Descriptor instead.
 func (*TransferResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{12}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{16}
 }
 
 type InvokeRequest struct {
@@ -749,7 +986,7 @@ type InvokeRequest struct {
 
 func (x *InvokeRequest) Reset() {
 	*x = InvokeRequest{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[13]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -761,7 +998,7 @@ func (x *InvokeRequest) String() string {
 func (*InvokeRequest) ProtoMessage() {}
 
 func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[13]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -774,7 +1011,7 @@ func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeRequest.ProtoReflect.Descriptor instead.
 func (*InvokeRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{13}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *InvokeRequest) GetRef() string {
@@ -815,7 +1052,7 @@ type InvokeResponse struct {
 
 func (x *InvokeResponse) Reset() {
 	*x = InvokeResponse{}
-	mi := &file_proto_management_v1_resources_proto_msgTypes[14]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -827,7 +1064,7 @@ func (x *InvokeResponse) String() string {
 func (*InvokeResponse) ProtoMessage() {}
 
 func (x *InvokeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_resources_proto_msgTypes[14]
+	mi := &file_proto_management_v1_resources_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -840,7 +1077,7 @@ func (x *InvokeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeResponse.ProtoReflect.Descriptor instead.
 func (*InvokeResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{14}
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *InvokeResponse) GetResult() []byte {
@@ -850,11 +1087,64 @@ func (x *InvokeResponse) GetResult() []byte {
 	return nil
 }
 
+type CountResponse_Group struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Status is the Temporal execution status ("Running", ...).
+	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Count         int64  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CountResponse_Group) Reset() {
+	*x = CountResponse_Group{}
+	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CountResponse_Group) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CountResponse_Group) ProtoMessage() {}
+
+func (x *CountResponse_Group) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_resources_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CountResponse_Group.ProtoReflect.Descriptor instead.
+func (*CountResponse_Group) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_resources_proto_rawDescGZIP(), []int{5, 0}
+}
+
+func (x *CountResponse_Group) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CountResponse_Group) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 var File_proto_management_v1_resources_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\n" +
-	"#proto/management/v1/resources.proto\x12\x16graphene.management.v1\"\xcb\x01\n" +
+	"#proto/management/v1/resources.proto\x12\x16graphene.management.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x01\n" +
 	"\bSelector\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x14\n" +
@@ -862,12 +1152,30 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x06labels\x18\x04 \x03(\v2,.graphene.management.v1.Selector.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9d\x01\n" +
 	"\vListRequest\x12<\n" +
-	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\x12\x1b\n" +
+	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\x12\x14\n" +
+	"\x05query\x18\x04 \x01(\tR\x05query\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x03 \x01(\tR\tpageToken\"\xe2\x02\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x8a\x01\n" +
+	"\fCountRequest\x12<\n" +
+	"\bselector\x18\x01 \x01(\v2 .graphene.management.v1.SelectorR\bselector\x12\x14\n" +
+	"\x05query\x18\x02 \x01(\tR\x05query\x12&\n" +
+	"\x0fgroup_by_status\x18\x03 \x01(\bR\rgroupByStatus\"+\n" +
+	"\x11CountOwnedRequest\x12\x16\n" +
+	"\x06owners\x18\x01 \x03(\tR\x06owners\"\x9f\x01\n" +
+	"\x12CountOwnedResponse\x12N\n" +
+	"\x06counts\x18\x01 \x03(\v26.graphene.management.v1.CountOwnedResponse.CountsEntryR\x06counts\x1a9\n" +
+	"\vCountsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xa1\x01\n" +
+	"\rCountResponse\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x03R\x05total\x12C\n" +
+	"\x06groups\x18\x02 \x03(\v2+.graphene.management.v1.CountResponse.GroupR\x06groups\x1a5\n" +
+	"\x05Group\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\xda\x03\n" +
 	"\bResource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -877,7 +1185,12 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x05state\x18\x06 \x01(\fR\x05state\x12)\n" +
 	"\x10pending_commands\x18\a \x01(\x05R\x0fpendingCommands\x12.\n" +
 	"\x13marked_for_deletion\x18\b \x01(\bR\x11markedForDeletion\x12D\n" +
-	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x1a9\n" +
+	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x129\n" +
+	"\n" +
+	"started_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"v\n" +
@@ -911,9 +1224,12 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tR\trequestId\"(\n" +
 	"\x0eInvokeResponse\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\fR\x06result2\x95\x04\n" +
+	"\x06result\x18\x01 \x01(\fR\x06result2\xd0\x05\n" +
 	"\fResourcesAPI\x12Q\n" +
-	"\x04List\x12#.graphene.management.v1.ListRequest\x1a$.graphene.management.v1.ListResponse\x12N\n" +
+	"\x04List\x12#.graphene.management.v1.ListRequest\x1a$.graphene.management.v1.ListResponse\x12T\n" +
+	"\x05Count\x12$.graphene.management.v1.CountRequest\x1a%.graphene.management.v1.CountResponse\x12c\n" +
+	"\n" +
+	"CountOwned\x12).graphene.management.v1.CountOwnedRequest\x1a*.graphene.management.v1.CountOwnedResponse\x12N\n" +
 	"\x03Get\x12\".graphene.management.v1.GetRequest\x1a#.graphene.management.v1.GetResponse\x12Q\n" +
 	"\x04Tree\x12#.graphene.management.v1.TreeRequest\x1a$.graphene.management.v1.TreeResponse\x12W\n" +
 	"\x06Delete\x12%.graphene.management.v1.DeleteRequest\x1a&.graphene.management.v1.DeleteResponse\x12]\n" +
@@ -932,52 +1248,68 @@ func file_proto_management_v1_resources_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_resources_proto_rawDescData
 }
 
-var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_proto_management_v1_resources_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_proto_management_v1_resources_proto_goTypes = []any{
-	(*Selector)(nil),         // 0: graphene.management.v1.Selector
-	(*ListRequest)(nil),      // 1: graphene.management.v1.ListRequest
-	(*Resource)(nil),         // 2: graphene.management.v1.Resource
-	(*ListResponse)(nil),     // 3: graphene.management.v1.ListResponse
-	(*GetRequest)(nil),       // 4: graphene.management.v1.GetRequest
-	(*GetResponse)(nil),      // 5: graphene.management.v1.GetResponse
-	(*TreeRequest)(nil),      // 6: graphene.management.v1.TreeRequest
-	(*TreeNode)(nil),         // 7: graphene.management.v1.TreeNode
-	(*TreeResponse)(nil),     // 8: graphene.management.v1.TreeResponse
-	(*DeleteRequest)(nil),    // 9: graphene.management.v1.DeleteRequest
-	(*DeleteResponse)(nil),   // 10: graphene.management.v1.DeleteResponse
-	(*TransferRequest)(nil),  // 11: graphene.management.v1.TransferRequest
-	(*TransferResponse)(nil), // 12: graphene.management.v1.TransferResponse
-	(*InvokeRequest)(nil),    // 13: graphene.management.v1.InvokeRequest
-	(*InvokeResponse)(nil),   // 14: graphene.management.v1.InvokeResponse
-	nil,                      // 15: graphene.management.v1.Selector.LabelsEntry
-	nil,                      // 16: graphene.management.v1.Resource.LabelsEntry
+	(*Selector)(nil),              // 0: graphene.management.v1.Selector
+	(*ListRequest)(nil),           // 1: graphene.management.v1.ListRequest
+	(*CountRequest)(nil),          // 2: graphene.management.v1.CountRequest
+	(*CountOwnedRequest)(nil),     // 3: graphene.management.v1.CountOwnedRequest
+	(*CountOwnedResponse)(nil),    // 4: graphene.management.v1.CountOwnedResponse
+	(*CountResponse)(nil),         // 5: graphene.management.v1.CountResponse
+	(*Resource)(nil),              // 6: graphene.management.v1.Resource
+	(*ListResponse)(nil),          // 7: graphene.management.v1.ListResponse
+	(*GetRequest)(nil),            // 8: graphene.management.v1.GetRequest
+	(*GetResponse)(nil),           // 9: graphene.management.v1.GetResponse
+	(*TreeRequest)(nil),           // 10: graphene.management.v1.TreeRequest
+	(*TreeNode)(nil),              // 11: graphene.management.v1.TreeNode
+	(*TreeResponse)(nil),          // 12: graphene.management.v1.TreeResponse
+	(*DeleteRequest)(nil),         // 13: graphene.management.v1.DeleteRequest
+	(*DeleteResponse)(nil),        // 14: graphene.management.v1.DeleteResponse
+	(*TransferRequest)(nil),       // 15: graphene.management.v1.TransferRequest
+	(*TransferResponse)(nil),      // 16: graphene.management.v1.TransferResponse
+	(*InvokeRequest)(nil),         // 17: graphene.management.v1.InvokeRequest
+	(*InvokeResponse)(nil),        // 18: graphene.management.v1.InvokeResponse
+	nil,                           // 19: graphene.management.v1.Selector.LabelsEntry
+	nil,                           // 20: graphene.management.v1.CountOwnedResponse.CountsEntry
+	(*CountResponse_Group)(nil),   // 21: graphene.management.v1.CountResponse.Group
+	nil,                           // 22: graphene.management.v1.Resource.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
 }
 var file_proto_management_v1_resources_proto_depIdxs = []int32{
-	15, // 0: graphene.management.v1.Selector.labels:type_name -> graphene.management.v1.Selector.LabelsEntry
+	19, // 0: graphene.management.v1.Selector.labels:type_name -> graphene.management.v1.Selector.LabelsEntry
 	0,  // 1: graphene.management.v1.ListRequest.selector:type_name -> graphene.management.v1.Selector
-	16, // 2: graphene.management.v1.Resource.labels:type_name -> graphene.management.v1.Resource.LabelsEntry
-	2,  // 3: graphene.management.v1.ListResponse.resources:type_name -> graphene.management.v1.Resource
-	2,  // 4: graphene.management.v1.GetResponse.resource:type_name -> graphene.management.v1.Resource
-	2,  // 5: graphene.management.v1.TreeNode.resource:type_name -> graphene.management.v1.Resource
-	7,  // 6: graphene.management.v1.TreeNode.children:type_name -> graphene.management.v1.TreeNode
-	7,  // 7: graphene.management.v1.TreeResponse.roots:type_name -> graphene.management.v1.TreeNode
-	1,  // 8: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
-	4,  // 9: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
-	6,  // 10: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
-	9,  // 11: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
-	11, // 12: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
-	13, // 13: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
-	3,  // 14: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
-	5,  // 15: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
-	8,  // 16: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
-	10, // 17: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
-	12, // 18: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
-	14, // 19: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
-	14, // [14:20] is the sub-list for method output_type
-	8,  // [8:14] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	0,  // 2: graphene.management.v1.CountRequest.selector:type_name -> graphene.management.v1.Selector
+	20, // 3: graphene.management.v1.CountOwnedResponse.counts:type_name -> graphene.management.v1.CountOwnedResponse.CountsEntry
+	21, // 4: graphene.management.v1.CountResponse.groups:type_name -> graphene.management.v1.CountResponse.Group
+	22, // 5: graphene.management.v1.Resource.labels:type_name -> graphene.management.v1.Resource.LabelsEntry
+	23, // 6: graphene.management.v1.Resource.started_at:type_name -> google.protobuf.Timestamp
+	23, // 7: graphene.management.v1.Resource.finished_at:type_name -> google.protobuf.Timestamp
+	6,  // 8: graphene.management.v1.ListResponse.resources:type_name -> graphene.management.v1.Resource
+	6,  // 9: graphene.management.v1.GetResponse.resource:type_name -> graphene.management.v1.Resource
+	6,  // 10: graphene.management.v1.TreeNode.resource:type_name -> graphene.management.v1.Resource
+	11, // 11: graphene.management.v1.TreeNode.children:type_name -> graphene.management.v1.TreeNode
+	11, // 12: graphene.management.v1.TreeResponse.roots:type_name -> graphene.management.v1.TreeNode
+	1,  // 13: graphene.management.v1.ResourcesAPI.List:input_type -> graphene.management.v1.ListRequest
+	2,  // 14: graphene.management.v1.ResourcesAPI.Count:input_type -> graphene.management.v1.CountRequest
+	3,  // 15: graphene.management.v1.ResourcesAPI.CountOwned:input_type -> graphene.management.v1.CountOwnedRequest
+	8,  // 16: graphene.management.v1.ResourcesAPI.Get:input_type -> graphene.management.v1.GetRequest
+	10, // 17: graphene.management.v1.ResourcesAPI.Tree:input_type -> graphene.management.v1.TreeRequest
+	13, // 18: graphene.management.v1.ResourcesAPI.Delete:input_type -> graphene.management.v1.DeleteRequest
+	15, // 19: graphene.management.v1.ResourcesAPI.Transfer:input_type -> graphene.management.v1.TransferRequest
+	17, // 20: graphene.management.v1.ResourcesAPI.Invoke:input_type -> graphene.management.v1.InvokeRequest
+	7,  // 21: graphene.management.v1.ResourcesAPI.List:output_type -> graphene.management.v1.ListResponse
+	5,  // 22: graphene.management.v1.ResourcesAPI.Count:output_type -> graphene.management.v1.CountResponse
+	4,  // 23: graphene.management.v1.ResourcesAPI.CountOwned:output_type -> graphene.management.v1.CountOwnedResponse
+	9,  // 24: graphene.management.v1.ResourcesAPI.Get:output_type -> graphene.management.v1.GetResponse
+	12, // 25: graphene.management.v1.ResourcesAPI.Tree:output_type -> graphene.management.v1.TreeResponse
+	14, // 26: graphene.management.v1.ResourcesAPI.Delete:output_type -> graphene.management.v1.DeleteResponse
+	16, // 27: graphene.management.v1.ResourcesAPI.Transfer:output_type -> graphene.management.v1.TransferResponse
+	18, // 28: graphene.management.v1.ResourcesAPI.Invoke:output_type -> graphene.management.v1.InvokeResponse
+	21, // [21:29] is the sub-list for method output_type
+	13, // [13:21] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_resources_proto_init() }
@@ -991,7 +1323,7 @@ func file_proto_management_v1_resources_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_resources_proto_rawDesc), len(file_proto_management_v1_resources_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/gopherex/xlog"
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
@@ -24,8 +27,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/secrets"
+	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/ref"
@@ -42,6 +47,8 @@ type Management struct {
 	Base    client.Client
 	Secrets *secrets.Namespaced
 	Vars    *secrets.Namespaced
+	// Version is the server build version, for ServerInfo.
+	Version string
 	Log     *xlog.Logger
 }
 
@@ -56,7 +63,8 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 		return nil, err
 	}
 	workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
-		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels())
+		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
+		syslabels.TriggerManual)
 	if err != nil {
 		return nil, err
 	}
@@ -66,16 +74,16 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 // StartRunOnBundle exposes the start path to the server wiring: the
 // trigger contour starts runs through the same logic as the doors.
 func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
-	runId, pipelineId string, params []byte, image string, labels map[string]string,
+	runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string,
 ) error {
-	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels)
+	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels, trigger)
 	return err
 }
 
 // startRunCore is the start logic shared by both doors: the management
 // plane and the pipeline binary's own worker-plane RunsAPI.
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
-	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string,
+	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger string,
 ) (string, string, error) {
 	runId, err := id.ParseRunId(runIdRaw)
 	if err != nil {
@@ -116,13 +124,19 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 		// A run id names ONE run: starting it twice attaches, never forks.
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 	}
-	if len(labels) > 0 {
-		// The run carries its labels in the same EntityLabels attribute
-		// resources use — one label language across the system.
-		opts.TypedSearchAttributes = temporal.NewSearchAttributes(
-			entdefine.SearchAttrLabels.ValueSet(labelPairs(labels)),
-		)
+	// The run carries its labels in the same EntityLabels attribute
+	// resources use — one label language across the system. The system
+	// adds WHAT started the run after user labels are validated.
+	withTrigger := make(map[string]string, len(labels)+1)
+	for k, v := range labels {
+		withTrigger[k] = v
 	}
+	if trigger != "" {
+		withTrigger[syslabels.Trigger] = trigger
+	}
+	opts.TypedSearchAttributes = temporal.NewSearchAttributes(
+		entdefine.SearchAttrLabels.ValueSet(labelPairs(withTrigger)),
+	)
 	var args []any
 	if len(params) > 0 {
 		args = append(args, json.RawMessage(params))
@@ -225,58 +239,40 @@ func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[manage
 	return connect.NewResponse(&managementv1.CancelRunResponse{}), nil
 }
 
-// ListRuns lists the namespace's runs.
-func (m *Management) ListRuns(ctx context.Context, creq *connect.Request[managementv1.ListRunsRequest]) (*connect.Response[managementv1.ListRunsResponse], error) {
-	req := creq.Msg
-	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
-	if err != nil {
-		return nil, err
+// listQuery resolves a request's query/selector duality into one
+// visibility query. Exactly one of the two may be set.
+func listQuery(query string, sel *managementv1.Selector) (string, error) {
+	structural := sel.GetKind() != "" || sel.GetPhase() != "" || sel.GetOwner() != "" || len(sel.GetLabels()) > 0
+	if query != "" && structural {
+		return "", fmt.Errorf("set query or selector, not both")
 	}
-	if err := noQuotes(req.GetStatus()); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	query := `WorkflowId STARTS_WITH "run/"`
-	if req.GetStatus() != "" {
-		query += fmt.Sprintf(" AND ExecutionStatus = '%s'", req.GetStatus())
-	}
-	labelTerms, err := labelQueryTerms(req.GetLabels())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	query += labelTerms
-	token, err := decodePageToken(req.GetPageToken())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	resp := &managementv1.ListRunsResponse{}
-	for {
-		page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-			Query:         query,
-			PageSize:      req.GetPageSize(),
-			NextPageToken: token,
-		})
+	if query != "" {
+		parsed, err := selector.Parse(query)
 		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return "", err
 		}
-		for _, e := range page.GetExecutions() {
-			resp.Runs = append(resp.Runs, &managementv1.RunInfo{
-				RunId:    stripPrefix(e.GetExecution().GetWorkflowId(), "run/"),
-				Pipeline: e.GetType().GetName(),
-				Status:   e.GetStatus().String(),
-				Labels:   labelsFromSearchAttrs(e.GetSearchAttributes()),
-			})
-		}
-		token = page.GetNextPageToken()
-		// A bounded request answers with ONE page and the cursor; an
-		// unbounded one keeps the old drain-everything behavior.
-		if req.GetPageSize() > 0 {
-			resp.NextPageToken = encodePageToken(token)
-			return connect.NewResponse(resp), nil
-		}
-		if len(token) == 0 {
-			return connect.NewResponse(resp), nil
-		}
+		return selector.Compile(parsed, time.Now())
 	}
+	if err := noQuotes(sel.GetKind(), sel.GetPhase(), sel.GetOwner()); err != nil {
+		return "", err
+	}
+	out := `EntityKind IS NOT NULL`
+	if sel.GetKind() != "" {
+		out = fmt.Sprintf("EntityKind = '%s'", sel.GetKind())
+	}
+	if sel.GetPhase() != "" {
+		out += fmt.Sprintf(" AND EntityPhase = '%s'", sel.GetPhase())
+	}
+	if sel.GetOwner() != "" {
+		out += fmt.Sprintf(" AND EntityOwner = '%s'", sel.GetOwner())
+	}
+	labelTerms, err := labelQueryTerms(sel.GetLabels())
+	if err != nil {
+		return "", err
+	}
+	out += labelTerms
+	out += ` AND ExecutionStatus = 'Running'`
+	return out, nil
 }
 
 // Page tokens on the wire are base64 of Temporal's opaque cursor.
@@ -307,26 +303,10 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 	if err != nil {
 		return nil, err
 	}
-	sel := req.GetSelector()
-	if err := noQuotes(sel.GetKind(), sel.GetPhase(), sel.GetOwner()); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	query := `EntityKind IS NOT NULL`
-	if sel.GetKind() != "" {
-		query = fmt.Sprintf("EntityKind = '%s'", sel.GetKind())
-	}
-	if sel.GetPhase() != "" {
-		query += fmt.Sprintf(" AND EntityPhase = '%s'", sel.GetPhase())
-	}
-	if sel.GetOwner() != "" {
-		query += fmt.Sprintf(" AND EntityOwner = '%s'", sel.GetOwner())
-	}
-	labelTerms, err := labelQueryTerms(sel.GetLabels())
+	query, err := listQuery(req.GetQuery(), req.GetSelector())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	query += labelTerms
-	query += ` AND ExecutionStatus = 'Running'`
 	token, err := decodePageToken(req.GetPageToken())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -360,6 +340,79 @@ func (m *Management) List(ctx context.Context, creq *connect.Request[managementv
 			return connect.NewResponse(resp), nil
 		}
 	}
+}
+
+// Count answers how many records match, optionally grouped by
+// execution status — visibility's CountWorkflow, no rows fetched.
+func (m *Management) Count(ctx context.Context, creq *connect.Request[managementv1.CountRequest]) (*connect.Response[managementv1.CountResponse], error) {
+	req := creq.Msg
+	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return nil, err
+	}
+	query, err := listQuery(req.GetQuery(), req.GetSelector())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if req.GetGroupByStatus() {
+		query += " GROUP BY ExecutionStatus"
+	}
+	out, err := b.Client.CountWorkflow(ctx, &workflowservice.CountWorkflowExecutionsRequest{Query: query})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	resp := &managementv1.CountResponse{Total: out.GetCount()}
+	for _, g := range out.GetGroups() {
+		group := &managementv1.CountResponse_Group{Count: g.GetCount()}
+		for _, v := range g.GetGroupValues() {
+			var s string
+			if err := converter.GetDefaultDataConverter().FromPayload(v, &s); err == nil {
+				group.Status = s
+				break
+			}
+		}
+		resp.Groups = append(resp.Groups, group)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// CountOwned answers how many live records each named owner holds —
+// one parallel sweep of cheap visibility counts.
+func (m *Management) CountOwned(ctx context.Context, creq *connect.Request[managementv1.CountOwnedRequest]) (*connect.Response[managementv1.CountOwnedResponse], error) {
+	req := creq.Msg
+	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
+	if err != nil {
+		return nil, err
+	}
+	owners := req.GetOwners()
+	if len(owners) > 100 {
+		return nil, status.Error(codes.InvalidArgument, "at most 100 owners per call")
+	}
+	if err := noQuotes(owners...); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	counts := make(map[string]int64, len(owners))
+	var mu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+	for _, owner := range owners {
+		g.Go(func() error {
+			out, err := b.Client.CountWorkflow(gctx, &workflowservice.CountWorkflowExecutionsRequest{
+				Query: fmt.Sprintf("EntityOwner = '%s' AND ExecutionStatus = 'Running'", owner),
+			})
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			counts[owner] = out.GetCount()
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return connect.NewResponse(&managementv1.CountOwnedResponse{Counts: counts}), nil
 }
 
 // Get describes one resource.
@@ -486,6 +539,26 @@ func (m *Management) Whoami(ctx context.Context, _ *connect.Request[managementv1
 		Role:      string(p.Role),
 		Namespace: p.Namespace,
 	}), nil
+}
+
+// ServerInfo reports the installation for the console's status line:
+// build version and component health. Temporal is probed with the
+// cheapest possible call; the answer is a fact about NOW.
+func (m *Management) ServerInfo(ctx context.Context, _ *connect.Request[managementv1.ServerInfoRequest]) (*connect.Response[managementv1.ServerInfoResponse], error) {
+	if _, ok := auth.FromContext(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "no principal")
+	}
+	resp := &managementv1.ServerInfoResponse{Version: m.Version}
+	temporalOk, detail := true, ""
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, err := m.Base.CheckHealth(probe, &client.CheckHealthRequest{}); err != nil {
+		temporalOk, detail = false, err.Error()
+	}
+	resp.Components = append(resp.Components, &managementv1.ServerInfoResponse_Component{
+		Name: "temporal", Ok: temporalOk, Detail: detail,
+	})
+	return connect.NewResponse(resp), nil
 }
 
 // ListNamespaces lists the registered namespaces.
@@ -692,7 +765,12 @@ func stripPrefix(s, prefix string) string {
 func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.Resource {
 	workflowId := e.GetExecution().GetWorkflowId()
 	kind, _, _ := strings.Cut(workflowId, "/")
-	res := &managementv1.Resource{Ref: workflowId, Kind: kind}
+	res := &managementv1.Resource{
+		Ref:        workflowId,
+		Kind:       kind,
+		StartedAt:  e.GetStartTime(),
+		FinishedAt: e.GetCloseTime(),
+	}
 	fields := e.GetSearchAttributes().GetIndexedFields()
 	dc := converter.GetDefaultDataConverter()
 	str := func(name string) string {
@@ -718,6 +796,15 @@ func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.R
 		if len(labels) > 0 {
 			res.Labels = labels
 		}
+	}
+	// A run row is a workflow, not an entity record: its phase is the
+	// execution status and the pipeline rides as a synthetic label.
+	if kind == selector.KindRun {
+		res.Phase = e.GetStatus().String()
+		if res.Labels == nil {
+			res.Labels = map[string]string{}
+		}
+		res.Labels["graphene.io/pipeline"] = e.GetType().GetName()
 	}
 	return res
 }

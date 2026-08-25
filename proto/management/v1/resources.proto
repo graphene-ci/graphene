@@ -8,11 +8,20 @@ package graphene.management.v1;
 
 option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
 
+import "google/protobuf/timestamp.proto";
+
 // ResourcesAPI operates the resource records: entity workflows with
 // owned lifetimes in one ownership tree.
 service ResourcesAPI {
   // List returns the resources matching the selector — a snapshot.
+  // The system kind "run" lists pipeline runs through the same door.
   rpc List(ListRequest) returns (ListResponse);
+  // Count answers how many records match — cheap (no rows), optionally
+  // grouped by execution status (the one grouping the store supports).
+  rpc Count(CountRequest) returns (CountResponse);
+  // CountOwned answers, for each named owner, how many LIVE records it
+  // owns — one call for a whole table page ("owns" column).
+  rpc CountOwned(CountOwnedRequest) returns (CountOwnedResponse);
   // Get describes one resource: phase, spec, state — works even after
   // the record closed.
   rpc Get(GetRequest) returns (GetResponse);
@@ -44,11 +53,45 @@ message Selector {
 }
 
 message ListRequest {
+  // Selector is the structural filter — the machine path.
   Selector selector = 1;
+  // Query is the selector LANGUAGE — `kind=run, phase in (Running),
+  // label.env=prod, started>-2h`. Reserved fields: kind, id, phase,
+  // owner, pipeline (runs only), started, finished; labels go as
+  // label.<key>. Exactly one of query and selector may be set.
+  string query = 4;
   // PageSize bounds one reply; 0 returns everything in one go.
   int32 page_size = 2;
   // PageToken continues a previous listing (opaque, from the reply).
   string page_token = 3;
+}
+
+message CountRequest {
+  // Same duality as ListRequest: one of the two.
+  Selector selector = 1;
+  string query = 2;
+  // GroupByStatus splits the count by execution status.
+  bool group_by_status = 3;
+}
+
+message CountOwnedRequest {
+  // Owner refs ("run/x", "stand/p"); at most 100 per call.
+  repeated string owners = 1;
+}
+
+message CountOwnedResponse {
+  // Counts of live records per owner ref; absent — zero.
+  map<string, int64> counts = 1;
+}
+
+message CountResponse {
+  int64 total = 1;
+  message Group {
+    // Status is the Temporal execution status ("Running", ...).
+    string status = 1;
+    int64 count = 2;
+  }
+  repeated Group groups = 2;
 }
 
 message Resource {
@@ -64,8 +107,13 @@ message Resource {
   int32 pending_commands = 7;
   bool marked_for_deletion = 8;
   // Labels are the record's markers — metric-label semantics; keys
-  // under "graphene.io/" are written by the system.
+  // under "graphene.io/" are written by the system. Run rows carry the
+  // synthetic "graphene.io/pipeline" label with the pipeline id.
   map<string, string> labels = 9;
+  // StartedAt/FinishedAt come from visibility; FinishedAt is unset
+  // while the workflow is open.
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp finished_at = 11;
 }
 
 message ListResponse {

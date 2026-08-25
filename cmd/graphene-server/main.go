@@ -32,6 +32,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "graphene-server:", err)
 		os.Exit(1)
 	}
+	cfg.Version = version
 	log, err := logging.New(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "graphene-server:", err)

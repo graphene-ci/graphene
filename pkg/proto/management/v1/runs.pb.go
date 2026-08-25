@@ -500,199 +500,6 @@ func (*CancelRunResponse) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{9}
 }
 
-type ListRunsRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Status filters ("Running", "Completed", ...); empty — all.
-	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	// Labels filter by equality; every pair must match.
-	Labels map[string]string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// PageSize bounds one reply; 0 returns everything in one go.
-	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	// PageToken continues a previous listing (opaque, from the reply).
-	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRunsRequest) Reset() {
-	*x = ListRunsRequest{}
-	mi := &file_proto_management_v1_runs_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRunsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRunsRequest) ProtoMessage() {}
-
-func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_runs_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
-func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *ListRunsRequest) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *ListRunsRequest) GetLabels() map[string]string {
-	if x != nil {
-		return x.Labels
-	}
-	return nil
-}
-
-func (x *ListRunsRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-func (x *ListRunsRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
-	}
-	return ""
-}
-
-type RunInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	Pipeline      string                 `protobuf:"bytes,2,opt,name=pipeline,proto3" json:"pipeline,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RunInfo) Reset() {
-	*x = RunInfo{}
-	mi := &file_proto_management_v1_runs_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RunInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RunInfo) ProtoMessage() {}
-
-func (x *RunInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_runs_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RunInfo.ProtoReflect.Descriptor instead.
-func (*RunInfo) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *RunInfo) GetRunId() string {
-	if x != nil {
-		return x.RunId
-	}
-	return ""
-}
-
-func (x *RunInfo) GetPipeline() string {
-	if x != nil {
-		return x.Pipeline
-	}
-	return ""
-}
-
-func (x *RunInfo) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *RunInfo) GetLabels() map[string]string {
-	if x != nil {
-		return x.Labels
-	}
-	return nil
-}
-
-type ListRunsResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Runs  []*RunInfo             `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
-	// NextPageToken continues the listing; empty — the end.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListRunsResponse) Reset() {
-	*x = ListRunsResponse{}
-	mi := &file_proto_management_v1_runs_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListRunsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListRunsResponse) ProtoMessage() {}
-
-func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_runs_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
-func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *ListRunsResponse) GetRuns() []*RunInfo {
-	if x != nil {
-		return x.Runs
-	}
-	return nil
-}
-
-func (x *ListRunsResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
-	}
-	return ""
-}
-
 var File_proto_management_v1_runs_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_runs_proto_rawDesc = "" +
@@ -725,34 +532,13 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\fR\x06result\")\n" +
 	"\x10CancelRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x13\n" +
-	"\x11CancelRunResponse\"\xed\x01\n" +
-	"\x0fListRunsRequest\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\x12K\n" +
-	"\x06labels\x18\x02 \x03(\v23.graphene.management.v1.ListRunsRequest.LabelsEntryR\x06labels\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
-	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\x1a9\n" +
-	"\vLabelsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd4\x01\n" +
-	"\aRunInfo\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
-	"\bpipeline\x18\x02 \x01(\tR\bpipeline\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x12C\n" +
-	"\x06labels\x18\x04 \x03(\v2+.graphene.management.v1.RunInfo.LabelsEntryR\x06labels\x1a9\n" +
-	"\vLabelsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"o\n" +
-	"\x10ListRunsResponse\x123\n" +
-	"\x04runs\x18\x01 \x03(\v2\x1f.graphene.management.v1.RunInfoR\x04runs\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xc2\x04\n" +
+	"\x11CancelRunResponse2\xe3\x03\n" +
 	"\aRunsAPI\x12]\n" +
 	"\bStartRun\x12'.graphene.management.v1.StartRunRequest\x1a(.graphene.management.v1.StartRunResponse\x12W\n" +
 	"\x06GetRun\x12%.graphene.management.v1.GetRunRequest\x1a&.graphene.management.v1.GetRunResponse\x12\\\n" +
 	"\bWatchRun\x12'.graphene.management.v1.WatchRunRequest\x1a%.graphene.management.v1.WatchRunEvent0\x01\x12`\n" +
 	"\tRunResult\x12(.graphene.management.v1.RunResultRequest\x1a).graphene.management.v1.RunResultResponse\x12`\n" +
-	"\tCancelRun\x12(.graphene.management.v1.CancelRunRequest\x1a).graphene.management.v1.CancelRunResponse\x12]\n" +
-	"\bListRuns\x12'.graphene.management.v1.ListRunsRequest\x1a(.graphene.management.v1.ListRunsResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\tCancelRun\x12(.graphene.management.v1.CancelRunRequest\x1a).graphene.management.v1.CancelRunResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_runs_proto_rawDescOnce sync.Once
@@ -766,7 +552,7 @@ func file_proto_management_v1_runs_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_runs_proto_rawDescData
 }
 
-var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*StartRunRequest)(nil),   // 0: graphene.management.v1.StartRunRequest
 	(*StartRunResponse)(nil),  // 1: graphene.management.v1.StartRunResponse
@@ -778,35 +564,25 @@ var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*RunResultResponse)(nil), // 7: graphene.management.v1.RunResultResponse
 	(*CancelRunRequest)(nil),  // 8: graphene.management.v1.CancelRunRequest
 	(*CancelRunResponse)(nil), // 9: graphene.management.v1.CancelRunResponse
-	(*ListRunsRequest)(nil),   // 10: graphene.management.v1.ListRunsRequest
-	(*RunInfo)(nil),           // 11: graphene.management.v1.RunInfo
-	(*ListRunsResponse)(nil),  // 12: graphene.management.v1.ListRunsResponse
-	nil,                       // 13: graphene.management.v1.StartRunRequest.LabelsEntry
-	nil,                       // 14: graphene.management.v1.ListRunsRequest.LabelsEntry
-	nil,                       // 15: graphene.management.v1.RunInfo.LabelsEntry
+	nil,                       // 10: graphene.management.v1.StartRunRequest.LabelsEntry
 }
 var file_proto_management_v1_runs_proto_depIdxs = []int32{
-	13, // 0: graphene.management.v1.StartRunRequest.labels:type_name -> graphene.management.v1.StartRunRequest.LabelsEntry
-	14, // 1: graphene.management.v1.ListRunsRequest.labels:type_name -> graphene.management.v1.ListRunsRequest.LabelsEntry
-	15, // 2: graphene.management.v1.RunInfo.labels:type_name -> graphene.management.v1.RunInfo.LabelsEntry
-	11, // 3: graphene.management.v1.ListRunsResponse.runs:type_name -> graphene.management.v1.RunInfo
-	0,  // 4: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
-	2,  // 5: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
-	4,  // 6: graphene.management.v1.RunsAPI.WatchRun:input_type -> graphene.management.v1.WatchRunRequest
-	6,  // 7: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
-	8,  // 8: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
-	10, // 9: graphene.management.v1.RunsAPI.ListRuns:input_type -> graphene.management.v1.ListRunsRequest
-	1,  // 10: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
-	3,  // 11: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
-	5,  // 12: graphene.management.v1.RunsAPI.WatchRun:output_type -> graphene.management.v1.WatchRunEvent
-	7,  // 13: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
-	9,  // 14: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
-	12, // 15: graphene.management.v1.RunsAPI.ListRuns:output_type -> graphene.management.v1.ListRunsResponse
-	10, // [10:16] is the sub-list for method output_type
-	4,  // [4:10] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	10, // 0: graphene.management.v1.StartRunRequest.labels:type_name -> graphene.management.v1.StartRunRequest.LabelsEntry
+	0,  // 1: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
+	2,  // 2: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
+	4,  // 3: graphene.management.v1.RunsAPI.WatchRun:input_type -> graphene.management.v1.WatchRunRequest
+	6,  // 4: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
+	8,  // 5: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
+	1,  // 6: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
+	3,  // 7: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
+	5,  // 8: graphene.management.v1.RunsAPI.WatchRun:output_type -> graphene.management.v1.WatchRunEvent
+	7,  // 9: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
+	9,  // 10: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_runs_proto_init() }
@@ -820,7 +596,7 @@ func file_proto_management_v1_runs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_runs_proto_rawDesc), len(file_proto_management_v1_runs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

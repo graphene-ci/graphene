@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	connectcors "connectrpc.com/cors"
+	"github.com/go-chi/cors"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -22,7 +24,7 @@ import (
 func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Authenticator) {
 	opts := connect.WithInterceptors(statusCodes{})
 	mount := func(pattern string, handler http.Handler) {
-		mux.Handle(pattern, withBearer(handler, authn))
+		mux.Handle(pattern, withCORS(withBearer(handler, authn)))
 	}
 	mount(managementv1connect.NewRunsAPIHandler(m, opts))
 	mount(managementv1connect.NewResourcesAPIHandler(m, opts))
@@ -30,6 +32,23 @@ func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Aut
 	mount(managementv1connect.NewSecretsAPIHandler(m, opts))
 	mount(managementv1connect.NewVarsAPIHandler(m, opts))
 	mount(managementv1connect.NewObserveAPIHandler(o, opts))
+}
+
+// withCORS lets a browser UI hosted on another origin call the
+// management plane. Auth is a bearer header and cookies are never
+// used (AllowCredentials stays false), so allowing every origin grants
+// nothing by itself — each request still needs a valid token. The
+// header lists come from connectrpc.com/cors and cover all three
+// protocols (connect, gRPC, gRPC-Web); preflights are answered before
+// auth (browsers send them without the Authorization header).
+func withCORS(next http.Handler) http.Handler {
+	return cors.Handler(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: connectcors.AllowedMethods(),
+		AllowedHeaders: append(connectcors.AllowedHeaders(), "Authorization", NamespaceHeader),
+		ExposedHeaders: connectcors.ExposedHeaders(),
+		MaxAge:         7200,
+	})(next)
 }
 
 // withBearer authenticates every request and mirrors the namespace

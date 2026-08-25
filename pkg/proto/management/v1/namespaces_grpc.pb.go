@@ -22,6 +22,7 @@ const (
 	NamespacesAPI_CreateNamespace_FullMethodName = "/graphene.management.v1.NamespacesAPI/CreateNamespace"
 	NamespacesAPI_ListNamespaces_FullMethodName  = "/graphene.management.v1.NamespacesAPI/ListNamespaces"
 	NamespacesAPI_Whoami_FullMethodName          = "/graphene.management.v1.NamespacesAPI/Whoami"
+	NamespacesAPI_ServerInfo_FullMethodName      = "/graphene.management.v1.NamespacesAPI/ServerInfo"
 )
 
 // NamespacesAPIClient is the client API for NamespacesAPI service.
@@ -41,6 +42,9 @@ type NamespacesAPIClient interface {
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error)
+	// ServerInfo reports the installation: version and component health —
+	// the console's status line. Any authenticated principal may ask.
+	ServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error)
 }
 
 type namespacesAPIClient struct {
@@ -81,6 +85,16 @@ func (c *namespacesAPIClient) Whoami(ctx context.Context, in *WhoamiRequest, opt
 	return out, nil
 }
 
+func (c *namespacesAPIClient) ServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ServerInfoResponse)
+	err := c.cc.Invoke(ctx, NamespacesAPI_ServerInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NamespacesAPIServer is the server API for NamespacesAPI service.
 // All implementations must embed UnimplementedNamespacesAPIServer
 // for forward compatibility.
@@ -98,6 +112,9 @@ type NamespacesAPIServer interface {
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error)
+	// ServerInfo reports the installation: version and component health —
+	// the console's status line. Any authenticated principal may ask.
+	ServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error)
 	mustEmbedUnimplementedNamespacesAPIServer()
 }
 
@@ -116,6 +133,9 @@ func (UnimplementedNamespacesAPIServer) ListNamespaces(context.Context, *ListNam
 }
 func (UnimplementedNamespacesAPIServer) Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Whoami not implemented")
+}
+func (UnimplementedNamespacesAPIServer) ServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ServerInfo not implemented")
 }
 func (UnimplementedNamespacesAPIServer) mustEmbedUnimplementedNamespacesAPIServer() {}
 func (UnimplementedNamespacesAPIServer) testEmbeddedByValue()                       {}
@@ -192,6 +212,24 @@ func _NamespacesAPI_Whoami_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NamespacesAPI_ServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NamespacesAPIServer).ServerInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NamespacesAPI_ServerInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NamespacesAPIServer).ServerInfo(ctx, req.(*ServerInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NamespacesAPI_ServiceDesc is the grpc.ServiceDesc for NamespacesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -210,6 +248,10 @@ var NamespacesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Whoami",
 			Handler:    _NamespacesAPI_Whoami_Handler,
+		},
+		{
+			MethodName: "ServerInfo",
+			Handler:    _NamespacesAPI_ServerInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -40,6 +40,10 @@ const (
 const (
 	// ResourcesAPIListProcedure is the fully-qualified name of the ResourcesAPI's List RPC.
 	ResourcesAPIListProcedure = "/graphene.management.v1.ResourcesAPI/List"
+	// ResourcesAPICountProcedure is the fully-qualified name of the ResourcesAPI's Count RPC.
+	ResourcesAPICountProcedure = "/graphene.management.v1.ResourcesAPI/Count"
+	// ResourcesAPICountOwnedProcedure is the fully-qualified name of the ResourcesAPI's CountOwned RPC.
+	ResourcesAPICountOwnedProcedure = "/graphene.management.v1.ResourcesAPI/CountOwned"
 	// ResourcesAPIGetProcedure is the fully-qualified name of the ResourcesAPI's Get RPC.
 	ResourcesAPIGetProcedure = "/graphene.management.v1.ResourcesAPI/Get"
 	// ResourcesAPITreeProcedure is the fully-qualified name of the ResourcesAPI's Tree RPC.
@@ -55,7 +59,14 @@ const (
 // ResourcesAPIClient is a client for the graphene.management.v1.ResourcesAPI service.
 type ResourcesAPIClient interface {
 	// List returns the resources matching the selector — a snapshot.
+	// The system kind "run" lists pipeline runs through the same door.
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	// Count answers how many records match — cheap (no rows), optionally
+	// grouped by execution status (the one grouping the store supports).
+	Count(context.Context, *connect.Request[v1.CountRequest]) (*connect.Response[v1.CountResponse], error)
+	// CountOwned answers, for each named owner, how many LIVE records it
+	// owns — one call for a whole table page ("owns" column).
+	CountOwned(context.Context, *connect.Request[v1.CountOwnedRequest]) (*connect.Response[v1.CountOwnedResponse], error)
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
@@ -89,6 +100,18 @@ func NewResourcesAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+ResourcesAPIListProcedure,
 			connect.WithSchema(resourcesAPIMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+		count: connect.NewClient[v1.CountRequest, v1.CountResponse](
+			httpClient,
+			baseURL+ResourcesAPICountProcedure,
+			connect.WithSchema(resourcesAPIMethods.ByName("Count")),
+			connect.WithClientOptions(opts...),
+		),
+		countOwned: connect.NewClient[v1.CountOwnedRequest, v1.CountOwnedResponse](
+			httpClient,
+			baseURL+ResourcesAPICountOwnedProcedure,
+			connect.WithSchema(resourcesAPIMethods.ByName("CountOwned")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
@@ -126,17 +149,29 @@ func NewResourcesAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // resourcesAPIClient implements ResourcesAPIClient.
 type resourcesAPIClient struct {
-	list     *connect.Client[v1.ListRequest, v1.ListResponse]
-	get      *connect.Client[v1.GetRequest, v1.GetResponse]
-	tree     *connect.Client[v1.TreeRequest, v1.TreeResponse]
-	delete   *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
-	transfer *connect.Client[v1.TransferRequest, v1.TransferResponse]
-	invoke   *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
+	list       *connect.Client[v1.ListRequest, v1.ListResponse]
+	count      *connect.Client[v1.CountRequest, v1.CountResponse]
+	countOwned *connect.Client[v1.CountOwnedRequest, v1.CountOwnedResponse]
+	get        *connect.Client[v1.GetRequest, v1.GetResponse]
+	tree       *connect.Client[v1.TreeRequest, v1.TreeResponse]
+	delete     *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
+	transfer   *connect.Client[v1.TransferRequest, v1.TransferResponse]
+	invoke     *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
 }
 
 // List calls graphene.management.v1.ResourcesAPI.List.
 func (c *resourcesAPIClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// Count calls graphene.management.v1.ResourcesAPI.Count.
+func (c *resourcesAPIClient) Count(ctx context.Context, req *connect.Request[v1.CountRequest]) (*connect.Response[v1.CountResponse], error) {
+	return c.count.CallUnary(ctx, req)
+}
+
+// CountOwned calls graphene.management.v1.ResourcesAPI.CountOwned.
+func (c *resourcesAPIClient) CountOwned(ctx context.Context, req *connect.Request[v1.CountOwnedRequest]) (*connect.Response[v1.CountOwnedResponse], error) {
+	return c.countOwned.CallUnary(ctx, req)
 }
 
 // Get calls graphene.management.v1.ResourcesAPI.Get.
@@ -167,7 +202,14 @@ func (c *resourcesAPIClient) Invoke(ctx context.Context, req *connect.Request[v1
 // ResourcesAPIHandler is an implementation of the graphene.management.v1.ResourcesAPI service.
 type ResourcesAPIHandler interface {
 	// List returns the resources matching the selector — a snapshot.
+	// The system kind "run" lists pipeline runs through the same door.
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
+	// Count answers how many records match — cheap (no rows), optionally
+	// grouped by execution status (the one grouping the store supports).
+	Count(context.Context, *connect.Request[v1.CountRequest]) (*connect.Response[v1.CountResponse], error)
+	// CountOwned answers, for each named owner, how many LIVE records it
+	// owns — one call for a whole table page ("owns" column).
+	CountOwned(context.Context, *connect.Request[v1.CountOwnedRequest]) (*connect.Response[v1.CountOwnedResponse], error)
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
@@ -197,6 +239,18 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 		ResourcesAPIListProcedure,
 		svc.List,
 		connect.WithSchema(resourcesAPIMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourcesAPICountHandler := connect.NewUnaryHandler(
+		ResourcesAPICountProcedure,
+		svc.Count,
+		connect.WithSchema(resourcesAPIMethods.ByName("Count")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resourcesAPICountOwnedHandler := connect.NewUnaryHandler(
+		ResourcesAPICountOwnedProcedure,
+		svc.CountOwned,
+		connect.WithSchema(resourcesAPIMethods.ByName("CountOwned")),
 		connect.WithHandlerOptions(opts...),
 	)
 	resourcesAPIGetHandler := connect.NewUnaryHandler(
@@ -233,6 +287,10 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 		switch r.URL.Path {
 		case ResourcesAPIListProcedure:
 			resourcesAPIListHandler.ServeHTTP(w, r)
+		case ResourcesAPICountProcedure:
+			resourcesAPICountHandler.ServeHTTP(w, r)
+		case ResourcesAPICountOwnedProcedure:
+			resourcesAPICountOwnedHandler.ServeHTTP(w, r)
 		case ResourcesAPIGetProcedure:
 			resourcesAPIGetHandler.ServeHTTP(w, r)
 		case ResourcesAPITreeProcedure:
@@ -254,6 +312,14 @@ type UnimplementedResourcesAPIHandler struct{}
 
 func (UnimplementedResourcesAPIHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.List is not implemented"))
+}
+
+func (UnimplementedResourcesAPIHandler) Count(context.Context, *connect.Request[v1.CountRequest]) (*connect.Response[v1.CountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.Count is not implemented"))
+}
+
+func (UnimplementedResourcesAPIHandler) CountOwned(context.Context, *connect.Request[v1.CountOwnedRequest]) (*connect.Response[v1.CountOwnedResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.CountOwned is not implemented"))
 }
 
 func (UnimplementedResourcesAPIHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
