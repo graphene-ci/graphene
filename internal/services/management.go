@@ -60,6 +60,11 @@ type Management struct {
 	// Authz decides what a caller may do; nil falls back to the
 	// built-in roles of the caller's own token.
 	Authz *authz.Resolver
+	// Minter verifies the short-lived tokens of runs and agents.
+	Minter *auth.Minter
+	// OIDC verifies the id_tokens of people; nil means this
+	// installation has no identity provider (service accounts only).
+	OIDC *auth.OIDC
 	// Version is the server build version, for ServerInfo.
 	Version string
 	Log     *xlog.Logger

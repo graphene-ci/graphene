@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// RbacAPI administers who may do what: roles, their bindings, and the
+// service accounts of this installation. People come from the identity
+// provider and are never stored here; machines are accounts, and their
+// tokens are issued here and kept by hash only.
+service RbacAPI {
+  rpc PutRole(PutRoleRequest) returns (PutRoleResponse);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  rpc PutBinding(PutBindingRequest) returns (PutBindingResponse);
+  rpc ListBindings(ListBindingsRequest) returns (ListBindingsResponse);
+  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
+  // IssueToken mints a token for a service account. The VALUE is
+  // returned exactly once, here: the record keeps only its hash.
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
+  // Whoami answers who the caller is and what they may do — what a UI
+  // needs to decide which buttons exist.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+message Rule {
+  repeated string verbs = 1;
+  repeated string kinds = 2;
+}
+
+message PutRoleRequest {
+  string name = 1;
+  repeated Rule rules = 2;
+  string description = 3;
+}
+
+message PutRoleResponse {}
+
+message ListRolesRequest {}
+
+message ListRolesResponse {
+  message Role {
+    string name = 1;
+    repeated Rule rules = 2;
+    bool builtin = 3;
+  }
+  repeated Role roles = 1;
+}
+
+message PutBindingRequest {
+  string name = 1;
+  string role = 2;
+  // Subjects are "user:<sub>", "group:<name>" or "sa:<id>".
+  repeated string subjects = 3;
+  // Namespace scopes the binding; "*" is every namespace.
+  string namespace = 4;
+}
+
+message PutBindingResponse {}
+
+message ListBindingsRequest {}
+
+message ListBindingsResponse {
+  message Binding {
+    string name = 1;
+    string role = 2;
+    repeated string subjects = 3;
+    string namespace = 4;
+  }
+  repeated Binding bindings = 1;
+}
+
+message CreateAccountRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message CreateAccountResponse {}
+
+message IssueTokenRequest {
+  string account = 1;
+  // TtlSeconds bounds the token's life; 0 means until it is revoked.
+  int64 ttl_seconds = 2;
+  string comment = 3;
+}
+
+message IssueTokenResponse {
+  string token_id = 1;
+  // Token is the VALUE, returned once and never stored.
+  string token = 2;
+  string expires = 3;
+}
+
+message RevokeTokenRequest {
+  string account = 1;
+  string token_id = 2;
+}
+
+message RevokeTokenResponse {}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string subject = 1;
+  repeated string groups = 2;
+  string namespace = 3;
+  // Roles are the role names bound to this caller here.
+  repeated string roles = 4;
+  // Allowed lists "verb kind" pairs this caller may do — enough for a
+  // UI to hide what it must not offer.
+  repeated string allowed = 5;
+}

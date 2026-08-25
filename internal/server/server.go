@@ -185,8 +185,21 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Runtimes: runtimes.New(cfg.Runtimes),
 		// Authorization reads the namespace's roles and bindings — the
 		// default namespace's worker is the store.
-		Authz: authz.NewResolver(defaultBundle.Worker),
-		Log:   log.With(xlog.String("component", "management")),
+		Authz:  authz.NewResolver(defaultBundle.Worker),
+		Minter: auth.NewMinter(cfg.SigningKey),
+		Log:    log.With(xlog.String("component", "management")),
+	}
+
+	if cfg.OIDCIssuer != "" {
+		management.OIDC = &auth.OIDC{
+			Issuer:        cfg.OIDCIssuer,
+			Audience:      cfg.OIDCAudience,
+			UsernameClaim: cfg.OIDCUsernameClaim,
+			GroupsClaim:   cfg.OIDCGroupsClaim,
+		}
+		log.Info("identity provider wired", xlog.String("issuer", cfg.OIDCIssuer))
+	} else {
+		log.Info("no identity provider: this installation authenticates service accounts only")
 	}
 
 	observe := &services.Observe{
