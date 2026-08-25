@@ -510,6 +510,9 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	if err != nil {
 		return nil, err
 	}
+	// The note goes first: after the cascade there is no history left
+	// to write it into.
+	m.audit(ctx, b, req.GetRef(), authz.VerbDelete)
 	if err := b.Worker.CascadeDelete(ctx, ref.OwnerRef(req.GetRef())); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -533,6 +536,7 @@ func (m *Management) Transfer(ctx context.Context, creq *connect.Request[managem
 	}); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	m.audit(ctx, b, req.GetRef(), authz.VerbTransfer)
 	return connect.NewResponse(&managementv1.TransferResponse{}), nil
 }
 
@@ -547,6 +551,7 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
+	m.audit(ctx, b, req.GetRef(), authz.VerbInvoke)
 	return connect.NewResponse(&managementv1.InvokeResponse{Result: out}), nil
 }
 

@@ -320,6 +320,7 @@ func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request
 			return nil, status.Errorf(codes.FailedPrecondition, "bind pipeline: %v", err)
 		}
 	}
+	m.audit(ctx, b, "pipeline/"+req.GetPipelineId(), authz.VerbActivate)
 	m.Log.Info("revision activated",
 		xlog.String("namespace", b.Namespace),
 		xlog.String("pipeline", req.GetPipelineId()),
