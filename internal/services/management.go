@@ -29,6 +29,8 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
+	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -47,6 +49,10 @@ type Management struct {
 	Base    client.Client
 	Secrets *secrets.Namespaced
 	Vars    *secrets.Namespaced
+	// Materializer serves the source-first contour; nil disables it.
+	Materializer *materialize.Materializer
+	// Blobs reads revision manifests.
+	Blobs blob.Store
 	// Version is the server build version, for ServerInfo.
 	Version string
 	Log     *xlog.Logger

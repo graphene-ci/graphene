@@ -69,6 +69,7 @@ type Door struct {
 	Observe   managementv1connect.ObserveAPIClient
 	Secrets   managementv1connect.SecretsAPIClient
 	Vars      managementv1connect.VarsAPIClient
+	Revisions managementv1connect.RevisionsAPIClient
 	Ns        managementv1connect.NamespacesAPIClient
 }
 
@@ -99,6 +100,7 @@ func DialContext(cc cliconfig.Context) (*Door, error) {
 		Observe:   managementv1connect.NewObserveAPIClient(client, base, auth),
 		Secrets:   managementv1connect.NewSecretsAPIClient(client, base, auth),
 		Vars:      managementv1connect.NewVarsAPIClient(client, base, auth),
+		Revisions: managementv1connect.NewRevisionsAPIClient(client, base, auth),
 		Ns:        managementv1connect.NewNamespacesAPIClient(client, base, auth),
 	}, nil
 }

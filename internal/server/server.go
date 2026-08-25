@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	dockerclient "github.com/docker/docker/client"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -37,6 +38,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/infrastructure/s3"
 	"github.com/graphene-ci/graphene/internal/logging"
+	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/graphene/internal/secrets"
@@ -158,7 +160,23 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Secrets: secretStore,
 		Vars:    varStore,
 		Version: cfg.Version,
+		Blobs:   blobStore,
 		Log:     log.With(xlog.String("component", "management")),
+	}
+	// The source-first contour: server-side builds on the same docker
+	// host the managed contour drives. Best effort — no docker, no
+	// materialization, everything else keeps working.
+	if dc, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation()); err == nil {
+		management.Materializer = &materialize.Materializer{
+			Docker:   dc,
+			Registry: cfg.External,
+			Token:    runTokenFor(cfg, "default"),
+			Insecure: true, // TODO(tls): follow the door
+			Blobs:    blobStore,
+			Log:      log.With(xlog.String("component", "materialize")),
+		}
+	} else {
+		log.Warn("materialization disabled: no docker", xlog.Err(err))
 	}
 	observe := &services.Observe{
 		Bundles:    bundles,

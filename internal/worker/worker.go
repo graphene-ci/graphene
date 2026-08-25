@@ -340,6 +340,14 @@ func (s *Worker) GetPipeline(ctx context.Context, pipelineId string) (pipelinefl
 	return desc.State, nil
 }
 
+// AddRevision records one materialized revision on the pipeline.
+func (s *Worker) AddRevision(ctx context.Context, pipelineId, revisionId string, rev pipelineflow.Revision) error {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
+		pipelineflow.Spec{}, pipelineflow.AddRevisionCmd{Id: revisionId, Revision: rev})
+	return err
+}
+
 // PublishCapability writes a capability onto an agent's record — also
 // the HTTP door's implementation.
 func (s *Worker) PublishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error {
