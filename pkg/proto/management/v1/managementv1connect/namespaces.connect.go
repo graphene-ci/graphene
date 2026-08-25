@@ -41,6 +41,9 @@ const (
 	NamespacesAPIListNamespacesProcedure = "/graphene.management.v1.NamespacesAPI/ListNamespaces"
 	// NamespacesAPIWhoamiProcedure is the fully-qualified name of the NamespacesAPI's Whoami RPC.
 	NamespacesAPIWhoamiProcedure = "/graphene.management.v1.NamespacesAPI/Whoami"
+	// NamespacesAPIServerInfoProcedure is the fully-qualified name of the NamespacesAPI's ServerInfo
+	// RPC.
+	NamespacesAPIServerInfoProcedure = "/graphene.management.v1.NamespacesAPI/ServerInfo"
 )
 
 // NamespacesAPIClient is a client for the graphene.management.v1.NamespacesAPI service.
@@ -52,6 +55,9 @@ type NamespacesAPIClient interface {
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(context.Context, *connect.Request[v1.WhoamiRequest]) (*connect.Response[v1.WhoamiResponse], error)
+	// ServerInfo reports the installation: version and component health —
+	// the console's status line. Any authenticated principal may ask.
+	ServerInfo(context.Context, *connect.Request[v1.ServerInfoRequest]) (*connect.Response[v1.ServerInfoResponse], error)
 }
 
 // NewNamespacesAPIClient constructs a client for the graphene.management.v1.NamespacesAPI service.
@@ -83,6 +89,12 @@ func NewNamespacesAPIClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(namespacesAPIMethods.ByName("Whoami")),
 			connect.WithClientOptions(opts...),
 		),
+		serverInfo: connect.NewClient[v1.ServerInfoRequest, v1.ServerInfoResponse](
+			httpClient,
+			baseURL+NamespacesAPIServerInfoProcedure,
+			connect.WithSchema(namespacesAPIMethods.ByName("ServerInfo")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -91,6 +103,7 @@ type namespacesAPIClient struct {
 	createNamespace *connect.Client[v1.CreateNamespaceRequest, v1.CreateNamespaceResponse]
 	listNamespaces  *connect.Client[v1.ListNamespacesRequest, v1.ListNamespacesResponse]
 	whoami          *connect.Client[v1.WhoamiRequest, v1.WhoamiResponse]
+	serverInfo      *connect.Client[v1.ServerInfoRequest, v1.ServerInfoResponse]
 }
 
 // CreateNamespace calls graphene.management.v1.NamespacesAPI.CreateNamespace.
@@ -108,6 +121,11 @@ func (c *namespacesAPIClient) Whoami(ctx context.Context, req *connect.Request[v
 	return c.whoami.CallUnary(ctx, req)
 }
 
+// ServerInfo calls graphene.management.v1.NamespacesAPI.ServerInfo.
+func (c *namespacesAPIClient) ServerInfo(ctx context.Context, req *connect.Request[v1.ServerInfoRequest]) (*connect.Response[v1.ServerInfoResponse], error) {
+	return c.serverInfo.CallUnary(ctx, req)
+}
+
 // NamespacesAPIHandler is an implementation of the graphene.management.v1.NamespacesAPI service.
 type NamespacesAPIHandler interface {
 	// Create registers the namespace in Temporal (with the graphene
@@ -117,6 +135,9 @@ type NamespacesAPIHandler interface {
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(context.Context, *connect.Request[v1.WhoamiRequest]) (*connect.Response[v1.WhoamiResponse], error)
+	// ServerInfo reports the installation: version and component health —
+	// the console's status line. Any authenticated principal may ask.
+	ServerInfo(context.Context, *connect.Request[v1.ServerInfoRequest]) (*connect.Response[v1.ServerInfoResponse], error)
 }
 
 // NewNamespacesAPIHandler builds an HTTP handler from the service implementation. It returns the
@@ -144,6 +165,12 @@ func NewNamespacesAPIHandler(svc NamespacesAPIHandler, opts ...connect.HandlerOp
 		connect.WithSchema(namespacesAPIMethods.ByName("Whoami")),
 		connect.WithHandlerOptions(opts...),
 	)
+	namespacesAPIServerInfoHandler := connect.NewUnaryHandler(
+		NamespacesAPIServerInfoProcedure,
+		svc.ServerInfo,
+		connect.WithSchema(namespacesAPIMethods.ByName("ServerInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/graphene.management.v1.NamespacesAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NamespacesAPICreateNamespaceProcedure:
@@ -152,6 +179,8 @@ func NewNamespacesAPIHandler(svc NamespacesAPIHandler, opts ...connect.HandlerOp
 			namespacesAPIListNamespacesHandler.ServeHTTP(w, r)
 		case NamespacesAPIWhoamiProcedure:
 			namespacesAPIWhoamiHandler.ServeHTTP(w, r)
+		case NamespacesAPIServerInfoProcedure:
+			namespacesAPIServerInfoHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -171,4 +200,8 @@ func (UnimplementedNamespacesAPIHandler) ListNamespaces(context.Context, *connec
 
 func (UnimplementedNamespacesAPIHandler) Whoami(context.Context, *connect.Request[v1.WhoamiRequest]) (*connect.Response[v1.WhoamiResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.NamespacesAPI.Whoami is not implemented"))
+}
+
+func (UnimplementedNamespacesAPIHandler) ServerInfo(context.Context, *connect.Request[v1.ServerInfoRequest]) (*connect.Response[v1.ServerInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.NamespacesAPI.ServerInfo is not implemented"))
 }

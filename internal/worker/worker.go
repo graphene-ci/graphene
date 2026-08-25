@@ -61,7 +61,7 @@ type Deps struct {
 
 // RunStarter starts one run — wired by the bundle after the managed
 // runner exists (the same path the management door uses).
-type RunStarter func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string) error
+type RunStarter func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string) error
 
 // Worker is the assembled server worker.
 type Worker struct {
@@ -167,10 +167,26 @@ func (s *Worker) autoStartRun(ctx context.Context, req pipelineflow.StartReq) (s
 	}
 	runId := fmt.Sprintf("%s-%s-%s", req.PipelineId, req.Trigger,
 		time.Now().UTC().Format("20060102-150405"))
-	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, nil); err != nil {
+	trigger := triggerLabelValue(st.Manifest, req.Trigger)
+	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, nil, trigger); err != nil {
 		return "", err
 	}
 	return runId, nil
+}
+
+// triggerLabelValue renders "kind:name" for the run's trigger label —
+// the kind comes from the published manifest; a trigger the manifest
+// no longer names keeps just its name.
+func triggerLabelValue(rawManifest json.RawMessage, name string) string {
+	var m manifestpb.Manifest
+	if len(rawManifest) > 0 && protojson.Unmarshal(rawManifest, &m) == nil {
+		for _, tr := range m.GetTriggers() {
+			if tr.GetName() == name {
+				return tr.GetKind() + ":" + name
+			}
+		}
+	}
+	return name
 }
 
 // countRuns counts the pipeline's running runs via visibility.

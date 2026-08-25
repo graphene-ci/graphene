@@ -42,8 +42,8 @@ import (
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/internal/telemetry"
-	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
+	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
 )
@@ -127,8 +127,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		LogSink:          otlp.ForwardLogs,
 		// Trigger firings start runs through the same door logic.
 		MakeRunStarter: func(b *nsbundle.Bundle) worker.RunStarter {
-			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string) error {
-				return services.StartRunOnBundle(ctx, b, log, runId, pipelineId, params, image, labels)
+			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string) error {
+				return services.StartRunOnBundle(ctx, b, log, runId, pipelineId, params, image, labels, trigger)
 			}
 		},
 		Log: log,
@@ -157,6 +157,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Base:    temporalClient,
 		Secrets: secretStore,
 		Vars:    varStore,
+		Version: cfg.Version,
 		Log:     log.With(xlog.String("component", "management")),
 	}
 	observe := &services.Observe{

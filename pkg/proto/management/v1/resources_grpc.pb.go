@@ -24,12 +24,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ResourcesAPI_List_FullMethodName     = "/graphene.management.v1.ResourcesAPI/List"
-	ResourcesAPI_Get_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Get"
-	ResourcesAPI_Tree_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Tree"
-	ResourcesAPI_Delete_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Delete"
-	ResourcesAPI_Transfer_FullMethodName = "/graphene.management.v1.ResourcesAPI/Transfer"
-	ResourcesAPI_Invoke_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Invoke"
+	ResourcesAPI_List_FullMethodName       = "/graphene.management.v1.ResourcesAPI/List"
+	ResourcesAPI_Count_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Count"
+	ResourcesAPI_CountOwned_FullMethodName = "/graphene.management.v1.ResourcesAPI/CountOwned"
+	ResourcesAPI_Get_FullMethodName        = "/graphene.management.v1.ResourcesAPI/Get"
+	ResourcesAPI_Tree_FullMethodName       = "/graphene.management.v1.ResourcesAPI/Tree"
+	ResourcesAPI_Delete_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Delete"
+	ResourcesAPI_Transfer_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Transfer"
+	ResourcesAPI_Invoke_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Invoke"
 )
 
 // ResourcesAPIClient is the client API for ResourcesAPI service.
@@ -40,7 +42,14 @@ const (
 // owned lifetimes in one ownership tree.
 type ResourcesAPIClient interface {
 	// List returns the resources matching the selector — a snapshot.
+	// The system kind "run" lists pipeline runs through the same door.
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
+	// Count answers how many records match — cheap (no rows), optionally
+	// grouped by execution status (the one grouping the store supports).
+	Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*CountResponse, error)
+	// CountOwned answers, for each named owner, how many LIVE records it
+	// owns — one call for a whole table page ("owns" column).
+	CountOwned(ctx context.Context, in *CountOwnedRequest, opts ...grpc.CallOption) (*CountOwnedResponse, error)
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
@@ -71,6 +80,26 @@ func (c *resourcesAPIClient) List(ctx context.Context, in *ListRequest, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListResponse)
 	err := c.cc.Invoke(ctx, ResourcesAPI_List_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcesAPIClient) Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*CountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CountResponse)
+	err := c.cc.Invoke(ctx, ResourcesAPI_Count_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcesAPIClient) CountOwned(ctx context.Context, in *CountOwnedRequest, opts ...grpc.CallOption) (*CountOwnedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CountOwnedResponse)
+	err := c.cc.Invoke(ctx, ResourcesAPI_CountOwned_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +164,14 @@ func (c *resourcesAPIClient) Invoke(ctx context.Context, in *InvokeRequest, opts
 // owned lifetimes in one ownership tree.
 type ResourcesAPIServer interface {
 	// List returns the resources matching the selector — a snapshot.
+	// The system kind "run" lists pipeline runs through the same door.
 	List(context.Context, *ListRequest) (*ListResponse, error)
+	// Count answers how many records match — cheap (no rows), optionally
+	// grouped by execution status (the one grouping the store supports).
+	Count(context.Context, *CountRequest) (*CountResponse, error)
+	// CountOwned answers, for each named owner, how many LIVE records it
+	// owns — one call for a whole table page ("owns" column).
+	CountOwned(context.Context, *CountOwnedRequest) (*CountOwnedResponse, error)
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *GetRequest) (*GetResponse, error)
@@ -164,6 +200,12 @@ type UnimplementedResourcesAPIServer struct{}
 
 func (UnimplementedResourcesAPIServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method List not implemented")
+}
+func (UnimplementedResourcesAPIServer) Count(context.Context, *CountRequest) (*CountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Count not implemented")
+}
+func (UnimplementedResourcesAPIServer) CountOwned(context.Context, *CountOwnedRequest) (*CountOwnedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CountOwned not implemented")
 }
 func (UnimplementedResourcesAPIServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
@@ -215,6 +257,42 @@ func _ResourcesAPI_List_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ResourcesAPIServer).List(ctx, req.(*ListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcesAPI_Count_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesAPIServer).Count(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcesAPI_Count_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesAPIServer).Count(ctx, req.(*CountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcesAPI_CountOwned_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CountOwnedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesAPIServer).CountOwned(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcesAPI_CountOwned_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesAPIServer).CountOwned(ctx, req.(*CountOwnedRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -319,6 +397,14 @@ var ResourcesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "List",
 			Handler:    _ResourcesAPI_List_Handler,
+		},
+		{
+			MethodName: "Count",
+			Handler:    _ResourcesAPI_Count_Handler,
+		},
+		{
+			MethodName: "CountOwned",
+			Handler:    _ResourcesAPI_CountOwned_Handler,
 		},
 		{
 			MethodName: "Get",

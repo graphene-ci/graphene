@@ -18,8 +18,9 @@ service RunsAPI {
   rpc RunResult(RunResultRequest) returns (RunResultResponse);
   // Cancel asks the run to stop; the guaranteed-teardown path still
   // runs (unlike a terminate).
+  // Listing lives in ResourcesAPI.List under the system kind "run" —
+  // this service is the VERBS of a run's lifecycle only.
   rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
-  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
 }
 
 message StartRunRequest {
@@ -72,26 +73,3 @@ message CancelRunRequest {
 
 message CancelRunResponse {}
 
-message ListRunsRequest {
-  // Status filters ("Running", "Completed", ...); empty — all.
-  string status = 1;
-  // Labels filter by equality; every pair must match.
-  map<string, string> labels = 2;
-  // PageSize bounds one reply; 0 returns everything in one go.
-  int32 page_size = 3;
-  // PageToken continues a previous listing (opaque, from the reply).
-  string page_token = 4;
-}
-
-message RunInfo {
-  string run_id = 1;
-  string pipeline = 2;
-  string status = 3;
-  map<string, string> labels = 4;
-}
-
-message ListRunsResponse {
-  repeated RunInfo runs = 1;
-  // NextPageToken continues the listing; empty — the end.
-  string next_page_token = 2;
-}

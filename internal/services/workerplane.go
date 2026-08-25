@@ -16,6 +16,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
+	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
@@ -234,7 +235,8 @@ func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunR
 		return nil, err
 	}
 	workflowId, temporalRunId, err := startRunCore(ctx, b, w.Log,
-		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels())
+		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
+		syslabels.TriggerManual)
 	if err != nil {
 		return nil, err
 	}

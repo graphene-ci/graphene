@@ -127,6 +127,8 @@ type File struct {
 type Config struct {
 	LogLevel  string
 	LogFormat string
+	// Version is the build version, stamped by main.
+	Version string
 
 	Listen   string
 	External string

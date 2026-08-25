@@ -210,24 +210,47 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 	if err != nil {
 		return err
 	}
-	list := func() (*managementv1.ListRunsResponse, error) {
-		acc := &managementv1.ListRunsResponse{}
+	// Runs list through ResourcesAPI under the system kind "run".
+	query := "kind=run"
+	if status != "" {
+		query += ", phase=" + status
+	}
+	for k, v := range labels {
+		query += fmt.Sprintf(", label.%s=%s", k, v)
+	}
+	list := func() (*managementv1.ListResponse, error) {
+		acc := &managementv1.ListResponse{}
 		token := ""
 		for {
-			resp, err := d.Runs.ListRuns(ctx, connect.NewRequest(&managementv1.ListRunsRequest{
-				Status: status, Labels: labels,
+			resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
+				Query:     query,
 				PageSize:  int32(chunk), //nolint:gosec // a small flag value
 				PageToken: token,
 			}))
 			if err != nil {
 				return nil, err
 			}
-			acc.Runs = append(acc.Runs, resp.Msg.GetRuns()...)
+			acc.Resources = append(acc.Resources, resp.Msg.GetResources()...)
 			token = resp.Msg.GetNextPageToken()
 			if chunk == 0 || token == "" {
 				return acc, nil
 			}
 		}
+	}
+	runId := func(r *managementv1.Resource) string {
+		return strings.TrimPrefix(r.GetRef(), "run/")
+	}
+	pipelineOf := func(r *managementv1.Resource) string {
+		return r.GetLabels()["graphene.io/pipeline"]
+	}
+	userLabels := func(r *managementv1.Resource) map[string]string {
+		out := make(map[string]string, len(r.GetLabels()))
+		for k, v := range r.GetLabels() {
+			if k != "graphene.io/pipeline" {
+				out[k] = v
+			}
+		}
+		return out
 	}
 	header := []string{"RUN", "PIPELINE", "STATUS", "LABELS"}
 	if watch {
@@ -236,10 +259,10 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 			if err != nil {
 				return nil, err
 			}
-			rows := make(map[string]cmdutil.WatchRow, len(msg.GetRuns()))
-			for _, r := range msg.GetRuns() {
-				rows[r.GetRunId()] = cmdutil.WatchRow{
-					Cols: []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), cmdutil.LabelsCell(r.GetLabels())},
+			rows := make(map[string]cmdutil.WatchRow, len(msg.GetResources()))
+			for _, r := range msg.GetResources() {
+				rows[runId(r)] = cmdutil.WatchRow{
+					Cols: []string{runId(r), pipelineOf(r), r.GetPhase(), cmdutil.LabelsCell(userLabels(r))},
 					Msg:  r,
 				}
 			}
@@ -254,18 +277,18 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 		return err
 	}
 	if f.Output == "name" {
-		for _, r := range msg.GetRuns() {
-			fmt.Fprintln(cmdutil.Out, r.GetRunId())
+		for _, r := range msg.GetResources() {
+			fmt.Fprintln(cmdutil.Out, runId(r))
 		}
 		return nil
 	}
-	if len(msg.GetRuns()) == 0 {
+	if len(msg.GetResources()) == 0 {
 		fmt.Fprintln(os.Stderr, "No runs found.")
 		return nil
 	}
-	rows := make([][]string, 0, len(msg.GetRuns()))
-	for _, r := range msg.GetRuns() {
-		rows = append(rows, []string{r.GetRunId(), r.GetPipeline(), r.GetStatus(), cmdutil.LabelsCell(r.GetLabels())})
+	rows := make([][]string, 0, len(msg.GetResources()))
+	for _, r := range msg.GetResources() {
+		rows = append(rows, []string{runId(r), pipelineOf(r), r.GetPhase(), cmdutil.LabelsCell(userLabels(r))})
 	}
 	cmdutil.Table(header, rows)
 	return nil

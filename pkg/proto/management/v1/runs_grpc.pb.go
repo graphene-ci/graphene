@@ -24,7 +24,6 @@ const (
 	RunsAPI_WatchRun_FullMethodName  = "/graphene.management.v1.RunsAPI/WatchRun"
 	RunsAPI_RunResult_FullMethodName = "/graphene.management.v1.RunsAPI/RunResult"
 	RunsAPI_CancelRun_FullMethodName = "/graphene.management.v1.RunsAPI/CancelRun"
-	RunsAPI_ListRuns_FullMethodName  = "/graphene.management.v1.RunsAPI/ListRuns"
 )
 
 // RunsAPIClient is the client API for RunsAPI service.
@@ -45,8 +44,9 @@ type RunsAPIClient interface {
 	RunResult(ctx context.Context, in *RunResultRequest, opts ...grpc.CallOption) (*RunResultResponse, error)
 	// Cancel asks the run to stop; the guaranteed-teardown path still
 	// runs (unlike a terminate).
+	// Listing lives in ResourcesAPI.List under the system kind "run" —
+	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error)
-	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error)
 }
 
 type runsAPIClient struct {
@@ -116,16 +116,6 @@ func (c *runsAPIClient) CancelRun(ctx context.Context, in *CancelRunRequest, opt
 	return out, nil
 }
 
-func (c *runsAPIClient) ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListRunsResponse)
-	err := c.cc.Invoke(ctx, RunsAPI_ListRuns_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // RunsAPIServer is the server API for RunsAPI service.
 // All implementations must embed UnimplementedRunsAPIServer
 // for forward compatibility.
@@ -144,8 +134,9 @@ type RunsAPIServer interface {
 	RunResult(context.Context, *RunResultRequest) (*RunResultResponse, error)
 	// Cancel asks the run to stop; the guaranteed-teardown path still
 	// runs (unlike a terminate).
+	// Listing lives in ResourcesAPI.List under the system kind "run" —
+	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error)
-	ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error)
 	mustEmbedUnimplementedRunsAPIServer()
 }
 
@@ -170,9 +161,6 @@ func (UnimplementedRunsAPIServer) RunResult(context.Context, *RunResultRequest) 
 }
 func (UnimplementedRunsAPIServer) CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelRun not implemented")
-}
-func (UnimplementedRunsAPIServer) ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListRuns not implemented")
 }
 func (UnimplementedRunsAPIServer) mustEmbedUnimplementedRunsAPIServer() {}
 func (UnimplementedRunsAPIServer) testEmbeddedByValue()                 {}
@@ -278,24 +266,6 @@ func _RunsAPI_CancelRun_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RunsAPI_ListRuns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListRunsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RunsAPIServer).ListRuns(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RunsAPI_ListRuns_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RunsAPIServer).ListRuns(ctx, req.(*ListRunsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // RunsAPI_ServiceDesc is the grpc.ServiceDesc for RunsAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -318,10 +288,6 @@ var RunsAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelRun",
 			Handler:    _RunsAPI_CancelRun_Handler,
-		},
-		{
-			MethodName: "ListRuns",
-			Handler:    _RunsAPI_ListRuns_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

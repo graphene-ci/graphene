@@ -4,7 +4,9 @@ go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
+	connectrpc.com/cors v0.1.0
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/go-chi/cors v1.2.2
 	github.com/google/uuid v1.6.0
 	github.com/gopherex/schemapb/go v0.0.0-20260805100557-b08e53066d63
 	github.com/gopherex/xconf v1.1.1
@@ -26,6 +28,7 @@ require (
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.47.0
 	golang.org/x/crypto v0.55.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
@@ -107,7 +110,6 @@ require (
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.3.0 // indirect

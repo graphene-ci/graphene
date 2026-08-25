@@ -17,6 +17,22 @@ service NamespacesAPI {
   // Whoami answers who the caller's token is: role and namespace scope.
   // Any authenticated principal may ask — this is login's handshake.
   rpc Whoami(WhoamiRequest) returns (WhoamiResponse);
+  // ServerInfo reports the installation: version and component health —
+  // the console's status line. Any authenticated principal may ask.
+  rpc ServerInfo(ServerInfoRequest) returns (ServerInfoResponse);
+}
+
+message ServerInfoRequest {}
+
+message ServerInfoResponse {
+  string version = 1;
+  message Component {
+    string name = 1;
+    bool ok = 2;
+    // Detail says what's wrong when ok is false.
+    string detail = 3;
+  }
+  repeated Component components = 2;
 }
 
 message WhoamiRequest {}
