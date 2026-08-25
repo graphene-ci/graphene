@@ -164,7 +164,7 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 		return "", "", status.Error(codes.Internal, err.Error())
 	}
 	if image != "" {
-		if err := b.Runner.Start(ctx, runId, image); err != nil {
+		if err := b.Runner.Start(ctx, runId, image, mintRunToken(b, runId)); err != nil {
 			return "", "", status.Error(codes.Internal, err.Error())
 		}
 	}

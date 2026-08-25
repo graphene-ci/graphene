@@ -80,7 +80,14 @@ func (r *Runner) Ping(ctx context.Context) error {
 }
 
 // Start launches the run worker container for a run.
-func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) error {
+// Start launches the run's orchestrator container. runToken is the
+// run's OWN token — minted for this run, scoped to it, and dying with
+// it; the installation-wide token is only the fallback of a server
+// without a signing key.
+func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef, runToken string) error {
+	if runToken == "" {
+		runToken = r.runToken
+	}
 	if r.docker == nil {
 		return fmt.Errorf("managed runs need docker on the server host")
 	}
@@ -93,7 +100,7 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 	// The image lives behind our own /v2 door: the daemon authenticates
 	// with the run token as the Basic password (the door challenges,
 	// the daemon retries with credentials).
-	authJSON, _ := json.Marshal(registry.AuthConfig{Username: "token", Password: r.runToken}) //nolint:gosec // registry credentials travel to the local docker daemon only
+	authJSON, _ := json.Marshal(registry.AuthConfig{Username: "token", Password: runToken}) //nolint:gosec // registry credentials travel to the local docker daemon only
 	pullOpts := image.PullOptions{RegistryAuth: base64.URLEncoding.EncodeToString(authJSON)}
 	if pull, err := r.docker.ImagePull(ctx, imageRef, pullOpts); err == nil {
 		_, _ = io.Copy(io.Discard, pull)
@@ -104,7 +111,7 @@ func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef string) err
 		wire.EnvAddress + "=" + r.externalGRPC,
 		wire.EnvNamespace + "=" + r.namespace,
 		wire.EnvRunId + "=" + string(runId),
-		wire.EnvToken + "=" + r.runToken,
+		wire.EnvToken + "=" + runToken,
 		wire.EnvImage + "=" + imageRef,
 		// TODO(tls): drop once the door serves TLS.
 		wire.EnvInsecure + "=1",

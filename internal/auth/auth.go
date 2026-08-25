@@ -47,6 +47,7 @@ func (p Principal) In(namespace string) bool {
 // Authenticator checks tokens.
 type Authenticator struct {
 	tokens []config.Token
+	minter *Minter
 }
 
 // New builds an authenticator over the configured token list.
@@ -54,14 +55,49 @@ func New(tokens []config.Token) *Authenticator {
 	return &Authenticator{tokens: tokens}
 }
 
-// Check resolves a bearer token to a principal.
+// WithMinter teaches the authenticator the installation's short-lived
+// tokens: a run or an agent carries one instead of a shared secret
+// from the configuration.
+func (a *Authenticator) WithMinter(m *Minter) *Authenticator {
+	a.minter = m
+	return a
+}
+
+// Check resolves a bearer token to a principal: a configured one
+// first, then a minted one. A minted token becomes the SAME principal
+// shape, so everything downstream — the worker plane, the Temporal
+// proxy — keeps working without knowing which contour issued it.
 func (a *Authenticator) Check(token string) (Principal, bool) {
 	for _, t := range a.tokens {
 		if subtle.ConstantTimeCompare([]byte(t.Token), []byte(token)) == 1 {
 			return Principal{Role: Role(t.Role), Namespace: t.Namespace, AgentId: id.AgentId(t.AgentId)}, true
 		}
 	}
+	if a.minter != nil {
+		if identity, role, ok := a.minter.Verify(token); ok {
+			p := Principal{Role: Role(role), Namespace: identity.Namespace}
+			// "sa:agent/edge-1" is the one agent record this token may
+			// embody — the same scope the configured agent tokens have.
+			if agentId, ok := strings.CutPrefix(identity.Subject.Name, "agent/"); ok {
+				p.AgentId = id.AgentId(agentId)
+			}
+			return p, true
+		}
+	}
 	return Principal{}, false
+}
+
+// Identity resolves a bearer token to an authorization identity, for
+// the callers that decide with roles rather than principals.
+func (a *Authenticator) Identity(token string) (Identity, bool) {
+	if a.minter == nil {
+		return Identity{}, false
+	}
+	identity, role, ok := a.minter.Verify(token)
+	if !ok {
+		return Identity{}, false
+	}
+	return Identity{Identity: identity, BoundRole: role}, true
 }
 
 type principalKey struct{}

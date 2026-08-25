@@ -69,7 +69,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	}
 	stop.RegisterFnErr(func(context.Context) error { temporalClient.Close(); return nil })
 
-	authn := auth.New(cfg.Tokens)
+	minter := auth.NewMinter(cfg.SigningKey)
+	authn := auth.New(cfg.Tokens).WithMinter(minter)
 	registry := agents.New(cfg.AgentHeartbeat, log.With(xlog.String("component", "agents")))
 	var secretStore *secrets.Namespaced
 	if cfg.SecretsKey != "" {
@@ -144,10 +145,21 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Blobs:            blobStore,
 		External:         cfg.External,
 		RunTokenFor:      func(ns string) string { return runTokenFor(cfg, ns) },
-		UserDataFor:      userDataBuilder(cfg),
-		SweepEvery:       time.Duration(cfg.SweepSeconds) * time.Second,
-		ReapEvery:        time.Duration(cfg.ReapSeconds) * time.Second,
-		LogSink:          otlp.ForwardLogs,
+		MintRunToken: func(ns, runId string) string {
+			// A run's token lives as long as a run may — long enough for
+			// the slowest pipeline, short enough to be worthless after.
+			token, err := minter.Mint(authz.Subject{Kind: authz.SubjectServiceAccount, Name: "run/" + runId},
+				ns, "run", runTokenLife)
+			if err != nil {
+				log.Warn("cannot mint a run token; falling back to the configured one", xlog.Err(err))
+				return ""
+			}
+			return token
+		},
+		UserDataFor: userDataBuilder(cfg),
+		SweepEvery:  time.Duration(cfg.SweepSeconds) * time.Second,
+		ReapEvery:   time.Duration(cfg.ReapSeconds) * time.Second,
+		LogSink:     otlp.ForwardLogs,
 		// Trigger firings start runs through the same door logic.
 		MakeRunStarter: func(b *nsbundle.Bundle) worker.RunStarter {
 			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string) error {
@@ -186,7 +198,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		// Authorization reads the namespace's roles and bindings — the
 		// default namespace's worker is the store.
 		Authz:  authz.NewResolver(defaultBundle.Worker),
-		Minter: auth.NewMinter(cfg.SigningKey),
+		Minter: minter,
 		Log:    log.With(xlog.String("component", "management")),
 	}
 
@@ -433,3 +445,7 @@ fi
 `, cfg.External, token, agentId, cfg.External, cfg.External, token), nil
 	}
 }
+
+// runTokenLife bounds a run token: longer than the slowest pipeline,
+// shorter than anything worth stealing.
+const runTokenLife = 24 * time.Hour

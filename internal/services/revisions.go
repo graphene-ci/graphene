@@ -283,7 +283,7 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	if err := b.Runner.Start(ctx, runId, rev.Image); err != nil {
+	if err := b.Runner.Start(ctx, runId, rev.Image, mintRunToken(b, runId)); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	m.Log.Info("draft run started",
