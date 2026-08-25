@@ -20,7 +20,6 @@ import (
 	"github.com/gopherex/xlog"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/temporal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -29,7 +28,6 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/wire"
-	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 )
 
@@ -272,8 +270,7 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 		ID:                       "run/" + string(runId),
 		TaskQueue:                wire.RunQueue(runId),
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		TypedSearchAttributes: temporal.NewSearchAttributes(
-			entdefine.SearchAttrLabels.ValueSet(labelPairs(req.GetLabels()))),
+		TypedSearchAttributes:    runAttributes(req.GetPipelineId(), req.GetLabels()),
 	}
 	var args []any
 	if len(params) > 0 {
