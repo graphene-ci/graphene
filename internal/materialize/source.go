@@ -63,6 +63,19 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	if err := m.ensureImage(ctx, runtimeImage, progress); err != nil {
 		return res, err
 	}
+	// The URL and the ref go to git as data, not as options: git's
+	// ext:: transport executes an arbitrary command, file:// reads the
+	// server's own disk, and any value starting with "-" becomes a
+	// flag. All three are rejected before the container starts.
+	if err := validateGitUrl(req.Url); err != nil {
+		return res, err
+	}
+	if err := validateGitRef(req.Ref); err != nil {
+		return res, err
+	}
+	if err := validateSubdir(req.Subdir); err != nil {
+		return res, err
+	}
 	cloneUrl, err := authenticatedUrl(req.Url, req.Credential)
 	if err != nil {
 		return res, err
@@ -95,9 +108,12 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	// never appears in a command line or a log.
 	clone := `set -e; git clone --depth 1 --single-branch`
 	if req.Ref != "" {
-		clone += ` --branch ` + shellQuote(req.Ref)
+		// "--branch=<ref>" keeps a ref that survived validation from
+		// ever being read as a separate option.
+		clone += ` --branch=` + shellQuote(req.Ref)
 	}
-	clone += ` "$GIT_URL" repo 2>&1`
+	// "--" ends the options: whatever the URL holds is a URL.
+	clone += ` -- "$GIT_URL" repo 2>&1`
 	if out, err := m.exec(ctx, cont.ID, nil, clone, func(line string) { progress("source", redact(line)) }); err != nil {
 		return res, fmt.Errorf("git clone: %w\n%s", err, redact(tail(out, 2000)))
 	}
@@ -152,6 +168,67 @@ func (m *Materializer) readFile(ctx context.Context, containerId, path string) (
 	return io.ReadAll(f)
 }
 
+// validateGitUrl accepts only the transports a workspace may use.
+// git's own ext:: and file:: transports run commands and read local
+// paths — a workspace source must never reach them.
+func validateGitUrl(raw string) error {
+	if raw == "" {
+		return fmt.Errorf("git source needs a url")
+	}
+	if strings.HasPrefix(raw, "-") {
+		return fmt.Errorf("git url %q looks like an option", raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("git url %q: %w", redact(raw), err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" {
+			return fmt.Errorf("git url %q has no host", redact(raw))
+		}
+		return nil
+	case "":
+		return fmt.Errorf("git url %q needs an https:// scheme", raw)
+	default:
+		return fmt.Errorf("git transport %q is not allowed; use https", u.Scheme)
+	}
+}
+
+// validateGitRef keeps a ref from becoming an option or a path trick.
+func validateGitRef(ref string) error {
+	if ref == "" {
+		return nil
+	}
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("git ref %q looks like an option", ref)
+	}
+	if strings.Contains(ref, "..") || strings.ContainsAny(ref, " \t\n\r~^:?*[\\") {
+		return fmt.Errorf("git ref %q is not a valid ref name", ref)
+	}
+	return nil
+}
+
+// validateSubdir keeps the pipeline root inside the checkout.
+func validateSubdir(subdir string) error {
+	if subdir == "" {
+		return nil
+	}
+	clean := strings.Trim(subdir, "/")
+	if strings.HasPrefix(clean, "-") {
+		return fmt.Errorf("subdir %q looks like an option", subdir)
+	}
+	for _, part := range strings.Split(clean, "/") {
+		if part == ".." {
+			return fmt.Errorf("subdir %q escapes the checkout", subdir)
+		}
+	}
+	if strings.ContainsAny(clean, "\n\r") {
+		return fmt.Errorf("subdir %q is not a path", subdir)
+	}
+	return nil
+}
+
 // authenticatedUrl folds a credential into an https URL; an ssh URL
 // takes the credential as a key elsewhere (not supported yet).
 func authenticatedUrl(raw, credential string) (string, error) {
@@ -171,21 +248,34 @@ func authenticatedUrl(raw, credential string) (string, error) {
 }
 
 // redact removes any credential embedded in a URL before it reaches a
-// log line or an error.
+// log line or an error: everything between "scheme://" and the "@" of
+// the authority is replaced.
 func redact(s string) string {
+	var b strings.Builder
+	rest := s
 	for {
-		at := strings.Index(s, "@")
-		if at < 0 {
-			return s
+		i := strings.Index(rest, "://")
+		if i < 0 {
+			b.WriteString(rest)
+			return b.String()
 		}
-		scheme := strings.LastIndex(s[:at], "://")
-		if scheme < 0 {
-			return s
+		b.WriteString(rest[:i+3])
+		rest = rest[i+3:]
+		authority := rest
+		tail := ""
+		if end := strings.IndexByte(rest, '/'); end >= 0 {
+			authority, tail = rest[:end], rest[end:]
 		}
-		s = s[:scheme+3] + "***@" + s[at+1:]
-		if !strings.Contains(s[at:], "@") {
-			return s
+		if at := strings.LastIndex(authority, "@"); at >= 0 {
+			b.WriteString("***")
+			b.WriteString(authority[at:])
+		} else {
+			b.WriteString(authority)
 		}
+		if tail == "" {
+			return b.String()
+		}
+		rest = tail
 	}
 }
 
