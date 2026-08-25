@@ -56,11 +56,13 @@ type State struct {
 	Pending *Fire `json:"pending,omitempty"`
 }
 
-// Fire is one trigger firing awaiting or receiving a decision.
+// Fire is one firing awaiting or receiving a decision.
 type Fire struct {
-	Trigger string          `json:"trigger"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Event   json.RawMessage `json:"event,omitempty"`
+	Trigger string            `json:"trigger"`
+	Params  json.RawMessage   `json:"params,omitempty"`
+	Event   json.RawMessage   `json:"event,omitempty"`
+	RunId   string            `json:"runId,omitempty"`
+	Labels  map[string]string `json:"labels,omitempty"`
 }
 
 // PublishCmd replaces the manifest when its content changed.
@@ -88,11 +90,18 @@ type PublishRes struct {
 	Changed bool   `json:"changed"`
 }
 
-// FireCmd is one trigger firing: the arbiter applies the policy.
+// FireCmd is one firing: the arbiter applies the policy. A HUMAN
+// pressing "run" fires the same way a cron does — that is the whole
+// point of an arbiter: one place decides, whoever asked.
 type FireCmd struct {
-	Trigger string          `json:"trigger"`
+	// Trigger names what fired; empty means a person did.
+	Trigger string          `json:"trigger,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Event   json.RawMessage `json:"event,omitempty"`
+	// RunId names the run; empty lets the server generate one.
+	RunId string `json:"runId,omitempty"`
+	// Labels ride along onto the run.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Name is the command's wire identity.
@@ -121,10 +130,12 @@ const (
 
 // StartReq asks the server to start one run.
 type StartReq struct {
-	PipelineId string          `json:"pipelineId"`
-	Trigger    string          `json:"trigger"`
-	Params     json.RawMessage `json:"params,omitempty"`
-	Event      json.RawMessage `json:"event,omitempty"`
+	PipelineId string            `json:"pipelineId"`
+	Trigger    string            `json:"trigger"`
+	Params     json.RawMessage   `json:"params,omitempty"`
+	Event      json.RawMessage   `json:"event,omitempty"`
+	RunId      string            `json:"runId,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 // New builds the pipeline definition. tick bounds how fast a queued
@@ -166,7 +177,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	})
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd FireCmd) (FireRes, error) {
 		st := ec.State()
-		fire := Fire{Trigger: cmd.Trigger, Params: cmd.Params, Event: cmd.Event}
+		fire := Fire{Trigger: cmd.Trigger, Params: cmd.Params, Event: cmd.Event, RunId: cmd.RunId, Labels: cmd.Labels}
 		running, err := countRuns(ctx, ec)
 		if err != nil {
 			return FireRes{}, err
@@ -227,6 +238,8 @@ func start(ctx workflow.Context, _ *entdefine.Ctx[Spec, State], fire Fire) (stri
 		Trigger:    fire.Trigger,
 		Params:     fire.Params,
 		Event:      fire.Event,
+		RunId:      fire.RunId,
+		Labels:     fire.Labels,
 	}).Get(ctx, &runId)
 	return runId, err
 }

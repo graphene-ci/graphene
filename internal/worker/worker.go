@@ -171,6 +171,13 @@ func (s *Worker) triggerFire(ctx context.Context, req triggerflow.FireRequest) e
 	return err
 }
 
+// FirePipeline lands one firing on the pipeline record and returns the
+// arbiter's decision — the ONE path a run starts by, whoever asked.
+func (s *Worker) FirePipeline(ctx context.Context, pipelineId string, cmd pipelineflow.FireCmd) (pipelineflow.FireRes, error) {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	return entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId), pipelineflow.Spec{}, cmd)
+}
+
 // autoStartRun starts a trigger-decided run: the image from the
 // pipeline record, the webhook body merged into the reserved "event"
 // params field.
@@ -195,10 +202,20 @@ func (s *Worker) autoStartRun(ctx context.Context, req pipelineflow.StartReq) (s
 			return "", err
 		}
 	}
-	runId := fmt.Sprintf("%s-%s-%s", req.PipelineId, req.Trigger,
-		time.Now().UTC().Format("20060102-150405"))
+	// A person's firing carries no trigger name; it still goes through
+	// the arbiter, so the concurrency policy applies to humans exactly
+	// as it applies to cron.
+	fired := req.Trigger
+	if fired == "" {
+		fired = "manual"
+	}
+	runId := req.RunId
+	if runId == "" {
+		runId = fmt.Sprintf("%s-%s-%s", req.PipelineId, fired,
+			time.Now().UTC().Format("20060102-150405"))
+	}
 	trigger := triggerLabelValue(st.Manifest, req.Trigger)
-	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, nil, trigger); err != nil {
+	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, req.Labels, trigger); err != nil {
 		return "", err
 	}
 	return runId, nil

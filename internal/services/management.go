@@ -32,6 +32,7 @@ import (
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
@@ -80,13 +81,22 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return nil, err
 	}
-	workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
-		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
-		syslabels.TriggerManual)
+	// An explicit image is the one case that bypasses the arbiter: it
+	// names WHAT to run rather than asking the pipeline to run itself.
+	if req.GetImage() != "" {
+		workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
+			req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
+			syslabels.TriggerManual)
+		if err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}), nil
+	}
+	runId, err := fireRun(ctx, b, req.GetPipeline(), req.GetRunId(), req.GetParams(), req.GetLabels())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}), nil
+	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: "run/" + runId}), nil
 }
 
 // StartRunOnBundle exposes the start path to the server wiring: the
@@ -100,6 +110,32 @@ func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 
 // startRunCore is the start logic shared by both doors: the management
 // plane and the pipeline binary's own worker-plane RunsAPI.
+// fireRun is how a HUMAN starts a run: the same firing a cron sends.
+// One arbiter decides for everyone, so the concurrency policy is not
+// something manual starts sneak past — which is exactly what they did
+// while this went straight to the workflow.
+func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, params []byte, labels map[string]string) (string, error) {
+	if pipelineId == "" {
+		return "", status.Error(codes.InvalidArgument, "pipeline is required")
+	}
+	if err := wire.ValidateUserLabels(labels); err != nil {
+		return "", status.Error(codes.InvalidArgument, err.Error())
+	}
+	res, err := b.Worker.FirePipeline(ctx, pipelineId, pipelineflow.FireCmd{
+		Params: params, RunId: runId, Labels: labels,
+	})
+	if err != nil {
+		return "", status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if res.RunId == "" {
+		// Queued under the pipeline's policy: the decision is honest,
+		// and the caller learns it instead of getting a refusal.
+		return "", status.Errorf(codes.FailedPrecondition,
+			"run %s: the pipeline's concurrency policy queued this firing behind the live run", res.Decision)
+	}
+	return res.RunId, nil
+}
+
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger string,
 ) (string, string, error) {
