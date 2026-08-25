@@ -5,11 +5,15 @@ package services
 // of the Studio model: no user-side push anywhere on this path.
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -21,32 +25,30 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
-	"github.com/graphene-ci/graphene/internal/materialize"
-	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/revisionflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
+	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 )
 
 // maxSourceBytes bounds one uploaded source tree (tar.gz).
 const maxSourceBytes = 64 << 20
 
-// heartbeatEvery keeps a silent build's stream alive: `go build`
-// prints nothing for minutes and an idle connection dies in the first
-// NAT between the client and the door.
-const heartbeatEvery = 15 * time.Second
+// pollEvery is how often the stream re-reads the revision record while
+// its build runs.
+const pollEvery = 3 * time.Second
 
-// Materialize builds one source tree into a pipeline revision,
-// streaming the build as it happens — the Studio build log.
+// Materialize uploads a source tree and declares its REVISION — the
+// build is the record's own Init, so this call only watches it. The
+// client may hang up at any moment: the build lives in the record, not
+// in this connection.
 func (m *Management) Materialize(ctx context.Context, creq *connect.Request[managementv1.MaterializeRequest], stream *connect.ServerStream[managementv1.MaterializeEvent]) error {
 	req := creq.Msg
 	b, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return err
-	}
-	if m.Materializer == nil {
-		return status.Error(codes.Unimplemented, "materialization is not configured on this installation")
 	}
 	if req.GetPipelineId() == "" {
 		return status.Error(codes.InvalidArgument, "pipeline_id is required")
@@ -55,76 +57,112 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
 	}
 
-	// The build runs in its own goroutine; this one owns the stream —
-	// one writer, no interleaving.
-	type outcome struct {
-		res materialize.Result
-		err error
+	// The revision id IS the source digest: the same tree declares the
+	// same record, and create-or-attach makes deduplication free.
+	sum := sha256.Sum256(req.GetSource())
+	digest := hex.EncodeToString(sum[:])
+	revisionId := digest[:16]
+	sourceLocation := fmt.Sprintf("sources/%s/%s.tgz", req.GetPipelineId(), revisionId)
+	if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(req.GetSource())); err != nil {
+		return status.Errorf(codes.Internal, "store source: %v", err)
 	}
-	events := make(chan *managementv1.MaterializeEvent, 256)
-	done := make(chan outcome, 1)
+	if err := stream.Send(&managementv1.MaterializeEvent{
+		Stage: "upload", Message: "source stored, declaring revision " + revisionId,
+	}); err != nil {
+		return err
+	}
+
+	// Declaring is fire-and-forget: the record's Init runs the build.
+	declared := make(chan error, 1)
 	go func() {
-		res, err := m.Materializer.Materialize(ctx, b.Namespace, req.GetPipelineId(), req.GetSource(),
-			func(stage, message string) {
-				select {
-				case events <- &managementv1.MaterializeEvent{Stage: stage, Message: message}:
-				default: // a slow reader never blocks the build
-				}
-			})
-		close(events)
-		done <- outcome{res: res, err: err}
+		declared <- b.Worker.DeclareRevision(context.WithoutCancel(ctx), req.GetPipelineId(), revisionId, revisionflow.Spec{
+			PipelineId:     req.GetPipelineId(),
+			SourceLocation: sourceLocation,
+			SourceDigest:   "sha256:" + digest,
+		})
 	}()
 
 	started := time.Now()
-	beat := time.NewTicker(heartbeatEvery)
-	defer beat.Stop()
-	for events != nil {
+	lastBeat := ""
+	tick := time.NewTicker(pollEvery)
+	defer tick.Stop()
+	for {
 		select {
-		case ev, ok := <-events:
-			if !ok {
-				events = nil
-				continue
-			}
-			if err := stream.Send(ev); err != nil {
-				return err
-			}
-		case <-beat.C:
-			if err := stream.Send(&managementv1.MaterializeEvent{
-				Stage:   "build",
-				Message: fmt.Sprintf("working… %s elapsed", time.Since(started).Round(time.Second)),
-			}); err != nil {
-				return err
+		case err := <-declared:
+			if err != nil {
+				return status.Errorf(codes.FailedPrecondition, "revision %s: %v", revisionId, err)
 			}
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-tick.C:
+		}
+		phase, _, st, err := b.Worker.DescribeRevision(ctx, req.GetPipelineId(), revisionId)
+		if err != nil {
+			// The record may not be visible for a moment after declare.
+			continue
+		}
+		if beat := b.Worker.RevisionProgress(ctx, req.GetPipelineId(), revisionId); beat != "" && beat != lastBeat {
+			lastBeat = beat
+			stage, message, _ := strings.Cut(beat, ": ")
+			if err := stream.Send(&managementv1.MaterializeEvent{Stage: stage, Message: message}); err != nil {
+				return err
+			}
+		}
+		switch phase {
+		case entity.PhaseReady:
+			manifest, err := m.blobBytes(ctx, b.Namespace, st.ManifestLocation)
+			if err != nil {
+				return status.Errorf(codes.Internal, "revision manifest: %v", err)
+			}
+			m.Log.Info("revision materialized",
+				xlog.String("namespace", b.Namespace),
+				xlog.String("pipeline", req.GetPipelineId()),
+				xlog.String("revision", revisionId))
+			return stream.Send(&managementv1.MaterializeEvent{
+				Stage:   "done",
+				Message: fmt.Sprintf("revision %s in %s", revisionId, time.Since(started).Round(time.Second)),
+				Result: &managementv1.MaterializeResult{
+					RevisionId: revisionId,
+					Image:      st.Image,
+					Manifest:   manifest,
+				},
+			})
+		case entity.PhaseCreateFailed:
+			buildLog, _ := m.blobBytes(ctx, b.Namespace, st.LogLocation)
+			return status.Errorf(codes.FailedPrecondition, "revision %s failed: %s\n%s", revisionId, st.Error, tailBytes(buildLog, 4000))
+		case entity.PhaseDeleting, entity.PhaseDeleted, entity.PhaseDeleteFailed:
+			return status.Errorf(codes.FailedPrecondition, "revision %s is going away (%s)", revisionId, phase)
+		case entity.PhaseCreating:
+			if time.Since(started) > buildDeadline {
+				return status.Errorf(codes.DeadlineExceeded, "revision %s is still building; watch it with `graphenectl get revision %s.%s`",
+					revisionId, req.GetPipelineId(), revisionId)
+			}
 		}
 	}
-	out := <-done
-	if out.err != nil {
-		return status.Errorf(codes.FailedPrecondition, "materialize: %v", out.err)
+}
+
+// buildDeadline bounds how long this STREAM waits; the build itself
+// keeps going in its record.
+const buildDeadline = 30 * time.Minute
+
+// blobBytes reads one blob whole.
+func (m *Management) blobBytes(ctx context.Context, namespace, location string) ([]byte, error) {
+	if location == "" {
+		return nil, nil
 	}
-	res := out.res
-	if err := b.Worker.AddRevision(ctx, req.GetPipelineId(), res.RevisionId, pipelineflow.Revision{
-		Image:            res.ImageRef,
-		ManifestLocation: res.ManifestLocation,
-		SourceDigest:     res.SourceDigest,
-		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		return status.Error(codes.Internal, err.Error())
+	rc, err := m.Blobs.Get(ctx, namespace, location)
+	if err != nil {
+		return nil, err
 	}
-	m.Log.Info("revision materialized",
-		xlog.String("namespace", b.Namespace),
-		xlog.String("pipeline", req.GetPipelineId()),
-		xlog.String("revision", res.RevisionId))
-	return stream.Send(&managementv1.MaterializeEvent{
-		Stage:   "done",
-		Message: fmt.Sprintf("revision %s in %s", res.RevisionId, time.Since(started).Round(time.Second)),
-		Result: &managementv1.MaterializeResult{
-			RevisionId: res.RevisionId,
-			Image:      res.ImageRef,
-			Manifest:   res.Manifest,
-		},
-	})
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(rc)
+}
+
+func tailBytes(b []byte, n int) string {
+	if len(b) <= n {
+		return string(b)
+	}
+	return "…" + string(b[len(b)-n:])
 }
 
 // ListRevisions lists the pipeline's materialized revisions; the
@@ -134,28 +172,30 @@ func (m *Management) ListRevisions(ctx context.Context, creq *connect.Request[ma
 	if err != nil {
 		return nil, err
 	}
-	st, err := b.Worker.GetPipeline(ctx, creq.Msg.GetPipelineId())
+	pipelineId := creq.Msg.GetPipelineId()
+	ids, err := b.Worker.ListRevisions(ctx, pipelineId)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-	ids := make([]string, 0, len(st.Revisions))
-	for rid := range st.Revisions {
-		ids = append(ids, rid)
+	activeImage := ""
+	if st, err := b.Worker.GetPipeline(ctx, pipelineId); err == nil {
+		activeImage = st.Image
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return st.Revisions[ids[i]].CreatedAt > st.Revisions[ids[j]].CreatedAt
-	})
 	out := make([]*managementv1.ListRevisionsResponse_Revision, 0, len(ids))
 	for _, rid := range ids {
-		rev := st.Revisions[rid]
+		phase, spec, st, err := b.Worker.DescribeRevision(ctx, pipelineId, rid)
+		if err != nil {
+			continue
+		}
 		out = append(out, &managementv1.ListRevisionsResponse_Revision{
 			Id:           rid,
-			Image:        rev.Image,
-			SourceDigest: rev.SourceDigest,
-			CreatedAt:    rev.CreatedAt,
-			Active:       rev.Image == st.Image && st.Image != "",
+			Image:        st.Image,
+			SourceDigest: spec.SourceDigest,
+			CreatedAt:    string(phase),
+			Active:       st.Image != "" && st.Image == activeImage,
 		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].GetId() < out[j].GetId() })
 	return connect.NewResponse(&managementv1.ListRevisionsResponse{Revisions: out}), nil
 }
 
@@ -239,28 +279,22 @@ func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request
 	return connect.NewResponse(&managementv1.ActivateRevisionResponse{}), nil
 }
 
-// revisionOf resolves one revision and loads its manifest blob.
-func (m *Management) revisionOf(ctx context.Context, namespace, pipelineId, revisionId string) (pipelineflow.Revision, json.RawMessage, error) {
+// revisionOf resolves one revision record and loads its manifest.
+func (m *Management) revisionOf(ctx context.Context, namespace, pipelineId, revisionId string) (revisionflow.State, json.RawMessage, error) {
 	b, err := m.Bundles.Get(namespace)
 	if err != nil {
-		return pipelineflow.Revision{}, nil, status.Error(codes.Internal, err.Error())
+		return revisionflow.State{}, nil, status.Error(codes.Internal, err.Error())
 	}
-	st, err := b.Worker.GetPipeline(ctx, pipelineId)
+	phase, _, st, err := b.Worker.DescribeRevision(ctx, pipelineId, revisionId)
 	if err != nil {
-		return pipelineflow.Revision{}, nil, status.Error(codes.NotFound, err.Error())
+		return revisionflow.State{}, nil, status.Errorf(codes.NotFound, "pipeline %s has no revision %s", pipelineId, revisionId)
 	}
-	rev, ok := st.Revisions[revisionId]
-	if !ok {
-		return pipelineflow.Revision{}, nil, status.Errorf(codes.NotFound, "pipeline %s has no revision %s", pipelineId, revisionId)
+	if phase != entity.PhaseReady {
+		return revisionflow.State{}, nil, status.Errorf(codes.FailedPrecondition, "revision %s is %s, not ready", revisionId, phase)
 	}
-	rc, err := m.Blobs.Get(ctx, namespace, rev.ManifestLocation)
+	manifest, err := m.blobBytes(ctx, namespace, st.ManifestLocation)
 	if err != nil {
-		return pipelineflow.Revision{}, nil, status.Errorf(codes.Internal, "revision manifest: %v", err)
+		return revisionflow.State{}, nil, status.Errorf(codes.Internal, "revision manifest: %v", err)
 	}
-	defer func() { _ = rc.Close() }()
-	manifest, err := io.ReadAll(rc)
-	if err != nil {
-		return pipelineflow.Revision{}, nil, status.Errorf(codes.Internal, "revision manifest: %v", err)
-	}
-	return rev, manifest, nil
+	return st, manifest, nil
 }

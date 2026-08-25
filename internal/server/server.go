@@ -112,6 +112,23 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	}
 	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
 
+	// The source-first contour: server-side builds on the same docker
+	// host the managed contour drives. Best effort — no docker, no
+	// materialization, everything else keeps working.
+	var materializer *materialize.Materializer
+	if dc, derr := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation()); derr == nil {
+		materializer = &materialize.Materializer{
+			Docker:   dc,
+			Registry: cfg.External,
+			Token:    runTokenFor(cfg, "default"),
+			Insecure: true, // TODO(tls): follow the door
+			Blobs:    blobStore,
+			Log:      log.With(xlog.String("component", "materialize")),
+		}
+	} else {
+		log.Warn("materialization disabled: no docker", xlog.Err(derr))
+	}
+
 	// One runtime bundle per namespace: client, server worker, managed
 	// reaper, stand sweeper — started lazily, bounded by the manager ctx.
 	bundles := nsbundle.New(stop.Context(), nsbundle.Deps{
@@ -120,6 +137,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Registry:         registry,
 		Secrets:          secretStore,
 		Vars:             varStore,
+		Materializer:     materializer,
 		Blobs:            blobStore,
 		External:         cfg.External,
 		RunTokenFor:      func(ns string) string { return runTokenFor(cfg, ns) },
@@ -163,21 +181,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Blobs:   blobStore,
 		Log:     log.With(xlog.String("component", "management")),
 	}
-	// The source-first contour: server-side builds on the same docker
-	// host the managed contour drives. Best effort — no docker, no
-	// materialization, everything else keeps working.
-	if dc, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation()); err == nil {
-		management.Materializer = &materialize.Materializer{
-			Docker:   dc,
-			Registry: cfg.External,
-			Token:    runTokenFor(cfg, "default"),
-			Insecure: true, // TODO(tls): follow the door
-			Blobs:    blobStore,
-			Log:      log.With(xlog.String("component", "materialize")),
-		}
-	} else {
-		log.Warn("materialization disabled: no docker", xlog.Err(err))
-	}
+
 	observe := &services.Observe{
 		Bundles:    bundles,
 		Management: management,
