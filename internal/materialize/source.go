@@ -18,9 +18,10 @@ import (
 	"github.com/gopherex/xlog"
 )
 
-// DefaultGitRuntime carries git; mirror.gcr.io serves regions
-// docker.io does not.
-const DefaultGitRuntime = "mirror.gcr.io/library/alpine/git:latest"
+// The checkout runs in the SAME toolchain image as the build: the Go
+// image already carries git, so an installation pulls one image, not
+// two (and community images are not mirrored where docker.io is
+// blocked).
 
 // GitRequest is one clone.
 type GitRequest struct {
@@ -54,7 +55,10 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	}
 	runtimeImage := m.GitRuntime
 	if runtimeImage == "" {
-		runtimeImage = DefaultGitRuntime
+		runtimeImage = m.Runtime
+	}
+	if runtimeImage == "" {
+		runtimeImage = DefaultRuntime
 	}
 	if err := m.ensureImage(ctx, runtimeImage, progress); err != nil {
 		return res, err
