@@ -291,40 +291,6 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 	return connect.NewResponse(&managementv1.RunRevisionResponse{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID()}), nil
 }
 
-// ActivateRevision makes one revision the version automatic starts
-// use: the ordinary publish path with the revision's manifest and
-// image — the pipeline record updates atomically and the triggers
-// reconcile against the NEW declaration set.
-func (m *Management) ActivateRevision(ctx context.Context, creq *connect.Request[managementv1.ActivateRevisionRequest]) (*connect.Response[managementv1.ActivateRevisionResponse], error) {
-	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbActivate, authz.KindRevision)
-	if err != nil {
-		return nil, err
-	}
-	rev, manifest, err := m.revisionOf(ctx, b.Namespace, req.GetPipelineId(), req.GetRevisionId())
-	if err != nil {
-		return nil, err
-	}
-	// A workspace publishes ONE pipeline: activation records the
-	// binding on both sides — the workspace refuses a second pipeline,
-	// the pipeline joins the workspace's tree.
-	workspaceId := req.GetWorkspaceId()
-	if err := b.Worker.PublishManifestFromWorkspace(ctx, req.GetPipelineId(), manifest, rev.Image, workspaceId); err != nil {
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
-	}
-	if workspaceId != "" {
-		if err := b.Worker.BindWorkspacePipeline(ctx, workspaceId, req.GetPipelineId()); err != nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "bind pipeline: %v", err)
-		}
-	}
-	m.audit(ctx, b, "pipeline/"+req.GetPipelineId(), authz.VerbActivate)
-	m.Log.Info("revision activated",
-		xlog.String("namespace", b.Namespace),
-		xlog.String("pipeline", req.GetPipelineId()),
-		xlog.String("revision", req.GetRevisionId()))
-	return connect.NewResponse(&managementv1.ActivateRevisionResponse{}), nil
-}
-
 // revisionOf resolves one revision record and loads its manifest.
 func (m *Management) revisionOf(ctx context.Context, namespace, pipelineId, revisionId string) (revisionflow.State, json.RawMessage, error) {
 	b, err := m.Bundles.Get(namespace)

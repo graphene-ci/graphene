@@ -145,7 +145,8 @@ func buildKinds() map[string]*kindEntry {
 	add("pipeline", "what a workspace publishes; the arbiter of its runs", false,
 		reflect.TypeFor[pipelineflow.Spec](),
 		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
-		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()))
+		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
+		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))
 
 	add("revision", "one immutable build of a source tree", true,
 		reflect.TypeFor[revisionflow.Spec]())

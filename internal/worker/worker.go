@@ -24,6 +24,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 
 	agentpb "github.com/graphene-ci/agent/pkg/proto/agent/v1"
@@ -162,6 +163,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
 	w.RegisterActivityWithOptions(s.countRuns, activity.RegisterOptions{Name: pipelineflow.CountActivity})
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
+	w.RegisterActivityWithOptions(s.resolveRevision, activity.RegisterOptions{Name: pipelineflow.ResolveActivity})
+	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
 	w.RegisterActivityWithOptions(s.fetchWorkspaceSource, activity.RegisterOptions{Name: workspaceflow.FetchActivity})
@@ -174,6 +177,58 @@ func (s *Worker) triggerFire(ctx context.Context, req triggerflow.FireRequest) e
 	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(req.PipelineId),
 		pipelineflow.Spec{}, pipelineflow.FireCmd{Trigger: req.Trigger, Params: req.Params, Event: req.Event})
 	return err
+}
+
+// resolveRevision reads what one revision holds — the image it built
+// and the manifest it left in the blob store. The pipeline record
+// calls this while activating, so the manifest never travels through a
+// command payload into that record's history.
+func (s *Worker) resolveRevision(ctx context.Context, req pipelineflow.ResolveReq) (pipelineflow.Activation, error) {
+	ph, _, st, err := s.DescribeRevision(ctx, req.PipelineId, req.RevisionId)
+	if err != nil {
+		return pipelineflow.Activation{}, err
+	}
+	if ph != entity.PhaseReady || st.Image == "" {
+		return pipelineflow.Activation{}, fmt.Errorf("revision %s is %s, not a built image", req.RevisionId, ph)
+	}
+	raw, err := s.blobBytes(ctx, st.ManifestLocation)
+	if err != nil {
+		return pipelineflow.Activation{}, fmt.Errorf("manifest of %s: %w", req.RevisionId, err)
+	}
+	var m manifestpb.Manifest
+	if err := protojson.Unmarshal(raw, &m); err != nil {
+		return pipelineflow.Activation{}, fmt.Errorf("manifest: %w", err)
+	}
+	// A revision that declares a trigger this pipeline cannot serve
+	// never becomes the active one.
+	if err := validateTriggers(&m); err != nil {
+		return pipelineflow.Activation{}, temporal.NewNonRetryableApplicationError(err.Error(), "BadManifest", err)
+	}
+	return pipelineflow.Activation{Image: st.Image, Manifest: raw, Concurrency: m.GetConcurrency()}, nil
+}
+
+// reconcileTriggersAct is reconcileTriggers as the pipeline record
+// reaches it: triggers are records of their own, so making them match
+// is a side effect, not a decision.
+func (s *Worker) reconcileTriggersAct(ctx context.Context, req pipelineflow.ReconcileReq) error {
+	var m manifestpb.Manifest
+	if err := protojson.Unmarshal(req.Manifest, &m); err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+	return s.reconcileTriggers(ctx, req.PipelineId, m.GetTriggers())
+}
+
+// blobBytes reads one blob whole.
+func (s *Worker) blobBytes(ctx context.Context, location string) ([]byte, error) {
+	if location == "" || s.deps.Blobs == nil {
+		return nil, fmt.Errorf("no manifest was stored")
+	}
+	rc, err := s.deps.Blobs.Get(ctx, s.deps.Namespace, location)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(rc)
 }
 
 // FirePipeline lands one firing on the pipeline record and returns the
