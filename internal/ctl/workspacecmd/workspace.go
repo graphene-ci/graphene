@@ -5,6 +5,7 @@
 package workspacecmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -30,45 +31,56 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Create a workspace from a git repository or a local directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req := &managementv1.CreateWorkspaceRequest{
-				WorkspaceId: args[0],
-				Runtime:     runtime,
-				PipelineId:  pipelineId,
-			}
+			var tree []byte
 			switch {
 			case gitUrl != "" && upload != "":
 				return fmt.Errorf("a workspace has one source: --git or --upload, not both")
-			case gitUrl != "":
-				req.Source = &managementv1.CreateWorkspaceRequest_Git{Git: &managementv1.GitSource{
-					Url: gitUrl, Ref: gitRef, Subdir: subdir, CredentialSecret: credential,
-				}}
+			case gitUrl == "" && upload == "":
+				return fmt.Errorf("a workspace needs a source: --git <url> or --upload <dir>")
 			case upload != "":
-				tree, err := revisioncmd.PackSource(upload)
+				packed, err := revisioncmd.PackSource(upload)
 				if err != nil {
 					return err
 				}
-				fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", upload, len(tree)/1024)
-				req.Source = &managementv1.CreateWorkspaceRequest_Snapshot{
-					Snapshot: &managementv1.SnapshotSource{Source: tree},
-				}
-			default:
-				return fmt.Errorf("a workspace needs a source: --git <url> or --upload <dir>")
+				fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", upload, len(packed)/1024)
+				tree = packed
 			}
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.CreateWorkspace(cmd.Context(), connect.NewRequest(req))
+			// A workspace is declared through the one door every kind is
+			// declared through. An UPLOADED source is the exception the
+			// rule allows: bytes travel their own channel first, and the
+			// declaration carries the reference.
+			spec := map[string]any{"runtime": runtime, "pipelineId": pipelineId}
+			switch {
+			case gitUrl != "":
+				spec["git"] = map[string]any{
+					"url": gitUrl, "ref": gitRef, "subdir": subdir, "credentialRef": credential,
+				}
+			default:
+				up, err := d.Workspaces.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
+					WorkspaceId: args[0], Source: tree,
+				}))
+				if err != nil {
+					return err
+				}
+				spec["snapshot"] = map[string]any{
+					"location": up.Msg.GetLocation(), "digest": up.Msg.GetDigest(),
+				}
+			}
+			specJSON, err := json.Marshal(spec)
 			if err != nil {
 				return err
 			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
+			applied, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "workspace", Id: args[0], Spec: specJSON,
+			}))
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmdutil.Out, "workspace %s\ntree      %s\n", resp.Msg.GetWorkspaceId(), resp.Msg.GetTreeDigest())
-			if c := resp.Msg.GetGitCommit(); c != "" {
-				fmt.Fprintf(cmdutil.Out, "commit    %s\n", c)
-			}
+			fmt.Fprintf(cmdutil.Out, "%s applied\n", applied.Msg.GetRef())
 			return nil
 		},
 	}
@@ -86,29 +98,44 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Re-fetch the git ref, or replace the tree with a local directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req := &managementv1.SyncWorkspaceRequest{WorkspaceId: args[0]}
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			payload := map[string]any{}
 			if syncUpload != "" {
 				tree, err := revisioncmd.PackSource(syncUpload)
 				if err != nil {
 					return err
 				}
 				fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", syncUpload, len(tree)/1024)
-				req.Source = tree
+				up, err := d.Workspaces.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
+					WorkspaceId: args[0], Source: tree,
+				}))
+				if err != nil {
+					return err
+				}
+				payload["location"], payload["digest"] = up.Msg.GetLocation(), up.Msg.GetDigest()
 			}
-			d, err := f.Dial()
+			raw, err := json.Marshal(payload)
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.SyncWorkspace(cmd.Context(), connect.NewRequest(req))
+			resp, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
+				Ref: "workspace/" + args[0], Command: "sync", Payload: raw,
+			}))
 			if err != nil {
 				return err
 			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
+			var out struct {
+				TreeDigest string `json:"treeDigest"`
+				GitCommit  string `json:"gitCommit"`
+				Generation uint64 `json:"generation"`
 			}
-			fmt.Fprintf(cmdutil.Out, "tree       %s\ngeneration %d\n", resp.Msg.GetTreeDigest(), resp.Msg.GetGeneration())
-			if c := resp.Msg.GetGitCommit(); c != "" {
-				fmt.Fprintf(cmdutil.Out, "commit     %s\n", c)
+			_ = json.Unmarshal(resp.Msg.GetResult(), &out)
+			fmt.Fprintf(cmdutil.Out, "tree       %s\ngeneration %d\n", out.TreeDigest, out.Generation)
+			if out.GitCommit != "" {
+				fmt.Fprintf(cmdutil.Out, "commit     %s\n", out.GitCommit)
 			}
 			return nil
 		},

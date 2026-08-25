@@ -16,100 +16,34 @@ import (
 	"bytes"
 
 	"connectrpc.com/connect"
-	"github.com/gopherex/xlog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/runtimes"
-	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
 // downloadChunk is the size of one source-download frame.
 const downloadChunk = 512 << 10
 
-// CreateWorkspace declares a workspace: its source resolves into a
-// working tree as part of the record's own creation.
-func (m *Management) CreateWorkspace(ctx context.Context, creq *connect.Request[managementv1.CreateWorkspaceRequest]) (*connect.Response[managementv1.CreateWorkspaceResponse], error) {
+// UploadSource stores a source tree and hands back its reference —
+// the channel bytes travel by, so that declarations and commands can
+// carry a reference instead.
+func (m *Management) UploadSource(ctx context.Context, creq *connect.Request[managementv1.UploadSourceRequest]) (*connect.Response[managementv1.UploadSourceResponse], error) {
 	req := creq.Msg
 	b, err := m.allow(ctx, authz.VerbCreate, authz.KindWorkspace)
 	if err != nil {
 		return nil, err
 	}
-	if req.GetWorkspaceId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "workspace_id is required")
+	if len(req.GetSource()) == 0 || len(req.GetSource()) > maxSourceBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
 	}
-	spec := workspaceflow.Spec{
-		Runtime:    req.GetRuntime(),
-		PipelineId: req.GetPipelineId(),
-	}
-	switch src := req.GetSource().(type) {
-	case *managementv1.CreateWorkspaceRequest_Git:
-		spec.Git = &workspaceflow.GitSource{
-			Url:           src.Git.GetUrl(),
-			Ref:           src.Git.GetRef(),
-			Subdir:        src.Git.GetSubdir(),
-			CredentialRef: src.Git.GetCredentialSecret(),
-		}
-	case *managementv1.CreateWorkspaceRequest_Snapshot:
-		location, digest, err := m.storeTree(ctx, b.Namespace, req.GetWorkspaceId(), src.Snapshot.GetSource())
-		if err != nil {
-			return nil, err
-		}
-		spec.Snapshot = &workspaceflow.SnapshotSource{Location: location, Digest: digest}
-	default:
-		return nil, status.Error(codes.InvalidArgument, "a workspace needs a source: git or snapshot")
-	}
-	if err := spec.Validate(); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if err := b.Worker.DeclareWorkspace(ctx, req.GetWorkspaceId(), spec); err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "workspace %s: %v", req.GetWorkspaceId(), err)
-	}
-	_, _, st, err := b.Worker.DescribeWorkspace(ctx, req.GetWorkspaceId())
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	m.Log.Info("workspace created",
-		xlog.String("namespace", b.Namespace),
-		xlog.String("workspace", req.GetWorkspaceId()),
-		xlog.String("commit", st.GitCommit))
-	return connect.NewResponse(&managementv1.CreateWorkspaceResponse{
-		WorkspaceId: req.GetWorkspaceId(),
-		TreeDigest:  st.TreeDigest,
-		GitCommit:   st.GitCommit,
-	}), nil
-}
-
-// SyncWorkspace re-resolves the source, or adopts a freshly uploaded
-// tree — the working tree is mutable, the source spec is not.
-func (m *Management) SyncWorkspace(ctx context.Context, creq *connect.Request[managementv1.SyncWorkspaceRequest]) (*connect.Response[managementv1.SyncWorkspaceResponse], error) {
-	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindWorkspace)
+	location, digest, err := m.storeTree(ctx, b.Namespace, req.GetWorkspaceId(), req.GetSource())
 	if err != nil {
 		return nil, err
 	}
-	cmd := workspaceflow.SyncCmd{}
-	if len(req.GetSource()) > 0 {
-		if len(req.GetSource()) > maxSourceBytes {
-			return nil, status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
-		}
-		location, digest, err := m.storeTree(ctx, b.Namespace, req.GetWorkspaceId(), req.GetSource())
-		if err != nil {
-			return nil, err
-		}
-		cmd.Location, cmd.Digest = location, digest
-	}
-	res, err := b.Worker.SyncWorkspace(ctx, req.GetWorkspaceId(), cmd)
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "sync %s: %v", req.GetWorkspaceId(), err)
-	}
-	return connect.NewResponse(&managementv1.SyncWorkspaceResponse{
-		TreeDigest: res.TreeDigest,
-		GitCommit:  res.GitCommit,
-		Generation: res.Generation,
-	}), nil
+	return connect.NewResponse(&managementv1.UploadSourceResponse{Location: location, Digest: digest}), nil
 }
 
 // DownloadSource streams the workspace's current working tree back —

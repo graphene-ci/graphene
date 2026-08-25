@@ -19,14 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkspacesAPI_CreateWorkspace_FullMethodName = "/graphene.management.v1.WorkspacesAPI/CreateWorkspace"
-	WorkspacesAPI_SyncWorkspace_FullMethodName   = "/graphene.management.v1.WorkspacesAPI/SyncWorkspace"
-	WorkspacesAPI_DownloadSource_FullMethodName  = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
-	WorkspacesAPI_ListRuntimes_FullMethodName    = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
-	WorkspacesAPI_ListFiles_FullMethodName       = "/graphene.management.v1.WorkspacesAPI/ListFiles"
-	WorkspacesAPI_ReadFile_FullMethodName        = "/graphene.management.v1.WorkspacesAPI/ReadFile"
-	WorkspacesAPI_WriteFile_FullMethodName       = "/graphene.management.v1.WorkspacesAPI/WriteFile"
-	WorkspacesAPI_DeleteFile_FullMethodName      = "/graphene.management.v1.WorkspacesAPI/DeleteFile"
+	WorkspacesAPI_UploadSource_FullMethodName   = "/graphene.management.v1.WorkspacesAPI/UploadSource"
+	WorkspacesAPI_DownloadSource_FullMethodName = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
+	WorkspacesAPI_ListRuntimes_FullMethodName   = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
+	WorkspacesAPI_ListFiles_FullMethodName      = "/graphene.management.v1.WorkspacesAPI/ListFiles"
+	WorkspacesAPI_ReadFile_FullMethodName       = "/graphene.management.v1.WorkspacesAPI/ReadFile"
+	WorkspacesAPI_WriteFile_FullMethodName      = "/graphene.management.v1.WorkspacesAPI/WriteFile"
+	WorkspacesAPI_DeleteFile_FullMethodName     = "/graphene.management.v1.WorkspacesAPI/DeleteFile"
 )
 
 // WorkspacesAPIClient is the client API for WorkspacesAPI service.
@@ -38,11 +37,14 @@ const (
 // an uploaded tree — a runtime, a working tree kept on the server, and
 // at most one pipeline. Listing, reading and deleting go through the
 // ordinary ResourcesAPI: a workspace is a record like any other.
+// A workspace is a RECORD: declared with Apply, changed with Invoke,
+// read with Get. What stays here is what a command cannot carry —
+// bytes, and questions about the installation rather than a record.
 type WorkspacesAPIClient interface {
-	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
-	// SyncWorkspace re-resolves the source: a Git workspace fetches its
-	// ref again, a snapshot workspace takes a freshly uploaded tree.
-	SyncWorkspace(ctx context.Context, in *SyncWorkspaceRequest, opts ...grpc.CallOption) (*SyncWorkspaceResponse, error)
+	// UploadSource stores a source tree and returns its reference. Bytes
+	// do not travel in commands: a command's payload becomes an event in
+	// the record's history, and a source tree would bury it.
+	UploadSource(ctx context.Context, in *UploadSourceRequest, opts ...grpc.CallOption) (*UploadSourceResponse, error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(ctx context.Context, in *DownloadSourceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadSourceChunk], error)
 	// ListRuntimes answers "which languages can I write a pipeline in
@@ -65,20 +67,10 @@ func NewWorkspacesAPIClient(cc grpc.ClientConnInterface) WorkspacesAPIClient {
 	return &workspacesAPIClient{cc}
 }
 
-func (c *workspacesAPIClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error) {
+func (c *workspacesAPIClient) UploadSource(ctx context.Context, in *UploadSourceRequest, opts ...grpc.CallOption) (*UploadSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateWorkspaceResponse)
-	err := c.cc.Invoke(ctx, WorkspacesAPI_CreateWorkspace_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *workspacesAPIClient) SyncWorkspace(ctx context.Context, in *SyncWorkspaceRequest, opts ...grpc.CallOption) (*SyncWorkspaceResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SyncWorkspaceResponse)
-	err := c.cc.Invoke(ctx, WorkspacesAPI_SyncWorkspace_FullMethodName, in, out, cOpts...)
+	out := new(UploadSourceResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_UploadSource_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -163,11 +155,14 @@ func (c *workspacesAPIClient) DeleteFile(ctx context.Context, in *DeleteFileRequ
 // an uploaded tree — a runtime, a working tree kept on the server, and
 // at most one pipeline. Listing, reading and deleting go through the
 // ordinary ResourcesAPI: a workspace is a record like any other.
+// A workspace is a RECORD: declared with Apply, changed with Invoke,
+// read with Get. What stays here is what a command cannot carry —
+// bytes, and questions about the installation rather than a record.
 type WorkspacesAPIServer interface {
-	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
-	// SyncWorkspace re-resolves the source: a Git workspace fetches its
-	// ref again, a snapshot workspace takes a freshly uploaded tree.
-	SyncWorkspace(context.Context, *SyncWorkspaceRequest) (*SyncWorkspaceResponse, error)
+	// UploadSource stores a source tree and returns its reference. Bytes
+	// do not travel in commands: a command's payload becomes an event in
+	// the record's history, and a source tree would bury it.
+	UploadSource(context.Context, *UploadSourceRequest) (*UploadSourceResponse, error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(*DownloadSourceRequest, grpc.ServerStreamingServer[DownloadSourceChunk]) error
 	// ListRuntimes answers "which languages can I write a pipeline in
@@ -190,11 +185,8 @@ type WorkspacesAPIServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWorkspacesAPIServer struct{}
 
-func (UnimplementedWorkspacesAPIServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
-}
-func (UnimplementedWorkspacesAPIServer) SyncWorkspace(context.Context, *SyncWorkspaceRequest) (*SyncWorkspaceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SyncWorkspace not implemented")
+func (UnimplementedWorkspacesAPIServer) UploadSource(context.Context, *UploadSourceRequest) (*UploadSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UploadSource not implemented")
 }
 func (UnimplementedWorkspacesAPIServer) DownloadSource(*DownloadSourceRequest, grpc.ServerStreamingServer[DownloadSourceChunk]) error {
 	return status.Error(codes.Unimplemented, "method DownloadSource not implemented")
@@ -235,38 +227,20 @@ func RegisterWorkspacesAPIServer(s grpc.ServiceRegistrar, srv WorkspacesAPIServe
 	s.RegisterService(&WorkspacesAPI_ServiceDesc, srv)
 }
 
-func _WorkspacesAPI_CreateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateWorkspaceRequest)
+func _WorkspacesAPI_UploadSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadSourceRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WorkspacesAPIServer).CreateWorkspace(ctx, in)
+		return srv.(WorkspacesAPIServer).UploadSource(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: WorkspacesAPI_CreateWorkspace_FullMethodName,
+		FullMethod: WorkspacesAPI_UploadSource_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkspacesAPIServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _WorkspacesAPI_SyncWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SyncWorkspaceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WorkspacesAPIServer).SyncWorkspace(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WorkspacesAPI_SyncWorkspace_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkspacesAPIServer).SyncWorkspace(ctx, req.(*SyncWorkspaceRequest))
+		return srv.(WorkspacesAPIServer).UploadSource(ctx, req.(*UploadSourceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -380,12 +354,8 @@ var WorkspacesAPI_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*WorkspacesAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateWorkspace",
-			Handler:    _WorkspacesAPI_CreateWorkspace_Handler,
-		},
-		{
-			MethodName: "SyncWorkspace",
-			Handler:    _WorkspacesAPI_SyncWorkspace_Handler,
+			MethodName: "UploadSource",
+			Handler:    _WorkspacesAPI_UploadSource_Handler,
 		},
 		{
 			MethodName: "ListRuntimes",
