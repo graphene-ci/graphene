@@ -35,7 +35,10 @@ const (
 // PIPELINE REVISION — runnable as a draft, activatable as the version
 // automatic starts use. No user-side push exists on this path.
 type RevisionsAPIClient interface {
-	Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (*MaterializeResponse, error)
+	// Materialize STREAMS progress: a source build takes minutes, and a
+	// silent request dies on the first idle NAT between the client and
+	// the door. The stream is also the Studio build log.
+	Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MaterializeEvent], error)
 	ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error)
 	RunRevision(ctx context.Context, in *RunRevisionRequest, opts ...grpc.CallOption) (*RunRevisionResponse, error)
 	ActivateRevision(ctx context.Context, in *ActivateRevisionRequest, opts ...grpc.CallOption) (*ActivateRevisionResponse, error)
@@ -49,15 +52,24 @@ func NewRevisionsAPIClient(cc grpc.ClientConnInterface) RevisionsAPIClient {
 	return &revisionsAPIClient{cc}
 }
 
-func (c *revisionsAPIClient) Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (*MaterializeResponse, error) {
+func (c *revisionsAPIClient) Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MaterializeEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MaterializeResponse)
-	err := c.cc.Invoke(ctx, RevisionsAPI_Materialize_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &RevisionsAPI_ServiceDesc.Streams[0], RevisionsAPI_Materialize_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[MaterializeRequest, MaterializeEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RevisionsAPI_MaterializeClient = grpc.ServerStreamingClient[MaterializeEvent]
 
 func (c *revisionsAPIClient) ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -99,7 +111,10 @@ func (c *revisionsAPIClient) ActivateRevision(ctx context.Context, in *ActivateR
 // PIPELINE REVISION — runnable as a draft, activatable as the version
 // automatic starts use. No user-side push exists on this path.
 type RevisionsAPIServer interface {
-	Materialize(context.Context, *MaterializeRequest) (*MaterializeResponse, error)
+	// Materialize STREAMS progress: a source build takes minutes, and a
+	// silent request dies on the first idle NAT between the client and
+	// the door. The stream is also the Studio build log.
+	Materialize(*MaterializeRequest, grpc.ServerStreamingServer[MaterializeEvent]) error
 	ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error)
 	RunRevision(context.Context, *RunRevisionRequest) (*RunRevisionResponse, error)
 	ActivateRevision(context.Context, *ActivateRevisionRequest) (*ActivateRevisionResponse, error)
@@ -113,8 +128,8 @@ type RevisionsAPIServer interface {
 // pointer dereference when methods are called.
 type UnimplementedRevisionsAPIServer struct{}
 
-func (UnimplementedRevisionsAPIServer) Materialize(context.Context, *MaterializeRequest) (*MaterializeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Materialize not implemented")
+func (UnimplementedRevisionsAPIServer) Materialize(*MaterializeRequest, grpc.ServerStreamingServer[MaterializeEvent]) error {
+	return status.Error(codes.Unimplemented, "method Materialize not implemented")
 }
 func (UnimplementedRevisionsAPIServer) ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRevisions not implemented")
@@ -146,23 +161,16 @@ func RegisterRevisionsAPIServer(s grpc.ServiceRegistrar, srv RevisionsAPIServer)
 	s.RegisterService(&RevisionsAPI_ServiceDesc, srv)
 }
 
-func _RevisionsAPI_Materialize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MaterializeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _RevisionsAPI_Materialize_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(MaterializeRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(RevisionsAPIServer).Materialize(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RevisionsAPI_Materialize_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RevisionsAPIServer).Materialize(ctx, req.(*MaterializeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(RevisionsAPIServer).Materialize(m, &grpc.GenericServerStream[MaterializeRequest, MaterializeEvent]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RevisionsAPI_MaterializeServer = grpc.ServerStreamingServer[MaterializeEvent]
 
 func _RevisionsAPI_ListRevisions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListRevisionsRequest)
@@ -226,10 +234,6 @@ var RevisionsAPI_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*RevisionsAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Materialize",
-			Handler:    _RevisionsAPI_Materialize_Handler,
-		},
-		{
 			MethodName: "ListRevisions",
 			Handler:    _RevisionsAPI_ListRevisions_Handler,
 		},
@@ -242,6 +246,12 @@ var RevisionsAPI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RevisionsAPI_ActivateRevision_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Materialize",
+			Handler:       _RevisionsAPI_Materialize_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/management/v1/revisions.proto",
 }

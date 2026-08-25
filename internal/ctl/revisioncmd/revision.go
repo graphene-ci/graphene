@@ -46,17 +46,27 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Revisions.Materialize(cmd.Context(), connect.NewRequest(&managementv1.MaterializeRequest{
+			stream, err := d.Revisions.Materialize(cmd.Context(), connect.NewRequest(&managementv1.MaterializeRequest{
 				PipelineId: args[0], Source: src,
 			}))
 			if err != nil {
 				return err
 			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
+			defer func() { _ = stream.Close() }()
+			// The build streams as it happens; the last event carries
+			// the revision.
+			for stream.Receive() {
+				ev := stream.Msg()
+				if res := ev.GetResult(); res != nil {
+					if done, err := f.Emit(res); done || err != nil {
+						return err
+					}
+					fmt.Fprintf(cmdutil.Out, "revision %s\nimage    %s\n", res.GetRevisionId(), res.GetImage())
+					return nil
+				}
+				fmt.Fprintf(os.Stderr, "%-8s %s\n", ev.GetStage(), ev.GetMessage())
 			}
-			fmt.Fprintf(cmdutil.Out, "revision %s\nimage    %s\n", resp.Msg.GetRevisionId(), resp.Msg.GetImage())
-			return nil
+			return stream.Err()
 		},
 	}
 	mat.Flags().StringVarP(&srcPath, "source", "f", ".", "source directory or .tgz file")
