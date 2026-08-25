@@ -295,6 +295,22 @@ func listQuery(query string, sel *managementv1.Selector) (string, error) {
 	if sel.GetKind() != "" {
 		out = fmt.Sprintf("EntityKind = '%s'", sel.GetKind())
 	}
+	// A RUN's phase is its execution status, and a finished run is not
+	// a dead resource — it is the history a developer came to read. So
+	// runs are filtered by status, and never hidden once closed.
+	if sel.GetKind() == "run" {
+		if sel.GetPhase() != "" {
+			out += fmt.Sprintf(" AND ExecutionStatus = '%s'", sel.GetPhase())
+		}
+		if owner := sel.GetOwner(); owner != "" {
+			out += fmt.Sprintf(" AND %s = '%s'", wire.SearchAttrOwner.GetName(), owner)
+		}
+		labelTerms, err := labelQueryTerms(sel.GetLabels())
+		if err != nil {
+			return "", err
+		}
+		return out + labelTerms, nil
+	}
 	if sel.GetPhase() != "" {
 		out += fmt.Sprintf(" AND EntityPhase = '%s'", sel.GetPhase())
 	}
