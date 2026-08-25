@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// RevisionsAPI is the source-first contour: a SOURCE TREE goes in, the
+// server materializes it (build in a runtime container, manifest from
+// the binary's describe mode, ko-style OCI push), and the result is a
+// PIPELINE REVISION — runnable as a draft, activatable as the version
+// automatic starts use. No user-side push exists on this path.
+service RevisionsAPI {
+  rpc Materialize(MaterializeRequest) returns (MaterializeResponse);
+  rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
+  rpc RunRevision(RunRevisionRequest) returns (RunRevisionResponse);
+  rpc ActivateRevision(ActivateRevisionRequest) returns (ActivateRevisionResponse);
+}
+
+message MaterializeRequest {
+  string pipeline_id = 1;
+  // The full source tree as tar.gz — the workspace root is the build
+  // root: `go build .`, one package main.
+  bytes source = 2;
+}
+
+message MaterializeResponse {
+  string revision_id = 1;
+  string image = 2;
+  // The revision's manifest as protojson — what Plan renders.
+  bytes manifest = 3;
+  string build_log = 4;
+}
+
+message ListRevisionsRequest {
+  string pipeline_id = 1;
+}
+
+message ListRevisionsResponse {
+  message Revision {
+    string id = 1;
+    string image = 2;
+    string source_digest = 3;
+    string created_at = 4;
+    bool active = 5;
+  }
+  repeated Revision revisions = 1;
+}
+
+message RunRevisionRequest {
+  string pipeline_id = 1;
+  string revision_id = 2;
+  string run_id = 3;
+  bytes params = 4;
+  map<string, string> labels = 5;
+}
+
+message RunRevisionResponse {
+  string workflow_id = 1;
+  string temporal_run_id = 2;
+}
+
+message ActivateRevisionRequest {
+  string pipeline_id = 1;
+  string revision_id = 2;
+}
+
+message ActivateRevisionResponse {}
