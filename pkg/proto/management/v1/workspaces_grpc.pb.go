@@ -23,6 +23,10 @@ const (
 	WorkspacesAPI_SyncWorkspace_FullMethodName   = "/graphene.management.v1.WorkspacesAPI/SyncWorkspace"
 	WorkspacesAPI_DownloadSource_FullMethodName  = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
 	WorkspacesAPI_ListRuntimes_FullMethodName    = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
+	WorkspacesAPI_ListFiles_FullMethodName       = "/graphene.management.v1.WorkspacesAPI/ListFiles"
+	WorkspacesAPI_ReadFile_FullMethodName        = "/graphene.management.v1.WorkspacesAPI/ReadFile"
+	WorkspacesAPI_WriteFile_FullMethodName       = "/graphene.management.v1.WorkspacesAPI/WriteFile"
+	WorkspacesAPI_DeleteFile_FullMethodName      = "/graphene.management.v1.WorkspacesAPI/DeleteFile"
 )
 
 // WorkspacesAPIClient is the client API for WorkspacesAPI service.
@@ -44,6 +48,13 @@ type WorkspacesAPIClient interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(ctx context.Context, in *ListRuntimesRequest, opts ...grpc.CallOption) (*ListRuntimesResponse, error)
+	// The working tree is EDITABLE: Studio reads and writes files
+	// straight into the workspace, and every write is durable — that is
+	// the whole point of the tree living on the server.
+	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error)
+	WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
+	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
 }
 
 type workspacesAPIClient struct {
@@ -103,6 +114,46 @@ func (c *workspacesAPIClient) ListRuntimes(ctx context.Context, in *ListRuntimes
 	return out, nil
 }
 
+func (c *workspacesAPIClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFilesResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspacesAPIClient) ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadFileResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_ReadFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspacesAPIClient) WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteFileResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_WriteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspacesAPIClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteFileResponse)
+	err := c.cc.Invoke(ctx, WorkspacesAPI_DeleteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkspacesAPIServer is the server API for WorkspacesAPI service.
 // All implementations must embed UnimplementedWorkspacesAPIServer
 // for forward compatibility.
@@ -122,6 +173,13 @@ type WorkspacesAPIServer interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *ListRuntimesRequest) (*ListRuntimesResponse, error)
+	// The working tree is EDITABLE: Studio reads and writes files
+	// straight into the workspace, and every write is durable — that is
+	// the whole point of the tree living on the server.
+	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error)
+	WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error)
+	DeleteFile(context.Context, *DeleteFileRequest) (*WriteFileResponse, error)
 	mustEmbedUnimplementedWorkspacesAPIServer()
 }
 
@@ -143,6 +201,18 @@ func (UnimplementedWorkspacesAPIServer) DownloadSource(*DownloadSourceRequest, g
 }
 func (UnimplementedWorkspacesAPIServer) ListRuntimes(context.Context, *ListRuntimesRequest) (*ListRuntimesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRuntimes not implemented")
+}
+func (UnimplementedWorkspacesAPIServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedWorkspacesAPIServer) ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadFile not implemented")
+}
+func (UnimplementedWorkspacesAPIServer) WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteFile not implemented")
+}
+func (UnimplementedWorkspacesAPIServer) DeleteFile(context.Context, *DeleteFileRequest) (*WriteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
 }
 func (UnimplementedWorkspacesAPIServer) mustEmbedUnimplementedWorkspacesAPIServer() {}
 func (UnimplementedWorkspacesAPIServer) testEmbeddedByValue()                       {}
@@ -230,6 +300,78 @@ func _WorkspacesAPI_ListRuntimes_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkspacesAPI_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspacesAPIServer).ListFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspacesAPI_ListFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspacesAPIServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkspacesAPI_ReadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspacesAPIServer).ReadFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspacesAPI_ReadFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspacesAPIServer).ReadFile(ctx, req.(*ReadFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkspacesAPI_WriteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspacesAPIServer).WriteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspacesAPI_WriteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspacesAPIServer).WriteFile(ctx, req.(*WriteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkspacesAPI_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspacesAPIServer).DeleteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspacesAPI_DeleteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspacesAPIServer).DeleteFile(ctx, req.(*DeleteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkspacesAPI_ServiceDesc is the grpc.ServiceDesc for WorkspacesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -248,6 +390,22 @@ var WorkspacesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRuntimes",
 			Handler:    _WorkspacesAPI_ListRuntimes_Handler,
+		},
+		{
+			MethodName: "ListFiles",
+			Handler:    _WorkspacesAPI_ListFiles_Handler,
+		},
+		{
+			MethodName: "ReadFile",
+			Handler:    _WorkspacesAPI_ReadFile_Handler,
+		},
+		{
+			MethodName: "WriteFile",
+			Handler:    _WorkspacesAPI_WriteFile_Handler,
+		},
+		{
+			MethodName: "DeleteFile",
+			Handler:    _WorkspacesAPI_DeleteFile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

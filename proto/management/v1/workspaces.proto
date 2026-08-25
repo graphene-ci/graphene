@@ -19,6 +19,14 @@ service WorkspacesAPI {
   // ListRuntimes answers "which languages can I write a pipeline in
   // on THIS installation".
   rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
+
+  // The working tree is EDITABLE: Studio reads and writes files
+  // straight into the workspace, and every write is durable — that is
+  // the whole point of the tree living on the server.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (WriteFileResponse);
 }
 
 message GitSource {
@@ -85,4 +93,42 @@ message ListRuntimesResponse {
     bool is_default = 4;
   }
   repeated Runtime runtimes = 1;
+}
+
+message ListFilesRequest {
+  string workspace_id = 1;
+}
+
+message ListFilesResponse {
+  message File {
+    string path = 1;
+    int64 size = 2;
+  }
+  repeated File files = 1;
+  string tree_digest = 2;
+}
+
+message ReadFileRequest {
+  string workspace_id = 1;
+  string path = 2;
+}
+
+message ReadFileResponse {
+  bytes content = 1;
+}
+
+message WriteFileRequest {
+  string workspace_id = 1;
+  string path = 2;
+  bytes content = 3;
+}
+
+message WriteFileResponse {
+  string tree_digest = 1;
+  uint64 generation = 2;
+}
+
+message DeleteFileRequest {
+  string workspace_id = 1;
+  string path = 2;
 }

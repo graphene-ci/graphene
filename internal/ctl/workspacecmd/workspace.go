@@ -187,6 +187,104 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(create, sync, download, runtimesCmd)
+	files := &cobra.Command{
+		Use:   "files <workspace>",
+		Short: "List the workspace's working tree",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Workspaces.ListFiles(cmd.Context(), connect.NewRequest(&managementv1.ListFilesRequest{WorkspaceId: args[0]}))
+			if err != nil {
+				return err
+			}
+			if done, err := f.Emit(resp.Msg); done || err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "SIZE\tPATH\n")
+			for _, file := range resp.Msg.GetFiles() {
+				fmt.Fprintf(cmdutil.Out, "%d\t%s\n", file.GetSize(), file.GetPath())
+			}
+			return nil
+		},
+	}
+
+	cat := &cobra.Command{
+		Use:   "cat <workspace> <path>",
+		Short: "Read one file of the working tree",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Workspaces.ReadFile(cmd.Context(), connect.NewRequest(&managementv1.ReadFileRequest{
+				WorkspaceId: args[0], Path: args[1],
+			}))
+			if err != nil {
+				return err
+			}
+			_, err = cmdutil.Out.Write(resp.Msg.GetContent())
+			return err
+		},
+	}
+
+	var fromFile string
+	write := &cobra.Command{
+		Use:   "write <workspace> <path>",
+		Short: "Write one file into the working tree (stdin, or --from)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var content []byte
+			var err error
+			if fromFile != "" {
+				content, err = os.ReadFile(fromFile) //nolint:gosec // the user's named file
+			} else {
+				content, err = io.ReadAll(os.Stdin)
+			}
+			if err != nil {
+				return err
+			}
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Workspaces.WriteFile(cmd.Context(), connect.NewRequest(&managementv1.WriteFileRequest{
+				WorkspaceId: args[0], Path: args[1], Content: content,
+			}))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "%s written; tree %s (generation %d)\n",
+				args[1], resp.Msg.GetTreeDigest(), resp.Msg.GetGeneration())
+			return nil
+		},
+	}
+	write.Flags().StringVar(&fromFile, "from", "", "read the content from this local file")
+
+	rm := &cobra.Command{
+		Use:   "rm <workspace> <path>",
+		Short: "Delete one file from the working tree",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Workspaces.DeleteFile(cmd.Context(), connect.NewRequest(&managementv1.DeleteFileRequest{
+				WorkspaceId: args[0], Path: args[1],
+			}))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "%s deleted; tree %s (generation %d)\n",
+				args[1], resp.Msg.GetTreeDigest(), resp.Msg.GetGeneration())
+			return nil
+		},
+	}
+
+	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm)
 	return cmd
 }
