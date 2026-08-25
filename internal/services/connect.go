@@ -24,7 +24,7 @@ import (
 func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Authenticator) {
 	opts := connect.WithInterceptors(statusCodes{})
 	mount := func(pattern string, handler http.Handler) {
-		mux.Handle(pattern, withCORS(withBearer(handler, authn)))
+		mux.Handle(pattern, withCORS(withBearer(handler, authn, m)))
 	}
 	mount(managementv1connect.NewRunsAPIHandler(m, opts))
 	mount(managementv1connect.NewResourcesAPIHandler(m, opts))
@@ -33,6 +33,7 @@ func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Aut
 	mount(managementv1connect.NewVarsAPIHandler(m, opts))
 	mount(managementv1connect.NewRevisionsAPIHandler(m, opts))
 	mount(managementv1connect.NewWorkspacesAPIHandler(m, opts))
+	mount(managementv1connect.NewRbacAPIHandler(m, opts))
 	mount(managementv1connect.NewObserveAPIHandler(o, opts))
 }
 
@@ -54,18 +55,28 @@ func withCORS(next http.Handler) http.Handler {
 }
 
 // withBearer authenticates every request and mirrors the namespace
-// header into gRPC metadata.
-func withBearer(next http.Handler, authn *auth.Authenticator) http.Handler {
+// header into gRPC metadata. Four contours answer, in order of cost:
+// a configured token, a minted one (a run, an agent), a service
+// account's issued token, and finally an identity provider's id_token.
+func withBearer(next http.Handler, authn *auth.Authenticator, m *Management) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		p, ok := authn.Check(token)
-		if !ok {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
+		ctx := r.Context()
+		namespace := r.Header.Get(NamespaceHeader)
+
+		switch identity, ok := m.authenticate(ctx, token, namespace); {
+		case ok:
+			ctx = auth.WithIdentity(ctx, identity)
+		default:
+			p, ok := authn.Check(token)
+			if !ok {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+			ctx = auth.WithPrincipal(ctx, p)
 		}
-		ctx := auth.WithPrincipal(r.Context(), p)
-		if ns := r.Header.Get(NamespaceHeader); ns != "" {
-			ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(NamespaceHeader, ns))
+		if namespace != "" {
+			ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(NamespaceHeader, namespace))
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

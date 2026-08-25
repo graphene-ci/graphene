@@ -19,6 +19,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/ctl/lifecyclecmd"
 	"github.com/graphene-ci/graphene/internal/ctl/misccmd"
 	"github.com/graphene-ci/graphene/internal/ctl/observecmd"
+	"github.com/graphene-ci/graphene/internal/ctl/rbaccmd"
 	"github.com/graphene-ci/graphene/internal/ctl/revisioncmd"
 	"github.com/graphene-ci/graphene/internal/ctl/runcmd"
 	"github.com/graphene-ci/graphene/internal/ctl/workspacecmd"
@@ -72,7 +73,8 @@ binary itself, over the same connection contexts.`,
 		lifecyclecmd.NewInvoke(f),
 	)
 	add("runs", runcmd.New(f))
-	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), misccmd.NewVar(f), revisioncmd.New(f), workspacecmd.New(f), misccmd.NewNs(f))
+	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), misccmd.NewVar(f), revisioncmd.New(f), workspacecmd.New(f),
+		rbaccmd.NewRole(f), rbaccmd.NewBinding(f), rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f), misccmd.NewNs(f))
 
 	initCmd := &cobra.Command{
 		Use:   "init <name>",

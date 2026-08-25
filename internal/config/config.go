@@ -92,6 +92,25 @@ type File struct {
 		Store string `mapstructure:"store" default:"/var/lib/graphene/vars.enc"`
 	} `mapstructure:"vars"`
 
+	// Identity is where PEOPLE come from: an OIDC provider verifies
+	// them, this installation never stores a password. Empty means
+	// service accounts only.
+	Identity struct {
+		// Issuer is the provider's issuer URL.
+		Issuer string `mapstructure:"issuer"`
+		// Audience is this installation's client id at the provider.
+		Audience string `mapstructure:"audience"`
+		// UsernameClaim names the claim used as the subject
+		// ("sub" by default; "email" is common).
+		UsernameClaim string `mapstructure:"username_claim"`
+		// GroupsClaim names the claim carrying group membership.
+		GroupsClaim string `mapstructure:"groups_claim"`
+		// SigningKey signs the short-lived tokens of runs and agents.
+		// Empty falls back to the secrets key, and without either the
+		// minted contour is unavailable.
+		SigningKey string `mapstructure:"signing_key"`
+	} `mapstructure:"identity"`
+
 	// Runtimes extends or overrides the toolchain catalogue: adding a
 	// language to an installation is configuration, not a code change.
 	Runtimes []runtimes.Runtime `mapstructure:"runtimes"`
@@ -151,6 +170,13 @@ type Config struct {
 	Runtimes  []runtimes.Runtime
 	Vars      map[string]string
 	VarsStore string
+	// Identity wires the OIDC provider (people) and the signing key of
+	// minted tokens (runs and agents).
+	OIDCIssuer        string
+	OIDCAudience      string
+	OIDCUsernameClaim string
+	OIDCGroupsClaim   string
+	SigningKey        string
 
 	BlobBackend      string
 	BlobDir          string
@@ -238,6 +264,11 @@ func Resolve(f File) (Config, error) {
 		SecretsStore:          f.Secrets.Store,
 		SecretsKey:            f.Secrets.Key,
 		Runtimes:              f.Runtimes,
+		OIDCIssuer:            f.Identity.Issuer,
+		OIDCAudience:          f.Identity.Audience,
+		OIDCUsernameClaim:     f.Identity.UsernameClaim,
+		OIDCGroupsClaim:       f.Identity.GroupsClaim,
+		SigningKey:            f.Identity.SigningKey,
 		Vars:                  f.Vars.Values,
 		VarsStore:             f.Vars.Store,
 	}
@@ -248,6 +279,11 @@ func Resolve(f File) (Config, error) {
 		}
 	}
 	cfg.AgentHeartbeat = time.Duration(cfg.AgentHeartbeatSeconds) * time.Second
+	// One key protects both stores of secrets: reusing it for minting
+	// keeps a dev installation to a single configured secret.
+	if cfg.SigningKey == "" {
+		cfg.SigningKey = cfg.SecretsKey
+	}
 
 	for _, entry := range splitCSV(f.Auth.AdminTokens) {
 		tok, ns := splitToken(entry, "*")

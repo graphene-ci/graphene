@@ -71,6 +71,7 @@ type Door struct {
 	Vars       managementv1connect.VarsAPIClient
 	Revisions  managementv1connect.RevisionsAPIClient
 	Workspaces managementv1connect.WorkspacesAPIClient
+	Rbac       managementv1connect.RbacAPIClient
 	Ns         managementv1connect.NamespacesAPIClient
 }
 
@@ -103,6 +104,7 @@ func DialContext(cc cliconfig.Context) (*Door, error) {
 		Vars:       managementv1connect.NewVarsAPIClient(client, base, auth),
 		Revisions:  managementv1connect.NewRevisionsAPIClient(client, base, auth),
 		Workspaces: managementv1connect.NewWorkspacesAPIClient(client, base, auth),
+		Rbac:       managementv1connect.NewRbacAPIClient(client, base, auth),
 		Ns:         managementv1connect.NewNamespacesAPIClient(client, base, auth),
 	}, nil
 }
