@@ -656,6 +656,22 @@ func (s *Worker) AccountForToken(ctx context.Context, hash string) (string, bool
 	return "", false
 }
 
+// Note lands one domain event in a record's own history. Used for the
+// AUDIT of mutations: who did what to this record, kept where the
+// record keeps everything else. Best effort by design — an audit line
+// must never fail the operation it describes; a record that is gone
+// has nothing to audit.
+func (s *Worker) Note(ctx context.Context, ref string, event any) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	if err := s.deps.Client.SignalWorkflow(ctx, ref, "", entity.NoteSignalName, json.RawMessage(payload)); err != nil {
+		s.deps.Log.Debug("audit note not delivered",
+			xlog.String("record", ref), xlog.Err(err))
+	}
+}
+
 // RevisionProgress reads the build's last heartbeat — the record's own
 // liveness, no connection held anywhere. Empty when nothing is
 // building or the detail is unreadable.

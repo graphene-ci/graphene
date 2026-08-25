@@ -11,6 +11,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -102,4 +103,36 @@ func mintRunToken(b *nsbundle.Bundle, runId id.RunId) string {
 		return ""
 	}
 	return b.MintRunToken(b.Namespace, string(runId))
+}
+
+// auditEvent is one line of a record's audit: who changed it and how.
+// It lands in the record's OWN history, next to what actually
+// happened — not in a separate journal that can drift from it.
+type auditEvent struct {
+	// Audit marks the note so a reader can tell it from a domain
+	// milestone.
+	Audit string `json:"audit"`
+	// Actor is the caller in subject form ("user:alice", "sa:ci").
+	Actor string `json:"actor"`
+	Verb  string `json:"verb"`
+	At    string `json:"at"`
+}
+
+// audit records a MUTATION on one record. Reads are never audited:
+// every note costs history budget, and a read that changed nothing is
+// not worth a milestone.
+func (m *Management) audit(ctx context.Context, b *nsbundle.Bundle, ref string, verb authz.Verb) {
+	if ref == "" {
+		return
+	}
+	id, _, err := identityOf(ctx, b.Namespace)
+	if err != nil {
+		return
+	}
+	b.Worker.Note(context.WithoutCancel(ctx), ref, auditEvent{
+		Audit: "who",
+		Actor: id.Subject.String(),
+		Verb:  string(verb),
+		At:    time.Now().UTC().Format(time.RFC3339),
+	})
 }

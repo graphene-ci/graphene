@@ -53,6 +53,7 @@ func (m *Management) PutRole(ctx context.Context, creq *connect.Request[manageme
 		return nil, status.Errorf(codes.FailedPrecondition, "role %s: %v", req.GetName(), err)
 	}
 	m.forgetPermissions(b.Namespace)
+	m.audit(ctx, b, "role/"+req.GetName(), authz.VerbCreate)
 	m.Log.Info("role written", xlog.String("namespace", b.Namespace), xlog.String("role", req.GetName()))
 	return connect.NewResponse(&managementv1.PutRoleResponse{}), nil
 }
@@ -124,6 +125,7 @@ func (m *Management) PutBinding(ctx context.Context, creq *connect.Request[manag
 		return nil, status.Errorf(codes.FailedPrecondition, "binding %s: %v", req.GetName(), err)
 	}
 	m.forgetPermissions(b.Namespace)
+	m.audit(ctx, b, "rolebinding/"+req.GetName(), authz.VerbCreate)
 	m.Log.Info("binding written",
 		xlog.String("namespace", b.Namespace),
 		xlog.String("binding", req.GetName()),
@@ -199,6 +201,7 @@ func (m *Management) IssueToken(ctx context.Context, creq *connect.Request[manag
 	}); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "account %s: %v", req.GetAccount(), err)
 	}
+	m.audit(ctx, b, "serviceaccount/"+req.GetAccount(), authz.VerbCreate)
 	m.Log.Info("token issued",
 		xlog.String("namespace", b.Namespace),
 		xlog.String("account", req.GetAccount()),
@@ -219,6 +222,7 @@ func (m *Management) RevokeToken(ctx context.Context, creq *connect.Request[mana
 	if err := b.Worker.RevokeAccountToken(ctx, req.GetAccount(), req.GetTokenId()); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "account %s: %v", req.GetAccount(), err)
 	}
+	m.audit(ctx, b, "serviceaccount/"+req.GetAccount(), authz.VerbDelete)
 	return connect.NewResponse(&managementv1.RevokeTokenResponse{}), nil
 }
 
