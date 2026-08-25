@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/telemetry"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -42,7 +43,7 @@ type Observe struct {
 // the full record.
 func (o *Observe) State(ctx context.Context, creq *connect.Request[managementv1.ObserveStateRequest]) (*connect.Response[managementv1.ObserveStateResponse], error) {
 	req := creq.Msg
-	b, err := bundleFor(ctx, o.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := o.Management.allow(ctx, authz.VerbWatch, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, asConnectError(err)
 	}
@@ -66,7 +67,7 @@ func (o *Observe) State(ctx context.Context, creq *connect.Request[managementv1.
 // pass through as internal-*; raw always carries the whole event.
 func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1.EventsRequest], stream *connect.ServerStream[managementv1.Event]) error {
 	req := creq.Msg
-	b, err := bundleFor(ctx, o.Bundles, auth.RoleAdmin, auth.RoleRun)
+	b, err := o.Management.allow(ctx, authz.VerbWatch, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return asConnectError(err)
 	}
