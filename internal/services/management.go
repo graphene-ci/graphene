@@ -152,8 +152,14 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	if trigger != "" {
 		withTrigger[syslabels.Trigger] = trigger
 	}
+	// A run is a NODE OF THE TREE: it owns what the pipeline declares,
+	// so it carries the same attributes every record does — kind to be
+	// listed by, owner to be found under its pipeline. Its phase is the
+	// execution status, which visibility already keeps.
 	opts.TypedSearchAttributes = temporal.NewSearchAttributes(
 		entdefine.SearchAttrLabels.ValueSet(labelPairs(withTrigger)),
+		entdefine.SearchAttrKind.ValueSet("run"),
+		wire.SearchAttrOwner.ValueSet("pipeline/"+pipelineName),
 	)
 	var args []any
 	if len(params) > 0 {
@@ -493,6 +499,13 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	var out []*managementv1.TreeNode
 	for _, e := range page.GetExecutions() {
 		node := &managementv1.TreeNode{Resource: resourceFromVisibility(e)}
+		// A pipeline owns every run it ever started — thousands of them.
+		// The tree shows that a run is there; what the RUN owns is read
+		// by asking for that run's own tree.
+		if node.Resource.GetKind() == "run" {
+			out = append(out, node)
+			continue
+		}
 		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()))
 		if err != nil {
 			return nil, err
@@ -513,6 +526,15 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	// The note goes first: after the cascade there is no history left
 	// to write it into.
 	m.audit(ctx, b, req.GetRef(), authz.VerbDelete)
+	// Deleting a RUN means cancelling it: the run tears its own
+	// resources down on the way out (guaranteed teardown), so cascading
+	// them from here would race its own cleanup.
+	if runId, ok := strings.CutPrefix(req.GetRef(), "run/"); ok {
+		if err := b.Client.CancelWorkflow(ctx, "run/"+runId, ""); err != nil {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return connect.NewResponse(&managementv1.DeleteResponse{}), nil
+	}
 	if err := b.Worker.CascadeDelete(ctx, ref.OwnerRef(req.GetRef())); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
