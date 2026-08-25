@@ -19,10 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RevisionsAPI_Materialize_FullMethodName      = "/graphene.management.v1.RevisionsAPI/Materialize"
-	RevisionsAPI_ListRevisions_FullMethodName    = "/graphene.management.v1.RevisionsAPI/ListRevisions"
-	RevisionsAPI_RunRevision_FullMethodName      = "/graphene.management.v1.RevisionsAPI/RunRevision"
-	RevisionsAPI_ActivateRevision_FullMethodName = "/graphene.management.v1.RevisionsAPI/ActivateRevision"
+	RevisionsAPI_Materialize_FullMethodName   = "/graphene.management.v1.RevisionsAPI/Materialize"
+	RevisionsAPI_ListRevisions_FullMethodName = "/graphene.management.v1.RevisionsAPI/ListRevisions"
+	RevisionsAPI_RunRevision_FullMethodName   = "/graphene.management.v1.RevisionsAPI/RunRevision"
 )
 
 // RevisionsAPIClient is the client API for RevisionsAPI service.
@@ -41,7 +40,6 @@ type RevisionsAPIClient interface {
 	Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MaterializeEvent], error)
 	ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error)
 	RunRevision(ctx context.Context, in *RunRevisionRequest, opts ...grpc.CallOption) (*RunRevisionResponse, error)
-	ActivateRevision(ctx context.Context, in *ActivateRevisionRequest, opts ...grpc.CallOption) (*ActivateRevisionResponse, error)
 }
 
 type revisionsAPIClient struct {
@@ -91,16 +89,6 @@ func (c *revisionsAPIClient) RunRevision(ctx context.Context, in *RunRevisionReq
 	return out, nil
 }
 
-func (c *revisionsAPIClient) ActivateRevision(ctx context.Context, in *ActivateRevisionRequest, opts ...grpc.CallOption) (*ActivateRevisionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ActivateRevisionResponse)
-	err := c.cc.Invoke(ctx, RevisionsAPI_ActivateRevision_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // RevisionsAPIServer is the server API for RevisionsAPI service.
 // All implementations must embed UnimplementedRevisionsAPIServer
 // for forward compatibility.
@@ -117,7 +105,6 @@ type RevisionsAPIServer interface {
 	Materialize(*MaterializeRequest, grpc.ServerStreamingServer[MaterializeEvent]) error
 	ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error)
 	RunRevision(context.Context, *RunRevisionRequest) (*RunRevisionResponse, error)
-	ActivateRevision(context.Context, *ActivateRevisionRequest) (*ActivateRevisionResponse, error)
 	mustEmbedUnimplementedRevisionsAPIServer()
 }
 
@@ -136,9 +123,6 @@ func (UnimplementedRevisionsAPIServer) ListRevisions(context.Context, *ListRevis
 }
 func (UnimplementedRevisionsAPIServer) RunRevision(context.Context, *RunRevisionRequest) (*RunRevisionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunRevision not implemented")
-}
-func (UnimplementedRevisionsAPIServer) ActivateRevision(context.Context, *ActivateRevisionRequest) (*ActivateRevisionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ActivateRevision not implemented")
 }
 func (UnimplementedRevisionsAPIServer) mustEmbedUnimplementedRevisionsAPIServer() {}
 func (UnimplementedRevisionsAPIServer) testEmbeddedByValue()                      {}
@@ -208,24 +192,6 @@ func _RevisionsAPI_RunRevision_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RevisionsAPI_ActivateRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ActivateRevisionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RevisionsAPIServer).ActivateRevision(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RevisionsAPI_ActivateRevision_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RevisionsAPIServer).ActivateRevision(ctx, req.(*ActivateRevisionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // RevisionsAPI_ServiceDesc is the grpc.ServiceDesc for RevisionsAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -240,10 +206,6 @@ var RevisionsAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunRevision",
 			Handler:    _RevisionsAPI_RunRevision_Handler,
-		},
-		{
-			MethodName: "ActivateRevision",
-			Handler:    _RevisionsAPI_ActivateRevision_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

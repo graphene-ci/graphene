@@ -16,7 +16,6 @@ service RevisionsAPI {
   rpc Materialize(MaterializeRequest) returns (stream MaterializeEvent);
   rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
   rpc RunRevision(RunRevisionRequest) returns (RunRevisionResponse);
-  rpc ActivateRevision(ActivateRevisionRequest) returns (ActivateRevisionResponse);
 }
 
 message MaterializeRequest {
@@ -78,12 +77,3 @@ message RunRevisionResponse {
   string temporal_run_id = 2;
 }
 
-message ActivateRevisionRequest {
-  string pipeline_id = 1;
-  string revision_id = 2;
-  // WorkspaceId records which workspace publishes this pipeline; a
-  // workspace publishes exactly one.
-  string workspace_id = 3;
-}
-
-message ActivateRevisionResponse {}

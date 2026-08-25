@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -90,6 +91,30 @@ type PublishRes struct {
 	Changed bool   `json:"changed"`
 }
 
+// ActivateCmd makes one revision the version automatic starts use.
+// Activation is a decision ABOUT THE PIPELINE, so it is the
+// pipeline's own command — the manifest and image it carries are
+// resolved by the door from the named revision.
+type ActivateCmd struct {
+	RevisionId string `json:"revisionId"`
+	// WorkspaceId records the project this pipeline is published from.
+	WorkspaceId string `json:"workspaceId,omitempty"`
+}
+
+// Name is the command's wire identity.
+func (ActivateCmd) Name() entity.CommandName { return "activate" }
+
+// Result binds the response type.
+func (ActivateCmd) Result() PublishRes { return PublishRes{} }
+
+// Validate refuses an activation naming nothing.
+func (c ActivateCmd) Validate() error {
+	if c.RevisionId == "" {
+		return fmt.Errorf("activation needs a revision")
+	}
+	return nil
+}
+
 // FireCmd is one firing: the arbiter applies the policy. A HUMAN
 // pressing "run" fires the same way a cron does — that is the whole
 // point of an arbiter: one place decides, whoever asked.
@@ -126,7 +151,33 @@ const (
 	CountActivity = "server.run.count"
 	// CancelActivity cancels the pipeline's running runs: (pipelineId).
 	CancelActivity = "server.run.cancel"
+	// ResolveActivity reads what a revision holds: (ResolveReq) ->
+	// Activation. The blob store is a side effect, so it is reached
+	// the only way a record reaches side effects.
+	ResolveActivity = "server.revision.resolve"
+	// ReconcileTriggersActivity makes the trigger records match the
+	// manifest that just became active.
+	ReconcileTriggersActivity = "server.trigger.reconcile"
 )
+
+// ResolveReq asks what a revision holds.
+type ResolveReq struct {
+	PipelineId string `json:"pipelineId"`
+	RevisionId string `json:"revisionId"`
+}
+
+// Activation is what a revision contributes when it becomes active.
+type Activation struct {
+	Image       string          `json:"image"`
+	Manifest    json.RawMessage `json:"manifest"`
+	Concurrency string          `json:"concurrency,omitempty"`
+}
+
+// ReconcileReq asks for the trigger records to match a manifest.
+type ReconcileReq struct {
+	PipelineId string          `json:"pipelineId"`
+	Manifest   json.RawMessage `json:"manifest"`
+}
 
 // StartReq asks the server to start one run.
 type StartReq struct {
@@ -157,6 +208,31 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		entdefine.WithReconcileEvery[Spec, State](tick, pendingTick),
 	)
 	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ActivateCmd) (PublishRes, error) {
+		// The command names a revision, nothing more: the manifest lives
+		// in the blob store, and carrying it here would bury this
+		// record's history under every activation.
+		var rev Activation
+		if err := workflow.ExecuteActivity(actx(ctx), ResolveActivity,
+			ResolveReq{PipelineId: pipelineId(ctx), RevisionId: cmd.RevisionId}).Get(ctx, &rev); err != nil {
+			return PublishRes{}, err
+		}
+		sum := sha256.Sum256(rev.Manifest)
+		digest := "sha256:" + hex.EncodeToString(sum[:])
+		st := ec.State()
+		changed := st.Digest != digest || st.Image != rev.Image || st.Concurrency != rev.Concurrency
+		st.Manifest, st.Digest, st.Image, st.Concurrency = rev.Manifest, digest, rev.Image, rev.Concurrency
+		if cmd.WorkspaceId != "" && st.Owner == "" {
+			// The pipeline joins the project it is published from.
+			st.Owner = ref.OwnerRef("workspace/" + cmd.WorkspaceId)
+		}
+		// Triggers follow the manifest that is now active.
+		if err := workflow.ExecuteActivity(actx(ctx), ReconcileTriggersActivity,
+			ReconcileReq{PipelineId: pipelineId(ctx), Manifest: rev.Manifest}).Get(ctx, nil); err != nil {
+			return PublishRes{}, err
+		}
+		return PublishRes{Digest: digest, Changed: changed}, nil
+	})
 	entdefine.Handle(def, func(_ workflow.Context, ec *entdefine.Ctx[Spec, State], cmd PublishCmd) (PublishRes, error) {
 		sum := sha256.Sum256(cmd.Manifest)
 		digest := "sha256:" + hex.EncodeToString(sum[:])

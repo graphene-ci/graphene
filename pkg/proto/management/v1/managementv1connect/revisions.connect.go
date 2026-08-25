@@ -42,9 +42,6 @@ const (
 	// RevisionsAPIRunRevisionProcedure is the fully-qualified name of the RevisionsAPI's RunRevision
 	// RPC.
 	RevisionsAPIRunRevisionProcedure = "/graphene.management.v1.RevisionsAPI/RunRevision"
-	// RevisionsAPIActivateRevisionProcedure is the fully-qualified name of the RevisionsAPI's
-	// ActivateRevision RPC.
-	RevisionsAPIActivateRevisionProcedure = "/graphene.management.v1.RevisionsAPI/ActivateRevision"
 )
 
 // RevisionsAPIClient is a client for the graphene.management.v1.RevisionsAPI service.
@@ -55,7 +52,6 @@ type RevisionsAPIClient interface {
 	Materialize(context.Context, *connect.Request[v1.MaterializeRequest]) (*connect.ServerStreamForClient[v1.MaterializeEvent], error)
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	RunRevision(context.Context, *connect.Request[v1.RunRevisionRequest]) (*connect.Response[v1.RunRevisionResponse], error)
-	ActivateRevision(context.Context, *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error)
 }
 
 // NewRevisionsAPIClient constructs a client for the graphene.management.v1.RevisionsAPI service. By
@@ -87,21 +83,14 @@ func NewRevisionsAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(revisionsAPIMethods.ByName("RunRevision")),
 			connect.WithClientOptions(opts...),
 		),
-		activateRevision: connect.NewClient[v1.ActivateRevisionRequest, v1.ActivateRevisionResponse](
-			httpClient,
-			baseURL+RevisionsAPIActivateRevisionProcedure,
-			connect.WithSchema(revisionsAPIMethods.ByName("ActivateRevision")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // revisionsAPIClient implements RevisionsAPIClient.
 type revisionsAPIClient struct {
-	materialize      *connect.Client[v1.MaterializeRequest, v1.MaterializeEvent]
-	listRevisions    *connect.Client[v1.ListRevisionsRequest, v1.ListRevisionsResponse]
-	runRevision      *connect.Client[v1.RunRevisionRequest, v1.RunRevisionResponse]
-	activateRevision *connect.Client[v1.ActivateRevisionRequest, v1.ActivateRevisionResponse]
+	materialize   *connect.Client[v1.MaterializeRequest, v1.MaterializeEvent]
+	listRevisions *connect.Client[v1.ListRevisionsRequest, v1.ListRevisionsResponse]
+	runRevision   *connect.Client[v1.RunRevisionRequest, v1.RunRevisionResponse]
 }
 
 // Materialize calls graphene.management.v1.RevisionsAPI.Materialize.
@@ -119,11 +108,6 @@ func (c *revisionsAPIClient) RunRevision(ctx context.Context, req *connect.Reque
 	return c.runRevision.CallUnary(ctx, req)
 }
 
-// ActivateRevision calls graphene.management.v1.RevisionsAPI.ActivateRevision.
-func (c *revisionsAPIClient) ActivateRevision(ctx context.Context, req *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error) {
-	return c.activateRevision.CallUnary(ctx, req)
-}
-
 // RevisionsAPIHandler is an implementation of the graphene.management.v1.RevisionsAPI service.
 type RevisionsAPIHandler interface {
 	// Materialize STREAMS progress: a source build takes minutes, and a
@@ -132,7 +116,6 @@ type RevisionsAPIHandler interface {
 	Materialize(context.Context, *connect.Request[v1.MaterializeRequest], *connect.ServerStream[v1.MaterializeEvent]) error
 	ListRevisions(context.Context, *connect.Request[v1.ListRevisionsRequest]) (*connect.Response[v1.ListRevisionsResponse], error)
 	RunRevision(context.Context, *connect.Request[v1.RunRevisionRequest]) (*connect.Response[v1.RunRevisionResponse], error)
-	ActivateRevision(context.Context, *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error)
 }
 
 // NewRevisionsAPIHandler builds an HTTP handler from the service implementation. It returns the
@@ -160,12 +143,6 @@ func NewRevisionsAPIHandler(svc RevisionsAPIHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(revisionsAPIMethods.ByName("RunRevision")),
 		connect.WithHandlerOptions(opts...),
 	)
-	revisionsAPIActivateRevisionHandler := connect.NewUnaryHandler(
-		RevisionsAPIActivateRevisionProcedure,
-		svc.ActivateRevision,
-		connect.WithSchema(revisionsAPIMethods.ByName("ActivateRevision")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/graphene.management.v1.RevisionsAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RevisionsAPIMaterializeProcedure:
@@ -174,8 +151,6 @@ func NewRevisionsAPIHandler(svc RevisionsAPIHandler, opts ...connect.HandlerOpti
 			revisionsAPIListRevisionsHandler.ServeHTTP(w, r)
 		case RevisionsAPIRunRevisionProcedure:
 			revisionsAPIRunRevisionHandler.ServeHTTP(w, r)
-		case RevisionsAPIActivateRevisionProcedure:
-			revisionsAPIActivateRevisionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -195,8 +170,4 @@ func (UnimplementedRevisionsAPIHandler) ListRevisions(context.Context, *connect.
 
 func (UnimplementedRevisionsAPIHandler) RunRevision(context.Context, *connect.Request[v1.RunRevisionRequest]) (*connect.Response[v1.RunRevisionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RevisionsAPI.RunRevision is not implemented"))
-}
-
-func (UnimplementedRevisionsAPIHandler) ActivateRevision(context.Context, *connect.Request[v1.ActivateRevisionRequest]) (*connect.Response[v1.ActivateRevisionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RevisionsAPI.ActivateRevision is not implemented"))
 }

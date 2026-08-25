@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -130,8 +131,18 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := d.Revisions.ActivateRevision(cmd.Context(), connect.NewRequest(&managementv1.ActivateRevisionRequest{
-				PipelineId: args[0], RevisionId: args[1], WorkspaceId: activateWorkspace,
+			// Activation is a decision about the PIPELINE, so it is the
+			// pipeline's own command — and it names the revision,
+			// nothing more: what that revision built is the record's to
+			// read, not the client's to carry.
+			payload, err := json.Marshal(map[string]any{
+				"revisionId": args[1], "workspaceId": activateWorkspace,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
+				Ref: "pipeline/" + args[0], Command: "activate", Payload: payload,
 			})); err != nil {
 				return err
 			}
