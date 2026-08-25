@@ -22,8 +22,12 @@ service RevisionsAPI {
 message MaterializeRequest {
   string pipeline_id = 1;
   // The full source tree as tar.gz — the workspace root is the build
-  // root: `go build .`, one package main.
+  // root: `go build .`, one package main. Empty when workspace_id is
+  // given: the workspace's own working tree is built instead.
   bytes source = 2;
+  // WorkspaceId builds THAT workspace's current tree; the pipeline is
+  // the one the workspace publishes.
+  string workspace_id = 3;
 }
 
 message MaterializeEvent {
@@ -77,6 +81,9 @@ message RunRevisionResponse {
 message ActivateRevisionRequest {
   string pipeline_id = 1;
   string revision_id = 2;
+  // WorkspaceId records which workspace publishes this pipeline; a
+  // workspace publishes exactly one.
+  string workspace_id = 3;
 }
 
 message ActivateRevisionResponse {}

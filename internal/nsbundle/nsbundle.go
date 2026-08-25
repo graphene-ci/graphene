@@ -142,6 +142,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		RunToken:     m.deps.RunTokenFor(namespace),
 		Materializer: m.deps.Materializer,
 		Blobs:        m.deps.Blobs,
+		Secrets:      m.deps.Secrets.In(namespace),
 		Log:          log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {

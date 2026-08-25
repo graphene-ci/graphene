@@ -42,13 +42,15 @@ const modCacheVolume = "graphene-materialize-go-mod"
 // Materializer runs source builds on the installation's execution
 // backend (the same docker host the managed contour drives).
 type Materializer struct {
-	Docker   *dockerclient.Client
-	Runtime  string
-	Registry string // the installation's /v2 door, host:port
-	Token    string // a run-scoped token for the registry and blobs
-	Insecure bool
-	Blobs    blob.Store
-	Log      *xlog.Logger
+	Docker  *dockerclient.Client
+	Runtime string
+	// GitRuntime carries git for source checkouts.
+	GitRuntime string
+	Registry   string // the installation's /v2 door, host:port
+	Token      string // a run-scoped token for the registry and blobs
+	Insecure   bool
+	Blobs      blob.Store
+	Log        *xlog.Logger
 }
 
 // Progress receives one progress line; stage is "runtime", "build",
@@ -311,6 +313,11 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// openFile and removeAll keep the os calls of source.go in one place.
+func openFile(path string) (*os.File, error) { return os.Open(path) } //nolint:gosec // our own temp output
+
+func removeAll(path string) error { return os.RemoveAll(filepath.Dir(path)) }
 
 func gunzip(b []byte) ([]byte, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(b))

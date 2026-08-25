@@ -31,45 +31,37 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Source revisions: materialize, list, run, activate",
 	}
 
-	var srcPath string
+	var srcPath, workspaceId string
 	mat := &cobra.Command{
 		Use:   "materialize <pipeline>",
 		Short: "Build a source tree into a revision on the server",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			src, err := packSource(srcPath)
+			pipelineId := ""
+			if len(args) > 0 {
+				pipelineId = args[0]
+			}
+			// A workspace builds ITS OWN tree: nothing is uploaded.
+			if workspaceId != "" {
+				return materializeStream(cmd, f, &managementv1.MaterializeRequest{
+					PipelineId: pipelineId, WorkspaceId: workspaceId,
+				})
+			}
+			if pipelineId == "" {
+				return fmt.Errorf("name a pipeline, or build a workspace with --workspace")
+			}
+			src, err := PackSource(srcPath)
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", srcPath, len(src)/1024)
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			stream, err := d.Revisions.Materialize(cmd.Context(), connect.NewRequest(&managementv1.MaterializeRequest{
-				PipelineId: args[0], Source: src,
-			}))
-			if err != nil {
-				return err
-			}
-			defer func() { _ = stream.Close() }()
-			// The build streams as it happens; the last event carries
-			// the revision.
-			for stream.Receive() {
-				ev := stream.Msg()
-				if res := ev.GetResult(); res != nil {
-					if done, err := f.Emit(res); done || err != nil {
-						return err
-					}
-					fmt.Fprintf(cmdutil.Out, "revision %s\nimage    %s\n", res.GetRevisionId(), res.GetImage())
-					return nil
-				}
-				fmt.Fprintf(os.Stderr, "%-8s %s\n", ev.GetStage(), ev.GetMessage())
-			}
-			return stream.Err()
+			return materializeStream(cmd, f, &managementv1.MaterializeRequest{
+				PipelineId: pipelineId, Source: src,
+			})
 		},
 	}
 	mat.Flags().StringVarP(&srcPath, "source", "f", ".", "source directory or .tgz file")
+	mat.Flags().StringVarP(&workspaceId, "workspace", "w", "", "build THIS workspace's current tree")
 
 	list := &cobra.Command{
 		Use:   "list <pipeline>",
@@ -128,6 +120,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	run.Flags().StringVarP(&params, "params", "p", "", "params as raw JSON")
 	run.Flags().StringVar(&runId, "run-id", "", "run id (default: generated draft id)")
 
+	var activateWorkspace string
 	activate := &cobra.Command{
 		Use:   "activate <pipeline> <revision>",
 		Short: "Make one revision the version automatic starts use",
@@ -138,7 +131,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if _, err := d.Revisions.ActivateRevision(cmd.Context(), connect.NewRequest(&managementv1.ActivateRevisionRequest{
-				PipelineId: args[0], RevisionId: args[1],
+				PipelineId: args[0], RevisionId: args[1], WorkspaceId: activateWorkspace,
 			})); err != nil {
 				return err
 			}
@@ -147,13 +140,15 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
+	activate.Flags().StringVarP(&activateWorkspace, "workspace", "w", "", "record that THIS workspace publishes the pipeline")
+
 	cmd.AddCommand(mat, list, run, activate)
 	return cmd
 }
 
-// packSource renders a directory (or passes a ready .tgz) as the
+// PackSource renders a directory (or passes a ready .tgz) as the
 // upload: .git and oversized files (built binaries) stay behind.
-func packSource(path string) ([]byte, error) {
+func PackSource(path string) ([]byte, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -209,4 +204,30 @@ func packSource(path string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// materializeStream runs one materialization and prints the build as it
+// happens; the last event carries the revision.
+func materializeStream(cmd *cobra.Command, f *cmdutil.Factory, req *managementv1.MaterializeRequest) error {
+	d, err := f.Dial()
+	if err != nil {
+		return err
+	}
+	stream, err := d.Revisions.Materialize(cmd.Context(), connect.NewRequest(req))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stream.Close() }()
+	for stream.Receive() {
+		ev := stream.Msg()
+		if res := ev.GetResult(); res != nil {
+			if done, err := f.Emit(res); done || err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "revision %s\nimage    %s\n", res.GetRevisionId(), res.GetImage())
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "%-8s %s\n", ev.GetStage(), ev.GetMessage())
+	}
+	return stream.Err()
 }

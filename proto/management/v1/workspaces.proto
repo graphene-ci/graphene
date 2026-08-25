@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// WorkspacesAPI administers WORKSPACES: a project's working area and
+// the root of its life. A workspace has one source — a Git checkout or
+// an uploaded tree — a runtime, a working tree kept on the server, and
+// at most one pipeline. Listing, reading and deleting go through the
+// ordinary ResourcesAPI: a workspace is a record like any other.
+service WorkspacesAPI {
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  // SyncWorkspace re-resolves the source: a Git workspace fetches its
+  // ref again, a snapshot workspace takes a freshly uploaded tree.
+  rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
+  // DownloadSource hands back the workspace's current working tree.
+  rpc DownloadSource(DownloadSourceRequest) returns (stream DownloadSourceChunk);
+}
+
+message GitSource {
+  string url = 1;
+  // Branch, tag or commit; empty takes the default branch.
+  string ref = 2;
+  // The pipeline's root inside a monorepo.
+  string subdir = 3;
+  // Name of the secret holding the token; only the name travels.
+  string credential_secret = 4;
+}
+
+message SnapshotSource {
+  // The uploaded tree as tar.gz.
+  bytes source = 1;
+}
+
+message CreateWorkspaceRequest {
+  string workspace_id = 1;
+  oneof source {
+    GitSource git = 2;
+    SnapshotSource snapshot = 3;
+  }
+  // Runtime of this project ("go"); empty takes the installation's.
+  string runtime = 4;
+  // The pipeline this workspace publishes.
+  string pipeline_id = 5;
+}
+
+message CreateWorkspaceResponse {
+  string workspace_id = 1;
+  string tree_digest = 2;
+  string git_commit = 3;
+}
+
+message SyncWorkspaceRequest {
+  string workspace_id = 1;
+  // A fresh tree replaces the working tree (snapshot workspaces);
+  // empty re-fetches the Git ref.
+  bytes source = 2;
+}
+
+message SyncWorkspaceResponse {
+  string tree_digest = 1;
+  string git_commit = 2;
+  uint64 generation = 3;
+}
+
+message DownloadSourceRequest {
+  string workspace_id = 1;
+}
+
+message DownloadSourceChunk {
+  bytes data = 1;
+}
