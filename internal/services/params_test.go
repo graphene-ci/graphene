@@ -98,3 +98,35 @@ func TestListedKindFromSelector(t *testing.T) {
 		t.Fatalf("an unnarrowed listing must need everything: %q", got)
 	}
 }
+
+// A raw query must never narrow authorization unless it PROVABLY pins
+// one kind: every widening form below would otherwise let a caller
+// authorized for one kind read another.
+func TestListedKindRefusesWideningQueries(t *testing.T) {
+	widening := []string{
+		"EntityKind = 'pipeline' OR EntityKind = 'secret'",
+		"EntityKind='pipeline' or EntityKind='secret'",
+		"ExecutionStatus = 'Running' OR EntityKind = 'pipeline'",
+		"EntityKind != 'secret'",
+		"NOT EntityKind = 'secret'",
+		"EntityKind IN ('pipeline','secret')",
+		"(EntityKind = 'pipeline') OR (EntityKind = 'secret')",
+		"EntityKind STARTS_WITH 'pipe'",
+		"EntityKind = 'pipeline' AND EntityKind = 'secret'",
+	}
+	for _, q := range widening {
+		if got := listedKind(nil, q); got != "*" {
+			t.Fatalf("query %q narrowed authorization to %q — it may return other kinds", q, got)
+		}
+	}
+	// The honest, provably narrow forms still work.
+	for q, want := range map[string]string{
+		"EntityKind = 'pipeline'":                              "pipeline",
+		"EntityKind='revision' AND ExecutionStatus='Running'":  "revision",
+		"ExecutionStatus = 'Running' AND EntityKind = 'agent'": "agent",
+	} {
+		if got := string(listedKind(nil, q)); got != want {
+			t.Fatalf("listedKind(%q) = %q, want %q", q, got, want)
+		}
+	}
+}
