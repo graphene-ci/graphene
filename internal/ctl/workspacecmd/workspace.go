@@ -159,6 +159,34 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	}
 	download.Flags().StringVarP(&out, "output", "o", "", "write to this file instead of stdout")
 
-	cmd.AddCommand(create, sync, download)
+	runtimesCmd := &cobra.Command{
+		Use:   "runtimes",
+		Short: "Which languages this installation can build a pipeline from",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Workspaces.ListRuntimes(cmd.Context(), connect.NewRequest(&managementv1.ListRuntimesRequest{}))
+			if err != nil {
+				return err
+			}
+			if done, err := f.Emit(resp.Msg); done || err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "RUNTIME\tVERSION\tDEFAULT\tIMAGE\n")
+			for _, r := range resp.Msg.GetRuntimes() {
+				def := ""
+				if r.GetIsDefault() {
+					def = "*"
+				}
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\n", r.GetName(), r.GetVersion(), def, r.GetImage())
+			}
+			return nil
+		},
+	}
+
+	cmd.AddCommand(create, sync, download, runtimesCmd)
 	return cmd
 }

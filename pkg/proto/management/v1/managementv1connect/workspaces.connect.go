@@ -42,6 +42,9 @@ const (
 	// WorkspacesAPIDownloadSourceProcedure is the fully-qualified name of the WorkspacesAPI's
 	// DownloadSource RPC.
 	WorkspacesAPIDownloadSourceProcedure = "/graphene.management.v1.WorkspacesAPI/DownloadSource"
+	// WorkspacesAPIListRuntimesProcedure is the fully-qualified name of the WorkspacesAPI's
+	// ListRuntimes RPC.
+	WorkspacesAPIListRuntimesProcedure = "/graphene.management.v1.WorkspacesAPI/ListRuntimes"
 )
 
 // WorkspacesAPIClient is a client for the graphene.management.v1.WorkspacesAPI service.
@@ -52,6 +55,9 @@ type WorkspacesAPIClient interface {
 	SyncWorkspace(context.Context, *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest]) (*connect.ServerStreamForClient[v1.DownloadSourceChunk], error)
+	// ListRuntimes answers "which languages can I write a pipeline in
+	// on THIS installation".
+	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
 }
 
 // NewWorkspacesAPIClient constructs a client for the graphene.management.v1.WorkspacesAPI service.
@@ -83,6 +89,12 @@ func NewWorkspacesAPIClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workspacesAPIMethods.ByName("DownloadSource")),
 			connect.WithClientOptions(opts...),
 		),
+		listRuntimes: connect.NewClient[v1.ListRuntimesRequest, v1.ListRuntimesResponse](
+			httpClient,
+			baseURL+WorkspacesAPIListRuntimesProcedure,
+			connect.WithSchema(workspacesAPIMethods.ByName("ListRuntimes")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -91,6 +103,7 @@ type workspacesAPIClient struct {
 	createWorkspace *connect.Client[v1.CreateWorkspaceRequest, v1.CreateWorkspaceResponse]
 	syncWorkspace   *connect.Client[v1.SyncWorkspaceRequest, v1.SyncWorkspaceResponse]
 	downloadSource  *connect.Client[v1.DownloadSourceRequest, v1.DownloadSourceChunk]
+	listRuntimes    *connect.Client[v1.ListRuntimesRequest, v1.ListRuntimesResponse]
 }
 
 // CreateWorkspace calls graphene.management.v1.WorkspacesAPI.CreateWorkspace.
@@ -108,6 +121,11 @@ func (c *workspacesAPIClient) DownloadSource(ctx context.Context, req *connect.R
 	return c.downloadSource.CallServerStream(ctx, req)
 }
 
+// ListRuntimes calls graphene.management.v1.WorkspacesAPI.ListRuntimes.
+func (c *workspacesAPIClient) ListRuntimes(ctx context.Context, req *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error) {
+	return c.listRuntimes.CallUnary(ctx, req)
+}
+
 // WorkspacesAPIHandler is an implementation of the graphene.management.v1.WorkspacesAPI service.
 type WorkspacesAPIHandler interface {
 	CreateWorkspace(context.Context, *connect.Request[v1.CreateWorkspaceRequest]) (*connect.Response[v1.CreateWorkspaceResponse], error)
@@ -116,6 +134,9 @@ type WorkspacesAPIHandler interface {
 	SyncWorkspace(context.Context, *connect.Request[v1.SyncWorkspaceRequest]) (*connect.Response[v1.SyncWorkspaceResponse], error)
 	// DownloadSource hands back the workspace's current working tree.
 	DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest], *connect.ServerStream[v1.DownloadSourceChunk]) error
+	// ListRuntimes answers "which languages can I write a pipeline in
+	// on THIS installation".
+	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
 }
 
 // NewWorkspacesAPIHandler builds an HTTP handler from the service implementation. It returns the
@@ -143,6 +164,12 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workspacesAPIMethods.ByName("DownloadSource")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workspacesAPIListRuntimesHandler := connect.NewUnaryHandler(
+		WorkspacesAPIListRuntimesProcedure,
+		svc.ListRuntimes,
+		connect.WithSchema(workspacesAPIMethods.ByName("ListRuntimes")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/graphene.management.v1.WorkspacesAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkspacesAPICreateWorkspaceProcedure:
@@ -151,6 +178,8 @@ func NewWorkspacesAPIHandler(svc WorkspacesAPIHandler, opts ...connect.HandlerOp
 			workspacesAPISyncWorkspaceHandler.ServeHTTP(w, r)
 		case WorkspacesAPIDownloadSourceProcedure:
 			workspacesAPIDownloadSourceHandler.ServeHTTP(w, r)
+		case WorkspacesAPIListRuntimesProcedure:
+			workspacesAPIListRuntimesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -170,4 +199,8 @@ func (UnimplementedWorkspacesAPIHandler) SyncWorkspace(context.Context, *connect
 
 func (UnimplementedWorkspacesAPIHandler) DownloadSource(context.Context, *connect.Request[v1.DownloadSourceRequest], *connect.ServerStream[v1.DownloadSourceChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.DownloadSource is not implemented"))
+}
+
+func (UnimplementedWorkspacesAPIHandler) ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.WorkspacesAPI.ListRuntimes is not implemented"))
 }

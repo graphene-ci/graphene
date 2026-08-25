@@ -8,6 +8,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/graphene-ci/graphene/internal/runtimes"
 	"os"
 	"strings"
 	"time"
@@ -91,6 +92,10 @@ type File struct {
 		Store string `mapstructure:"store" default:"/var/lib/graphene/vars.enc"`
 	} `mapstructure:"vars"`
 
+	// Runtimes extends or overrides the toolchain catalogue: adding a
+	// language to an installation is configuration, not a code change.
+	Runtimes []runtimes.Runtime `mapstructure:"runtimes"`
+
 	Otel struct {
 		// The OTLP/HTTP ingest URLs the door forwards each signal to —
 		// the backends speak OTLP directly, no collector needed. Empty
@@ -142,8 +147,10 @@ type Config struct {
 	// keeps secrets in memory.
 	SecretsStore string
 	SecretsKey   string
-	Vars         map[string]string
-	VarsStore    string
+	// Runtimes is the installation's toolchain catalogue.
+	Runtimes  []runtimes.Runtime
+	Vars      map[string]string
+	VarsStore string
 
 	BlobBackend      string
 	BlobDir          string
@@ -230,6 +237,7 @@ func Resolve(f File) (Config, error) {
 		Secrets:               map[string]string{},
 		SecretsStore:          f.Secrets.Store,
 		SecretsKey:            f.Secrets.Key,
+		Runtimes:              f.Runtimes,
 		Vars:                  f.Vars.Values,
 		VarsStore:             f.Vars.Store,
 	}

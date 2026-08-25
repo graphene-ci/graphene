@@ -16,6 +16,9 @@ service WorkspacesAPI {
   rpc SyncWorkspace(SyncWorkspaceRequest) returns (SyncWorkspaceResponse);
   // DownloadSource hands back the workspace's current working tree.
   rpc DownloadSource(DownloadSourceRequest) returns (stream DownloadSourceChunk);
+  // ListRuntimes answers "which languages can I write a pipeline in
+  // on THIS installation".
+  rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
 }
 
 message GitSource {
@@ -70,4 +73,16 @@ message DownloadSourceRequest {
 
 message DownloadSourceChunk {
   bytes data = 1;
+}
+
+message ListRuntimesRequest {}
+
+message ListRuntimesResponse {
+  message Runtime {
+    string name = 1;
+    string version = 2;
+    string image = 3;
+    bool is_default = 4;
+  }
+  repeated Runtime runtimes = 1;
 }

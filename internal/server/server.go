@@ -41,6 +41,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/probes"
+	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/internal/telemetry"
@@ -119,6 +120,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	if dc, derr := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation()); derr == nil {
 		materializer = &materialize.Materializer{
 			Docker:   dc,
+			Runtimes: runtimes.New(cfg.Runtimes),
 			Registry: cfg.External,
 			Token:    runTokenFor(cfg, "default"),
 			Insecure: true, // TODO(tls): follow the door
@@ -173,13 +175,14 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	})
 
 	management := &services.Management{
-		Bundles: bundles,
-		Base:    temporalClient,
-		Secrets: secretStore,
-		Vars:    varStore,
-		Version: cfg.Version,
-		Blobs:   blobStore,
-		Log:     log.With(xlog.String("component", "management")),
+		Bundles:  bundles,
+		Base:     temporalClient,
+		Secrets:  secretStore,
+		Vars:     varStore,
+		Version:  cfg.Version,
+		Blobs:    blobStore,
+		Runtimes: runtimes.New(cfg.Runtimes),
+		Log:      log.With(xlog.String("component", "management")),
 	}
 
 	observe := &services.Observe{

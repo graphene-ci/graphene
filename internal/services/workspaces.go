@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
@@ -145,6 +146,24 @@ func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[m
 			return status.Errorf(codes.Internal, "tree: %v", err)
 		}
 	}
+}
+
+// ListRuntimes answers which languages this installation carries.
+func (m *Management) ListRuntimes(ctx context.Context, _ *connect.Request[managementv1.ListRuntimesRequest]) (*connect.Response[managementv1.ListRuntimesResponse], error) {
+	if _, err := bundleFor(ctx, m.Bundles, auth.RoleAdmin, auth.RoleRun); err != nil {
+		return nil, err
+	}
+	catalogue := m.Runtimes
+	if catalogue == nil {
+		catalogue = runtimes.New(nil)
+	}
+	out := make([]*managementv1.ListRuntimesResponse_Runtime, 0)
+	for _, r := range catalogue.All() {
+		out = append(out, &managementv1.ListRuntimesResponse_Runtime{
+			Name: r.Name, Version: r.Version, Image: r.Image, IsDefault: r.Name == catalogue.Default,
+		})
+	}
+	return connect.NewResponse(&managementv1.ListRuntimesResponse{Runtimes: out}), nil
 }
 
 // storeTree puts an uploaded tree into the blob store under the
