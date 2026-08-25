@@ -54,6 +54,8 @@ type State struct {
 	// Error carries the failure of a build that did not produce an
 	// image; the record stays for its diagnostics.
 	Error string `json:"error,omitempty"`
+	// CreatedAt is when the build started — workflow time, replay-safe.
+	CreatedAt string `json:"createdAt,omitempty"`
 }
 
 // MaterializeActivity builds one revision — served by the graphene
@@ -97,6 +99,7 @@ func initRevision(ctx workflow.Context, spec Spec) (State, error) {
 	// The revision belongs to its pipeline: deleting the pipeline takes
 	// its builds with it.
 	ownership.Init(ctx, &st.State, ref.OwnerRef("pipeline/"+spec.PipelineId))
+	st.CreatedAt = workflow.Now(ctx).UTC().Format(time.RFC3339)
 
 	actx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		TaskQueue:           wire.ServerQueue,

@@ -87,13 +87,13 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tCREATED\tIMAGE\n")
+			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\tCREATED\tIMAGE\n")
 			for _, r := range resp.Msg.GetRevisions() {
 				active := ""
 				if r.GetActive() {
 					active = "*"
 				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\n", r.GetId(), active, r.GetCreatedAt(), r.GetImage())
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\t%s\n", r.GetId(), active, r.GetPhase(), r.GetCreatedAt(), r.GetImage())
 			}
 			return nil
 		},

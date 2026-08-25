@@ -505,12 +505,15 @@ func (*ActivateRevisionResponse) Descriptor() ([]byte, []int) {
 }
 
 type ListRevisionsResponse_Revision struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
-	SourceDigest  string                 `protobuf:"bytes,3,opt,name=source_digest,json=sourceDigest,proto3" json:"source_digest,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	Active        bool                   `protobuf:"varint,5,opt,name=active,proto3" json:"active,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Image        string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	SourceDigest string                 `protobuf:"bytes,3,opt,name=source_digest,json=sourceDigest,proto3" json:"source_digest,omitempty"`
+	CreatedAt    string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Active       bool                   `protobuf:"varint,5,opt,name=active,proto3" json:"active,omitempty"`
+	// Phase is the record's own lifecycle phase: creating | ready |
+	// create-failed — a build in flight is visible here.
+	Phase         string `protobuf:"bytes,6,opt,name=phase,proto3" json:"phase,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -580,6 +583,13 @@ func (x *ListRevisionsResponse_Revision) GetActive() bool {
 	return false
 }
 
+func (x *ListRevisionsResponse_Revision) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
 var File_proto_management_v1_revisions_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_revisions_proto_rawDesc = "" +
@@ -600,16 +610,17 @@ const file_proto_management_v1_revisions_proto_rawDesc = "" +
 	"\bmanifest\x18\x03 \x01(\fR\bmanifest\"7\n" +
 	"\x14ListRevisionsRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\"\xfc\x01\n" +
+	"pipelineId\"\x92\x02\n" +
 	"\x15ListRevisionsResponse\x12T\n" +
-	"\trevisions\x18\x01 \x03(\v26.graphene.management.v1.ListRevisionsResponse.RevisionR\trevisions\x1a\x8c\x01\n" +
+	"\trevisions\x18\x01 \x03(\v26.graphene.management.v1.ListRevisionsResponse.RevisionR\trevisions\x1a\xa2\x01\n" +
 	"\bRevision\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12#\n" +
 	"\rsource_digest\x18\x03 \x01(\tR\fsourceDigest\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x16\n" +
-	"\x06active\x18\x05 \x01(\bR\x06active\"\x90\x02\n" +
+	"\x06active\x18\x05 \x01(\bR\x06active\x12\x14\n" +
+	"\x05phase\x18\x06 \x01(\tR\x05phase\"\x90\x02\n" +
 	"\x12RunRevisionRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x1f\n" +
