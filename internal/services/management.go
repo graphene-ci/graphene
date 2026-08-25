@@ -720,6 +720,68 @@ func (m *Management) ListVars(ctx context.Context, _ *connect.Request[management
 
 // --- helpers ---
 
+// describeRun reads a run through the same door as every record: the
+// live one answers the describe query itself (its worker is up), the
+// finished one is read from its history and visibility.
+func (m *Management) describeRun(ctx context.Context, b *nsbundle.Bundle, workflowId string) (*managementv1.Resource, error) {
+	desc, err := b.Client.DescribeWorkflowExecution(ctx, workflowId, "")
+	if err != nil {
+		return nil, err
+	}
+	info := desc.GetWorkflowExecutionInfo()
+	res := &managementv1.Resource{
+		Ref:       workflowId,
+		Kind:      "run",
+		Phase:     info.GetStatus().String(),
+		Owner:     "pipeline/" + info.GetType().GetName(),
+		StartedAt: info.GetStartTime(),
+	}
+	if fields := info.GetSearchAttributes().GetIndexedFields(); fields != nil {
+		dc := converter.GetDefaultDataConverter()
+		if p, ok := fields[wire.SearchAttrOwner.GetName()]; ok {
+			var owner string
+			if dc.FromPayload(p, &owner) == nil && owner != "" {
+				res.Owner = owner
+			}
+		}
+		if p, ok := fields[entdefine.SearchAttrLabels.GetName()]; ok {
+			var pairs []string
+			if dc.FromPayload(p, &pairs) == nil {
+				res.Labels = labelsFromPairs(pairs)
+			}
+		}
+	}
+	if info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		// The live run can speak for itself: params and image come from
+		// its own describe.
+		if raw, err := entclient.DescribeRaw(ctx, b.Client, workflowId); err == nil {
+			var out describeOut
+			if json.Unmarshal(raw, &out) == nil {
+				res.Spec, res.State = out.Spec, out.State
+			}
+		}
+		return res, nil
+	}
+	// A finished run left its result in its history; reading it needs
+	// no worker.
+	var result json.RawMessage
+	if err := b.Client.GetWorkflow(ctx, workflowId, "").Get(ctx, &result); err == nil && len(result) > 0 {
+		res.State = result
+	}
+	return res, nil
+}
+
+// labelsFromPairs turns the "k=v" keyword list back into labels.
+func labelsFromPairs(pairs []string) map[string]string {
+	out := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		if k, v, ok := strings.Cut(pair, "="); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // runAttributes is what makes a run a NODE OF THE TREE: it owns what
 // the pipeline declares, so it carries the same attributes every
 // record does — a kind to be listed by, an owner to be found under.
@@ -745,6 +807,14 @@ type describeOut struct {
 }
 
 func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowId string) (*managementv1.Resource, error) {
+	// A RUN is read differently, and not by choice: a describe query
+	// needs a worker able to replay the workflow, and a run's worker
+	// dies with the run. Its history, however, outlives it — so a
+	// finished run is read from what it LEFT, not from what it can
+	// answer.
+	if strings.HasPrefix(workflowId, "run/") {
+		return m.describeRun(ctx, b, workflowId)
+	}
 	raw, err := entclient.DescribeRaw(ctx, b.Client, workflowId)
 	if err != nil {
 		return nil, err
