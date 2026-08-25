@@ -191,11 +191,13 @@ func (m *Management) ListRevisions(ctx context.Context, creq *connect.Request[ma
 			Id:           rid,
 			Image:        st.Image,
 			SourceDigest: spec.SourceDigest,
-			CreatedAt:    string(phase),
+			CreatedAt:    st.CreatedAt,
+			Phase:        string(phase),
 			Active:       st.Image != "" && st.Image == activeImage,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].GetId() < out[j].GetId() })
+	// Newest first — a developer looks at what they just built.
+	sort.Slice(out, func(i, j int) bool { return out[i].GetCreatedAt() > out[j].GetCreatedAt() })
 	return connect.NewResponse(&managementv1.ListRevisionsResponse{Revisions: out}), nil
 }
 

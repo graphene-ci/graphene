@@ -54,6 +54,9 @@ message ListRevisionsResponse {
     string source_digest = 3;
     string created_at = 4;
     bool active = 5;
+    // Phase is the record's own lifecycle phase: creating | ready |
+    // create-failed — a build in flight is visible here.
+    string phase = 6;
   }
   repeated Revision revisions = 1;
 }
