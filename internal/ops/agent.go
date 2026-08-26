@@ -109,8 +109,11 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 		// silently re-badge a live agent. Fail loudly, once.
 		if strings.Contains(string(out), "GRAPHENE_ALREADY_BOUND") {
 			return temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("machine %s already runs another agent: %s", install.Address,
-					truncate(strings.TrimSpace(string(out)), 256)),
+				fmt.Sprintf("machine %s already runs another agent (%s). "+
+					"Attach it (pipeline.AttachAgent / labels) if any machine will do; "+
+					"declaring a NEW name here would re-badge a live machine — to really rename it, "+
+					"remove /etc/graphene-agent on the host first",
+					install.Address, truncate(strings.TrimSpace(string(out)), 128)),
 				"MachineAlreadyBound", nil)
 		}
 		return fmt.Errorf("install script: %w: %s", err, truncate(string(out), 2048))
