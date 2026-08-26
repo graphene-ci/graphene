@@ -176,7 +176,8 @@ func buildKinds() map[string]*kindEntry {
 
 	add("managedsource", "the project's own tree: every file editable in place", true,
 		reflect.TypeFor[sourceflow.ManagedSpec](),
-		cmd("write", reflect.TypeFor[sourceflow.WriteCmd]()))
+		cmd("write", reflect.TypeFor[sourceflow.WriteCmd]()),
+		cmd("revert", reflect.TypeFor[sourceflow.RevertCmd]()))
 
 	add("revision", "one immutable build of a source tree", true,
 		reflect.TypeFor[revisionflow.Spec]())

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,41 @@ func (f *FS) Delete(_ context.Context, namespace, location string) error {
 		return err
 	}
 	return nil
+}
+
+// List walks the namespace's tree under the prefix.
+func (f *FS) List(_ context.Context, namespace, prefix string) ([]string, error) {
+	root, err := f.path(namespace, "")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// A namespace that has never stored anything has no
+			// directory; that is an empty listing, not a failure.
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return rerr
+		}
+		loc := filepath.ToSlash(rel)
+		if strings.HasPrefix(loc, prefix) {
+			out = append(out, loc)
+		}
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return out, err
 }
 
 func (f *FS) path(namespace, location string) (string, error) {

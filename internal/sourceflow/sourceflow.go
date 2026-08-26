@@ -134,6 +134,9 @@ func NewGit() *entdefine.Definition[GitSpec, GitState] {
 			applyCheckout(&st, res, workflow.Now(ctx))
 			return st, nil
 		}),
+		entdefine.WithFinalize[GitSpec, GitState](func(ctx workflow.Context, _ *GitState) error {
+			return sweep(ctx, idOf(ctx, GitKind))
+		}),
 	)
 	ownership.Register(def, func(st *GitState) *ownership.State { return &st.State })
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[GitSpec, GitState], _ SyncCmd) (GitRes, error) {
@@ -229,7 +232,27 @@ type ManagedState struct {
 	// Generation counts writes.
 	Generation uint64 `json:"generation,omitempty"`
 	UpdatedAt  string `json:"updatedAt,omitempty"`
+	// History is the recent generations, newest last. Every index ever
+	// written is still in the store — they are immutable and addressed
+	// by digest — so a generation here is enough to go back to it. The
+	// list is bounded: a record's state is read on every describe, and
+	// an unbounded one would grow without end. The full account stays
+	// in the record's own history.
+	History []Generation `json:"history,omitempty"`
 }
+
+// Generation is one past state of the tree.
+type Generation struct {
+	Generation    uint64 `json:"generation"`
+	IndexLocation string `json:"indexLocation"`
+	TreeDigest    string `json:"treeDigest"`
+	Files         int    `json:"files"`
+	At            string `json:"at"`
+}
+
+// historyKept bounds how far back a revert can reach through the
+// record's state.
+const historyKept = 20
 
 // WriteCmd records one change of the tree: the door has already
 // written the file blob and the new index, so the command carries
@@ -250,6 +273,28 @@ func (WriteCmd) Result() ManagedRes { return ManagedRes{} }
 func (c WriteCmd) Validate() error {
 	if c.IndexLocation == "" {
 		return fmt.Errorf("a write names the new index")
+	}
+	return nil
+}
+
+// RevertCmd puts a past generation back. It moves FORWARD: the old
+// tree becomes a new generation, so the history stays an account of
+// what happened rather than being rewritten.
+type RevertCmd struct {
+	// Generation names which past state to restore.
+	Generation uint64 `json:"generation"`
+}
+
+// Name is the command's wire identity.
+func (RevertCmd) Name() entity.CommandName { return "revert" }
+
+// Result binds the response type.
+func (RevertCmd) Result() ManagedRes { return ManagedRes{} }
+
+// Validate refuses a revert that names nothing.
+func (c RevertCmd) Validate() error {
+	if c.Generation == 0 {
+		return fmt.Errorf("name the generation to restore")
 	}
 	return nil
 }
@@ -307,19 +352,57 @@ func NewManaged() *entdefine.Definition[ManagedSpec, ManagedState] {
 			st.UpdatedAt = workflow.Now(ctx).UTC().Format(time.RFC3339)
 			return st, nil
 		}),
+		entdefine.WithFinalize[ManagedSpec, ManagedState](func(ctx workflow.Context, _ *ManagedState) error {
+			return sweep(ctx, idOf(ctx, ManagedKind))
+		}),
 	)
 	ownership.Register(def, func(st *ManagedState) *ownership.State { return &st.State })
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[ManagedSpec, ManagedState], cmd WriteCmd) (ManagedRes, error) {
+		return advance(ctx, ec.State(), cmd.IndexLocation, cmd.TreeDigest, cmd.Files), nil
+	})
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[ManagedSpec, ManagedState], cmd RevertCmd) (ManagedRes, error) {
 		st := ec.State()
-		st.IndexLocation, st.TreeDigest, st.Files = cmd.IndexLocation, cmd.TreeDigest, cmd.Files
-		st.Generation++
-		st.UpdatedAt = workflow.Now(ctx).UTC().Format(time.RFC3339)
-		return ManagedRes{
-			IndexLocation: st.IndexLocation, TreeDigest: st.TreeDigest,
-			Files: st.Files, Generation: st.Generation,
-		}, nil
+		for _, g := range st.History {
+			if g.Generation == cmd.Generation {
+				return advance(ctx, st, g.IndexLocation, g.TreeDigest, g.Files), nil
+			}
+		}
+		err := fmt.Errorf("generation %d is not in the last %d of this source", cmd.Generation, historyKept)
+		return ManagedRes{}, temporal.NewNonRetryableApplicationError(err.Error(), "NoSuchGeneration", err)
 	})
 	return def
+}
+
+// advance makes one new generation of the tree and remembers the one
+// it replaced.
+func advance(ctx workflow.Context, st *ManagedState, indexLocation, treeDigest string, files int) ManagedRes {
+	now := workflow.Now(ctx).UTC().Format(time.RFC3339)
+	if st.IndexLocation != "" {
+		st.History = append(st.History, Generation{
+			Generation: st.Generation, IndexLocation: st.IndexLocation,
+			TreeDigest: st.TreeDigest, Files: st.Files, At: st.UpdatedAt,
+		})
+		if len(st.History) > historyKept {
+			st.History = st.History[len(st.History)-historyKept:]
+		}
+	}
+	st.IndexLocation, st.TreeDigest, st.Files = indexLocation, treeDigest, files
+	st.Generation++
+	st.UpdatedAt = now
+	return ManagedRes{
+		IndexLocation: st.IndexLocation, TreeDigest: st.TreeDigest,
+		Files: st.Files, Generation: st.Generation,
+	}
+}
+
+// sweep erases everything the source owns.
+func sweep(ctx workflow.Context, sourceId string) error {
+	sctx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:           wire.ServerQueue,
+		StartToCloseTimeout: 5 * time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 5},
+	})
+	return workflow.ExecuteActivity(sctx, SweepActivity, SweepReq{Prefix: BlobPrefix(sourceId)}).Get(ctx, nil)
 }
 
 // idOf recovers a source's id from its workflow id.
@@ -331,3 +414,18 @@ func idOf(ctx workflow.Context, kind entity.KindName) string {
 	}
 	return full
 }
+
+// SweepActivity erases the blobs of a deleted record: (SweepReq). A
+// record's bytes are its own — old file versions, old indexes, the
+// checkout — and nothing outside names them, so deleting the record
+// has to take them along or they stay forever with no way back to
+// them.
+const SweepActivity = "source.blobs.sweep"
+
+// SweepReq names the prefix to erase.
+type SweepReq struct {
+	Prefix string `json:"prefix"`
+}
+
+// BlobPrefix is where one source keeps everything it owns.
+func BlobPrefix(sourceId string) string { return "sources/" + sourceId + "/" }

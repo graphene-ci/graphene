@@ -14,6 +14,8 @@ import (
 	"go.temporal.io/sdk/activity"
 
 	"github.com/graphene-ci/graphene/internal/materialize"
+	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/revisionflow"
 	"github.com/graphene-ci/graphene/internal/sourceflow"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/wire"
@@ -312,4 +314,40 @@ func (s *Worker) SourceRuntime(ctx context.Context, sourceRef string) (string, e
 		return spec.Runtime, err
 	}
 	return "", fmt.Errorf("%q is not a source", sourceRef)
+}
+
+// sweepBlobs erases everything under one prefix — the bytes of a
+// record that has just been deleted. Absence is success: the sweep is
+// a finalizer and must be safe to retry.
+func (s *Worker) sweepBlobs(ctx context.Context, prefix string) error {
+	if s.deps.Blobs == nil || prefix == "" {
+		return nil
+	}
+	locations, err := s.deps.Blobs.List(ctx, s.deps.Namespace, prefix)
+	if err != nil {
+		return fmt.Errorf("list %s: %w", prefix, err)
+	}
+	for _, loc := range locations {
+		if err := s.deps.Blobs.Delete(ctx, s.deps.Namespace, loc); err != nil {
+			return fmt.Errorf("delete %s: %w", loc, err)
+		}
+		activity.RecordHeartbeat(ctx, "swept "+loc)
+	}
+	return nil
+}
+
+// sweepSource erases a deleted source's blobs.
+func (s *Worker) sweepSource(ctx context.Context, req sourceflow.SweepReq) error {
+	return s.sweepBlobs(ctx, req.Prefix)
+}
+
+// sweepRevision erases a deleted revision's blobs.
+func (s *Worker) sweepRevision(ctx context.Context, req revisionflow.SweepReq) error {
+	return s.sweepBlobs(ctx, req.Prefix)
+}
+
+// sweepPipeline erases what belongs to a deleted pipeline and to
+// nothing under it: the upload area its sources started from.
+func (s *Worker) sweepPipeline(ctx context.Context, req pipelineflow.SweepReq) error {
+	return s.sweepBlobs(ctx, req.Prefix)
 }

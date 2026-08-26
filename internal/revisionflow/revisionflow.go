@@ -7,6 +7,7 @@ package revisionflow
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
@@ -58,6 +59,29 @@ type State struct {
 	CreatedAt string `json:"createdAt,omitempty"`
 }
 
+// SweepActivity erases the blobs of a deleted revision: (SweepReq).
+const SweepActivity = "revision.blobs.sweep"
+
+// SweepReq names the prefix to erase.
+type SweepReq struct {
+	Prefix string `json:"prefix"`
+}
+
+// BlobPrefix is where one revision keeps its source snapshot, its
+// manifest and its build log.
+func BlobPrefix(ctx workflow.Context) string {
+	id := workflow.GetInfo(ctx).WorkflowExecution.ID
+	prefix := string(Kind) + "/"
+	id = strings.TrimPrefix(id, prefix)
+	// The record id is "{pipelineId}.{revisionId}", and the blobs live
+	// under "revisions/{pipelineId}/{revisionId}/".
+	pipelineId, revisionId, ok := strings.Cut(id, ".")
+	if !ok {
+		return ""
+	}
+	return "revisions/" + pipelineId + "/" + revisionId + "/"
+}
+
 // MaterializeActivity builds one revision — served by the graphene
 // worker over its Materializer.
 const MaterializeActivity = "revision.materialize"
@@ -86,6 +110,19 @@ func New() *entdefine.Definition[Spec, State] {
 	def := entdefine.New[Spec, State](Kind,
 		entdefine.WithSearchAttributes[Spec, State](true),
 		entdefine.WithInit[Spec, State](initRevision),
+		// A revision owns the bytes of ITS build: the source snapshot it
+		// was made from, the manifest it produced, the log it left.
+		// Deleting the record takes them, or they outlive every trace
+		// of what they belonged to.
+		entdefine.WithFinalize[Spec, State](func(ctx workflow.Context, _ *State) error {
+			sctx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				TaskQueue:           wire.ServerQueue,
+				StartToCloseTimeout: 5 * time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 5},
+			})
+			return workflow.ExecuteActivity(sctx, SweepActivity,
+				SweepReq{Prefix: BlobPrefix(ctx)}).Get(ctx, nil)
+		}),
 	)
 	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
 	return def

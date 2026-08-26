@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -306,7 +307,86 @@ sync: its files ARE the source, and writing one is the change.`,
 		},
 	}
 
-	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm)
+	history := &cobra.Command{
+		Use:   "history <source>",
+		Short: "The generations of a managed source's tree",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
+				Ref: sourceRef(args[0]),
+			}))
+			if err != nil {
+				return err
+			}
+			var st struct {
+				Generation uint64 `json:"generation"`
+				TreeDigest string `json:"treeDigest"`
+				Files      int    `json:"files"`
+				UpdatedAt  string `json:"updatedAt"`
+				History    []struct {
+					Generation uint64 `json:"generation"`
+					TreeDigest string `json:"treeDigest"`
+					Files      int    `json:"files"`
+					At         string `json:"at"`
+				} `json:"history"`
+			}
+			if err := json.Unmarshal(got.Msg.GetResource().GetState(), &st); err != nil {
+				return err
+			}
+			if done, err := f.Emit(got.Msg); done || err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "GEN\tFILES\tWHEN\tTREE\n")
+			for _, g := range st.History {
+				fmt.Fprintf(cmdutil.Out, "%d\t%d\t%s\t%s\n", g.Generation, g.Files, g.At, short(g.TreeDigest))
+			}
+			fmt.Fprintf(cmdutil.Out, "%d\t%d\t%s\t%s\t(current)\n", st.Generation, st.Files, st.UpdatedAt, short(st.TreeDigest))
+			return nil
+		},
+	}
+
+	revert := &cobra.Command{
+		Use:   "revert <source> <generation>",
+		Short: "Put a past generation of the tree back",
+		Long: `Restore a past generation as a NEW one: the history is an account of
+what happened, so going back moves forward rather than erasing.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			gen, err := strconv.ParseUint(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("generation must be a number: %w", err)
+			}
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			payload, err := json.Marshal(map[string]any{"generation": gen})
+			if err != nil {
+				return err
+			}
+			resp, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
+				Ref: sourceRef(args[0]), Command: "revert", Payload: payload,
+			}))
+			if err != nil {
+				return err
+			}
+			var out struct {
+				TreeDigest string `json:"treeDigest"`
+				Generation uint64 `json:"generation"`
+				Files      int    `json:"files"`
+			}
+			_ = json.Unmarshal(resp.Msg.GetResult(), &out)
+			fmt.Fprintf(cmdutil.Out, "generation %d restored as %d (%d files, tree %s)\n",
+				gen, out.Generation, out.Files, short(out.TreeDigest))
+			return nil
+		},
+	}
+
+	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm, history, revert)
 }
 
 // sourceRef lets a bare name mean the managed source of that name:
@@ -317,4 +397,13 @@ func sourceRef(name string) string {
 		return name
 	}
 	return "managedsource/" + name
+}
+
+// short renders a digest the way a person reads it.
+func short(digest string) string {
+	d := strings.TrimPrefix(digest, "sha256:")
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
 }
