@@ -32,16 +32,21 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Source revisions: materialize, list, run, activate",
 	}
 
-	var srcPath string
+	var srcPath, sourceRef string
 	mat := &cobra.Command{
 		Use:   "materialize <pipeline>",
-		Short: "Build a source tree into a revision on the server",
-		Args:  cobra.ExactArgs(1),
+		Short: "Build a source into a revision on the server",
+		Long: `Build one of the pipeline's sources. With a single source it is taken
+by default; with several, name one with --source. Use --upload to build
+a local directory instead, without declaring a source at all.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// With no --source the PIPELINE's own working tree is built:
-			// nothing is uploaded, the tree already lives on the server.
-			if !cmd.Flags().Changed("source") {
-				return materializeStream(cmd, f, &managementv1.MaterializeRequest{PipelineId: args[0]})
+			// Nothing uploaded: the source record's tree already lives
+			// on the server.
+			if !cmd.Flags().Changed("upload") {
+				return materializeStream(cmd, f, &managementv1.MaterializeRequest{
+					PipelineId: args[0], SourceRef: sourceRef,
+				})
 			}
 			src, err := PackSource(srcPath)
 			if err != nil {
@@ -53,7 +58,8 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			})
 		},
 	}
-	mat.Flags().StringVarP(&srcPath, "source", "f", ".", "upload THIS directory instead of the pipeline's own tree")
+	mat.Flags().StringVarP(&srcPath, "upload", "f", ".", "upload THIS directory instead of a declared source")
+	mat.Flags().StringVar(&sourceRef, "source", "", "which source to build (\"gitsource/main\"); default: the only one")
 
 	list := &cobra.Command{
 		Use:   "list <pipeline>",
