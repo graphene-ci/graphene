@@ -290,7 +290,10 @@ func (v *runWatchView) pullLogs(ctx context.Context, ref string) {
 		kept = logAllKept
 	}
 	for stream.Receive() {
-		rec := stream.Msg()
+		rec := stream.Msg().GetRecord()
+		if rec == nil {
+			continue
+		}
 		v.mu.Lock()
 		if rec.GetTimeUnixNano() > node.logsSince {
 			node.logsSince = rec.GetTimeUnixNano()

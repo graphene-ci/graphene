@@ -24,6 +24,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	temporalotel "go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporal"
@@ -37,7 +38,6 @@ import (
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsflow"
-	"github.com/graphene-ci/graphene/internal/obsx"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
@@ -51,6 +51,7 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/obs"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 	"github.com/graphene-ci/pipeline/pkg/ref"
@@ -140,11 +141,19 @@ func (s *Worker) SetRunStarter(fn RunStarter) { s.startRun = fn }
 
 // New builds and registers everything; Run starts polling.
 func New(deps Deps) (*Worker, error) {
-	// Every activity of every system record is observable through ONE
-	// interceptor: dimensions 3, 4 and 5 must not depend on somebody
-	// remembering to instrument the next activity.
+	// Every activity of every system record is observable through the
+	// SDK's one interceptor (subject, logs, metrics, retries), plus the
+	// Temporal OTel one for spans — the same pair every other worker
+	// runs, so a system record and a library record answer dimensions
+	// 3-5 identically.
+	workerInterceptors := []interceptor.WorkerInterceptor{}
+	if tracing, terr := temporalotel.NewTracingInterceptor(temporalotel.TracerOptions{}); terr == nil {
+		workerInterceptors = append(workerInterceptors, tracing)
+	}
+	// obs sits INSIDE tracing so the open span gets the subject.
+	workerInterceptors = append(workerInterceptors, &obs.Interceptor{Contour: "server"})
 	w := worker.New(deps.Client, wire.ServerQueue, worker.Options{
-		Interceptors: []interceptor.WorkerInterceptor{&obsx.Interceptor{}},
+		Interceptors: workerInterceptors,
 	})
 	standTick := deps.StandTick
 	if standTick == 0 {

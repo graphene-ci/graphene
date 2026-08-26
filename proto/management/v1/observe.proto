@@ -19,12 +19,15 @@ service ObserveAPI {
   // Events is dimension 2: the entity's own history, translated —
   // classification without omission (raw carries everything).
   rpc Events(EventsRequest) returns (stream Event);
-  // Logs is dimension 3 (telemetry plane).
-  rpc Logs(LogsRequest) returns (stream LogRecord);
-  // Metrics is dimension 4 (telemetry plane).
-  rpc Metrics(MetricsRequest) returns (MetricsResponse);
-  // Trace is dimension 5 (telemetry plane).
-  rpc Trace(TraceRequest) returns (TraceResponse);
+  // Logs is dimension 3 (telemetry plane). History first, then — with
+  // follow — the live push from the collector: no polling anywhere.
+  rpc Logs(LogsRequest) returns (stream LogChunk);
+  // Metrics is dimension 4: one snapshot chunk (the backend's PromQL
+  // range JSON), then — with follow — live OTLP metric chunks.
+  rpc Metrics(MetricsRequest) returns (stream MetricsChunk);
+  // Trace is dimension 5: one snapshot chunk (Jaeger JSON), then —
+  // with follow — live OTLP span chunks.
+  rpc Trace(TraceRequest) returns (stream TraceChunk);
 }
 
 message ObserveStateRequest {
@@ -87,23 +90,50 @@ message LogRecord {
   map<string, string> attributes = 4;
 }
 
+message LogChunk {
+  oneof chunk {
+    // Record is one log line — history and live alike (a log record
+    // converts from OTLP without loss).
+    LogRecord record = 1;
+    // Dropped reports lines a slow consumer lost — telemetry sheds
+    // rather than blocks, and says so instead of leaving silent holes.
+    int64 dropped = 2;
+  }
+}
+
 message MetricsRequest {
   string ref = 1;
   int64 start_unix_nano = 2;
   int64 end_unix_nano = 3;
+  // Follow keeps the stream open: live points arrive as standard OTLP.
+  bool follow = 4;
 }
 
-message MetricsResponse {
-  // Series is backend-shaped JSON; the contract firms up with the
-  // chosen backend.
-  bytes series = 1;
+message MetricsChunk {
+  oneof chunk {
+    // Snapshot is the HISTORY: the backend's own PromQL range JSON.
+    bytes snapshot = 1;
+    // Otlp is one LIVE batch: a serialized
+    // opentelemetry ExportMetricsServiceRequest, records of this
+    // subject only — decode it with any standard OTel library.
+    bytes otlp = 2;
+    int64 dropped = 3;
+  }
 }
 
 message TraceRequest {
   string ref = 1;
+  // Follow keeps the stream open: live spans arrive as standard OTLP.
+  bool follow = 2;
 }
 
-message TraceResponse {
-  // Trace is the span tree as JSON.
-  bytes trace = 1;
+message TraceChunk {
+  oneof chunk {
+    // Snapshot is the HISTORY: Jaeger JSON of the subject's traces.
+    bytes snapshot = 1;
+    // Otlp is one LIVE batch: a serialized
+    // opentelemetry ExportTraceServiceRequest of this subject.
+    bytes otlp = 2;
+    int64 dropped = 3;
+  }
 }

@@ -462,18 +462,106 @@ func (x *LogRecord) GetAttributes() map[string]string {
 	return nil
 }
 
+type LogChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Chunk:
+	//
+	//	*LogChunk_Record
+	//	*LogChunk_Dropped
+	Chunk         isLogChunk_Chunk `protobuf_oneof:"chunk"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogChunk) Reset() {
+	*x = LogChunk{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogChunk) ProtoMessage() {}
+
+func (x *LogChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
+func (*LogChunk) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LogChunk) GetChunk() isLogChunk_Chunk {
+	if x != nil {
+		return x.Chunk
+	}
+	return nil
+}
+
+func (x *LogChunk) GetRecord() *LogRecord {
+	if x != nil {
+		if x, ok := x.Chunk.(*LogChunk_Record); ok {
+			return x.Record
+		}
+	}
+	return nil
+}
+
+func (x *LogChunk) GetDropped() int64 {
+	if x != nil {
+		if x, ok := x.Chunk.(*LogChunk_Dropped); ok {
+			return x.Dropped
+		}
+	}
+	return 0
+}
+
+type isLogChunk_Chunk interface {
+	isLogChunk_Chunk()
+}
+
+type LogChunk_Record struct {
+	// Record is one log line — history and live alike (a log record
+	// converts from OTLP without loss).
+	Record *LogRecord `protobuf:"bytes,1,opt,name=record,proto3,oneof"`
+}
+
+type LogChunk_Dropped struct {
+	// Dropped reports lines a slow consumer lost — telemetry sheds
+	// rather than blocks, and says so instead of leaving silent holes.
+	Dropped int64 `protobuf:"varint,2,opt,name=dropped,proto3,oneof"`
+}
+
+func (*LogChunk_Record) isLogChunk_Chunk() {}
+
+func (*LogChunk_Dropped) isLogChunk_Chunk() {}
+
 type MetricsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	StartUnixNano int64                  `protobuf:"varint,2,opt,name=start_unix_nano,json=startUnixNano,proto3" json:"start_unix_nano,omitempty"`
 	EndUnixNano   int64                  `protobuf:"varint,3,opt,name=end_unix_nano,json=endUnixNano,proto3" json:"end_unix_nano,omitempty"`
+	// Follow keeps the stream open: live points arrive as standard OTLP.
+	Follow        bool `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricsRequest) Reset() {
 	*x = MetricsRequest{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -485,7 +573,7 @@ func (x *MetricsRequest) String() string {
 func (*MetricsRequest) ProtoMessage() {}
 
 func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -498,7 +586,7 @@ func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsRequest.ProtoReflect.Descriptor instead.
 func (*MetricsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *MetricsRequest) GetRef() string {
@@ -522,30 +610,40 @@ func (x *MetricsRequest) GetEndUnixNano() int64 {
 	return 0
 }
 
-type MetricsResponse struct {
+func (x *MetricsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+type MetricsChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Series is backend-shaped JSON; the contract firms up with the
-	// chosen backend.
-	Series        []byte `protobuf:"bytes,1,opt,name=series,proto3" json:"series,omitempty"`
+	// Types that are valid to be assigned to Chunk:
+	//
+	//	*MetricsChunk_Snapshot
+	//	*MetricsChunk_Otlp
+	//	*MetricsChunk_Dropped
+	Chunk         isMetricsChunk_Chunk `protobuf_oneof:"chunk"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MetricsResponse) Reset() {
-	*x = MetricsResponse{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+func (x *MetricsChunk) Reset() {
+	*x = MetricsChunk{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MetricsResponse) String() string {
+func (x *MetricsChunk) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MetricsResponse) ProtoMessage() {}
+func (*MetricsChunk) ProtoMessage() {}
 
-func (x *MetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+func (x *MetricsChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -556,28 +654,83 @@ func (x *MetricsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MetricsResponse.ProtoReflect.Descriptor instead.
-func (*MetricsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use MetricsChunk.ProtoReflect.Descriptor instead.
+func (*MetricsChunk) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *MetricsResponse) GetSeries() []byte {
+func (x *MetricsChunk) GetChunk() isMetricsChunk_Chunk {
 	if x != nil {
-		return x.Series
+		return x.Chunk
 	}
 	return nil
 }
 
+func (x *MetricsChunk) GetSnapshot() []byte {
+	if x != nil {
+		if x, ok := x.Chunk.(*MetricsChunk_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *MetricsChunk) GetOtlp() []byte {
+	if x != nil {
+		if x, ok := x.Chunk.(*MetricsChunk_Otlp); ok {
+			return x.Otlp
+		}
+	}
+	return nil
+}
+
+func (x *MetricsChunk) GetDropped() int64 {
+	if x != nil {
+		if x, ok := x.Chunk.(*MetricsChunk_Dropped); ok {
+			return x.Dropped
+		}
+	}
+	return 0
+}
+
+type isMetricsChunk_Chunk interface {
+	isMetricsChunk_Chunk()
+}
+
+type MetricsChunk_Snapshot struct {
+	// Snapshot is the HISTORY: the backend's own PromQL range JSON.
+	Snapshot []byte `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"`
+}
+
+type MetricsChunk_Otlp struct {
+	// Otlp is one LIVE batch: a serialized
+	// opentelemetry ExportMetricsServiceRequest, records of this
+	// subject only — decode it with any standard OTel library.
+	Otlp []byte `protobuf:"bytes,2,opt,name=otlp,proto3,oneof"`
+}
+
+type MetricsChunk_Dropped struct {
+	Dropped int64 `protobuf:"varint,3,opt,name=dropped,proto3,oneof"`
+}
+
+func (*MetricsChunk_Snapshot) isMetricsChunk_Chunk() {}
+
+func (*MetricsChunk_Otlp) isMetricsChunk_Chunk() {}
+
+func (*MetricsChunk_Dropped) isMetricsChunk_Chunk() {}
+
 type TraceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ref   string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// Follow keeps the stream open: live spans arrive as standard OTLP.
+	Follow        bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TraceRequest) Reset() {
 	*x = TraceRequest{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +742,7 @@ func (x *TraceRequest) String() string {
 func (*TraceRequest) ProtoMessage() {}
 
 func (x *TraceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +755,7 @@ func (x *TraceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraceRequest.ProtoReflect.Descriptor instead.
 func (*TraceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{8}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TraceRequest) GetRef() string {
@@ -612,29 +765,40 @@ func (x *TraceRequest) GetRef() string {
 	return ""
 }
 
-type TraceResponse struct {
+func (x *TraceRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+type TraceChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Trace is the span tree as JSON.
-	Trace         []byte `protobuf:"bytes,1,opt,name=trace,proto3" json:"trace,omitempty"`
+	// Types that are valid to be assigned to Chunk:
+	//
+	//	*TraceChunk_Snapshot
+	//	*TraceChunk_Otlp
+	//	*TraceChunk_Dropped
+	Chunk         isTraceChunk_Chunk `protobuf_oneof:"chunk"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *TraceResponse) Reset() {
-	*x = TraceResponse{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
+func (x *TraceChunk) Reset() {
+	*x = TraceChunk{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TraceResponse) String() string {
+func (x *TraceChunk) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TraceResponse) ProtoMessage() {}
+func (*TraceChunk) ProtoMessage() {}
 
-func (x *TraceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
+func (x *TraceChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -645,17 +809,69 @@ func (x *TraceResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TraceResponse.ProtoReflect.Descriptor instead.
-func (*TraceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{9}
+// Deprecated: Use TraceChunk.ProtoReflect.Descriptor instead.
+func (*TraceChunk) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *TraceResponse) GetTrace() []byte {
+func (x *TraceChunk) GetChunk() isTraceChunk_Chunk {
 	if x != nil {
-		return x.Trace
+		return x.Chunk
 	}
 	return nil
 }
+
+func (x *TraceChunk) GetSnapshot() []byte {
+	if x != nil {
+		if x, ok := x.Chunk.(*TraceChunk_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *TraceChunk) GetOtlp() []byte {
+	if x != nil {
+		if x, ok := x.Chunk.(*TraceChunk_Otlp); ok {
+			return x.Otlp
+		}
+	}
+	return nil
+}
+
+func (x *TraceChunk) GetDropped() int64 {
+	if x != nil {
+		if x, ok := x.Chunk.(*TraceChunk_Dropped); ok {
+			return x.Dropped
+		}
+	}
+	return 0
+}
+
+type isTraceChunk_Chunk interface {
+	isTraceChunk_Chunk()
+}
+
+type TraceChunk_Snapshot struct {
+	// Snapshot is the HISTORY: Jaeger JSON of the subject's traces.
+	Snapshot []byte `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"`
+}
+
+type TraceChunk_Otlp struct {
+	// Otlp is one LIVE batch: a serialized
+	// opentelemetry ExportTraceServiceRequest of this subject.
+	Otlp []byte `protobuf:"bytes,2,opt,name=otlp,proto3,oneof"`
+}
+
+type TraceChunk_Dropped struct {
+	Dropped int64 `protobuf:"varint,3,opt,name=dropped,proto3,oneof"`
+}
+
+func (*TraceChunk_Snapshot) isTraceChunk_Chunk() {}
+
+func (*TraceChunk_Otlp) isTraceChunk_Chunk() {}
+
+func (*TraceChunk_Dropped) isTraceChunk_Chunk() {}
 
 var File_proto_management_v1_observe_proto protoreflect.FileDescriptor
 
@@ -699,24 +915,37 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"attributes\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"n\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +
+	"\bLogChunk\x12;\n" +
+	"\x06record\x18\x01 \x01(\v2!.graphene.management.v1.LogRecordH\x00R\x06record\x12\x1a\n" +
+	"\adropped\x18\x02 \x01(\x03H\x00R\adroppedB\a\n" +
+	"\x05chunk\"\x86\x01\n" +
 	"\x0eMetricsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12&\n" +
 	"\x0fstart_unix_nano\x18\x02 \x01(\x03R\rstartUnixNano\x12\"\n" +
-	"\rend_unix_nano\x18\x03 \x01(\x03R\vendUnixNano\")\n" +
-	"\x0fMetricsResponse\x12\x16\n" +
-	"\x06series\x18\x01 \x01(\fR\x06series\" \n" +
+	"\rend_unix_nano\x18\x03 \x01(\x03R\vendUnixNano\x12\x16\n" +
+	"\x06follow\x18\x04 \x01(\bR\x06follow\"g\n" +
+	"\fMetricsChunk\x12\x1c\n" +
+	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +
+	"\x04otlp\x18\x02 \x01(\fH\x00R\x04otlp\x12\x1a\n" +
+	"\adropped\x18\x03 \x01(\x03H\x00R\adroppedB\a\n" +
+	"\x05chunk\"8\n" +
 	"\fTraceRequest\x12\x10\n" +
-	"\x03ref\x18\x01 \x01(\tR\x03ref\"%\n" +
-	"\rTraceResponse\x12\x14\n" +
-	"\x05trace\x18\x01 \x01(\fR\x05trace2\xc6\x03\n" +
+	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\"e\n" +
+	"\n" +
+	"TraceChunk\x12\x1c\n" +
+	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +
+	"\x04otlp\x18\x02 \x01(\fH\x00R\x04otlp\x12\x1a\n" +
+	"\adropped\x18\x03 \x01(\x03H\x00R\adroppedB\a\n" +
+	"\x05chunk2\xc3\x03\n" +
 	"\n" +
 	"ObserveAPI\x12b\n" +
 	"\x05State\x12+.graphene.management.v1.ObserveStateRequest\x1a,.graphene.management.v1.ObserveStateResponse\x12P\n" +
-	"\x06Events\x12%.graphene.management.v1.EventsRequest\x1a\x1d.graphene.management.v1.Event0\x01\x12P\n" +
-	"\x04Logs\x12#.graphene.management.v1.LogsRequest\x1a!.graphene.management.v1.LogRecord0\x01\x12Z\n" +
-	"\aMetrics\x12&.graphene.management.v1.MetricsRequest\x1a'.graphene.management.v1.MetricsResponse\x12T\n" +
-	"\x05Trace\x12$.graphene.management.v1.TraceRequest\x1a%.graphene.management.v1.TraceResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\x06Events\x12%.graphene.management.v1.EventsRequest\x1a\x1d.graphene.management.v1.Event0\x01\x12O\n" +
+	"\x04Logs\x12#.graphene.management.v1.LogsRequest\x1a .graphene.management.v1.LogChunk0\x01\x12Y\n" +
+	"\aMetrics\x12&.graphene.management.v1.MetricsRequest\x1a$.graphene.management.v1.MetricsChunk0\x01\x12S\n" +
+	"\x05Trace\x12$.graphene.management.v1.TraceRequest\x1a\".graphene.management.v1.TraceChunk0\x01BFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_observe_proto_rawDescOnce sync.Once
@@ -730,7 +959,7 @@ func file_proto_management_v1_observe_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_observe_proto_rawDescData
 }
 
-var file_proto_management_v1_observe_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_management_v1_observe_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_proto_management_v1_observe_proto_goTypes = []any{
 	(*ObserveStateRequest)(nil),  // 0: graphene.management.v1.ObserveStateRequest
 	(*ObserveStateResponse)(nil), // 1: graphene.management.v1.ObserveStateResponse
@@ -738,31 +967,33 @@ var file_proto_management_v1_observe_proto_goTypes = []any{
 	(*Event)(nil),                // 3: graphene.management.v1.Event
 	(*LogsRequest)(nil),          // 4: graphene.management.v1.LogsRequest
 	(*LogRecord)(nil),            // 5: graphene.management.v1.LogRecord
-	(*MetricsRequest)(nil),       // 6: graphene.management.v1.MetricsRequest
-	(*MetricsResponse)(nil),      // 7: graphene.management.v1.MetricsResponse
-	(*TraceRequest)(nil),         // 8: graphene.management.v1.TraceRequest
-	(*TraceResponse)(nil),        // 9: graphene.management.v1.TraceResponse
-	nil,                          // 10: graphene.management.v1.LogRecord.AttributesEntry
-	(*Resource)(nil),             // 11: graphene.management.v1.Resource
+	(*LogChunk)(nil),             // 6: graphene.management.v1.LogChunk
+	(*MetricsRequest)(nil),       // 7: graphene.management.v1.MetricsRequest
+	(*MetricsChunk)(nil),         // 8: graphene.management.v1.MetricsChunk
+	(*TraceRequest)(nil),         // 9: graphene.management.v1.TraceRequest
+	(*TraceChunk)(nil),           // 10: graphene.management.v1.TraceChunk
+	nil,                          // 11: graphene.management.v1.LogRecord.AttributesEntry
+	(*Resource)(nil),             // 12: graphene.management.v1.Resource
 }
 var file_proto_management_v1_observe_proto_depIdxs = []int32{
-	11, // 0: graphene.management.v1.ObserveStateResponse.resource:type_name -> graphene.management.v1.Resource
-	10, // 1: graphene.management.v1.LogRecord.attributes:type_name -> graphene.management.v1.LogRecord.AttributesEntry
-	0,  // 2: graphene.management.v1.ObserveAPI.State:input_type -> graphene.management.v1.ObserveStateRequest
-	2,  // 3: graphene.management.v1.ObserveAPI.Events:input_type -> graphene.management.v1.EventsRequest
-	4,  // 4: graphene.management.v1.ObserveAPI.Logs:input_type -> graphene.management.v1.LogsRequest
-	6,  // 5: graphene.management.v1.ObserveAPI.Metrics:input_type -> graphene.management.v1.MetricsRequest
-	8,  // 6: graphene.management.v1.ObserveAPI.Trace:input_type -> graphene.management.v1.TraceRequest
-	1,  // 7: graphene.management.v1.ObserveAPI.State:output_type -> graphene.management.v1.ObserveStateResponse
-	3,  // 8: graphene.management.v1.ObserveAPI.Events:output_type -> graphene.management.v1.Event
-	5,  // 9: graphene.management.v1.ObserveAPI.Logs:output_type -> graphene.management.v1.LogRecord
-	7,  // 10: graphene.management.v1.ObserveAPI.Metrics:output_type -> graphene.management.v1.MetricsResponse
-	9,  // 11: graphene.management.v1.ObserveAPI.Trace:output_type -> graphene.management.v1.TraceResponse
-	7,  // [7:12] is the sub-list for method output_type
-	2,  // [2:7] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	12, // 0: graphene.management.v1.ObserveStateResponse.resource:type_name -> graphene.management.v1.Resource
+	11, // 1: graphene.management.v1.LogRecord.attributes:type_name -> graphene.management.v1.LogRecord.AttributesEntry
+	5,  // 2: graphene.management.v1.LogChunk.record:type_name -> graphene.management.v1.LogRecord
+	0,  // 3: graphene.management.v1.ObserveAPI.State:input_type -> graphene.management.v1.ObserveStateRequest
+	2,  // 4: graphene.management.v1.ObserveAPI.Events:input_type -> graphene.management.v1.EventsRequest
+	4,  // 5: graphene.management.v1.ObserveAPI.Logs:input_type -> graphene.management.v1.LogsRequest
+	7,  // 6: graphene.management.v1.ObserveAPI.Metrics:input_type -> graphene.management.v1.MetricsRequest
+	9,  // 7: graphene.management.v1.ObserveAPI.Trace:input_type -> graphene.management.v1.TraceRequest
+	1,  // 8: graphene.management.v1.ObserveAPI.State:output_type -> graphene.management.v1.ObserveStateResponse
+	3,  // 9: graphene.management.v1.ObserveAPI.Events:output_type -> graphene.management.v1.Event
+	6,  // 10: graphene.management.v1.ObserveAPI.Logs:output_type -> graphene.management.v1.LogChunk
+	8,  // 11: graphene.management.v1.ObserveAPI.Metrics:output_type -> graphene.management.v1.MetricsChunk
+	10, // 12: graphene.management.v1.ObserveAPI.Trace:output_type -> graphene.management.v1.TraceChunk
+	8,  // [8:13] is the sub-list for method output_type
+	3,  // [3:8] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_observe_proto_init() }
@@ -771,13 +1002,27 @@ func file_proto_management_v1_observe_proto_init() {
 		return
 	}
 	file_proto_management_v1_resources_proto_init()
+	file_proto_management_v1_observe_proto_msgTypes[6].OneofWrappers = []any{
+		(*LogChunk_Record)(nil),
+		(*LogChunk_Dropped)(nil),
+	}
+	file_proto_management_v1_observe_proto_msgTypes[8].OneofWrappers = []any{
+		(*MetricsChunk_Snapshot)(nil),
+		(*MetricsChunk_Otlp)(nil),
+		(*MetricsChunk_Dropped)(nil),
+	}
+	file_proto_management_v1_observe_proto_msgTypes[10].OneofWrappers = []any{
+		(*TraceChunk_Snapshot)(nil),
+		(*TraceChunk_Otlp)(nil),
+		(*TraceChunk_Dropped)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_observe_proto_rawDesc), len(file_proto_management_v1_observe_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

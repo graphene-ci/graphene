@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/graphene-ci/graphene/internal/auth"
+	"github.com/graphene-ci/graphene/internal/telemetry"
 )
 
 // OTLP is the telemetry half of the door: workers and agents export
@@ -31,6 +32,12 @@ type OTLP struct {
 	coltracepb.UnimplementedTraceServiceServer
 	collogspb.UnimplementedLogsServiceServer
 	colmetricspb.UnimplementedMetricsServiceServer
+
+	// Hub fans every accepted signal out to live follow streams; the
+	// forward to storage and the live fan-out are independent halves —
+	// a dead backend does not kill live tails, a slow tail does not
+	// block the forward.
+	Hub *telemetry.Hub
 
 	// Per-signal OTLP/HTTP ingest URLs (e.g. the Victoria stack:
 	// http://victoriatraces:10428/insert/opentelemetry/v1/traces).
@@ -109,6 +116,17 @@ func (o *OTLP) ForwardLogs(ctx context.Context, namespace string, req *collogspb
 		stampNamespace(rl.GetResource(), namespace)
 	}
 	o.forward(ctx, "logs", o.Logs, req)
+	o.publish(telemetry.RouteLogs(namespace, req))
+}
+
+// publish hands envelopes to the live hub, if one is wired.
+func (o *OTLP) publish(envs []telemetry.Envelope) {
+	if o.Hub == nil {
+		return
+	}
+	for _, env := range envs {
+		o.Hub.Publish(env)
+	}
 }
 
 // Export forwards traces.
@@ -121,6 +139,7 @@ func (o *OTLP) Export(ctx context.Context, req *coltracepb.ExportTraceServiceReq
 		stampNamespace(rs.GetResource(), namespace)
 	}
 	o.forward(ctx, "traces", o.Traces, req)
+	o.publish(telemetry.RouteSpans(namespace, req))
 	return &coltracepb.ExportTraceServiceResponse{}, nil
 }
 
@@ -140,6 +159,7 @@ func (o otlpLogs) Export(ctx context.Context, req *collogspb.ExportLogsServiceRe
 		stampNamespace(rl.GetResource(), namespace)
 	}
 	o.forward(ctx, "logs", o.Logs, req)
+	o.publish(telemetry.RouteLogs(namespace, req))
 	return &collogspb.ExportLogsServiceResponse{}, nil
 }
 
@@ -157,6 +177,7 @@ func (o otlpMetrics) Export(ctx context.Context, req *colmetricspb.ExportMetrics
 		stampNamespace(rm.GetResource(), namespace)
 	}
 	o.forward(ctx, "metrics", o.Metrics, req)
+	o.publish(telemetry.RouteMetrics(namespace, req))
 	return &colmetricspb.ExportMetricsServiceResponse{}, nil
 }
 
