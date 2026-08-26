@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
 
@@ -198,42 +197,6 @@ func tailBytes(b []byte, n int) string {
 		return string(b)
 	}
 	return "…" + string(b[len(b)-n:])
-}
-
-// ListRevisions lists the pipeline's materialized revisions; the
-// active one is whichever image the pipeline currently points at.
-func (m *Management) ListRevisions(ctx context.Context, creq *connect.Request[managementv1.ListRevisionsRequest]) (*connect.Response[managementv1.ListRevisionsResponse], error) {
-	b, err := m.allow(ctx, authz.VerbList, authz.KindRevision)
-	if err != nil {
-		return nil, err
-	}
-	pipelineId := creq.Msg.GetPipelineId()
-	ids, err := b.Worker.ListRevisions(ctx, pipelineId)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	activeImage := ""
-	if st, err := b.Worker.GetPipeline(ctx, pipelineId); err == nil {
-		activeImage = st.Image
-	}
-	out := make([]*managementv1.ListRevisionsResponse_Revision, 0, len(ids))
-	for _, rid := range ids {
-		phase, spec, st, err := b.Worker.DescribeRevision(ctx, pipelineId, rid)
-		if err != nil {
-			continue
-		}
-		out = append(out, &managementv1.ListRevisionsResponse_Revision{
-			Id:           rid,
-			Image:        st.Image,
-			SourceDigest: spec.SourceDigest,
-			CreatedAt:    st.CreatedAt,
-			Phase:        string(phase),
-			Active:       st.Image != "" && st.Image == activeImage,
-		})
-	}
-	// Newest first — a developer looks at what they just built.
-	sort.Slice(out, func(i, j int) bool { return out[i].GetCreatedAt() > out[j].GetCreatedAt() })
-	return connect.NewResponse(&managementv1.ListRevisionsResponse{Revisions: out}), nil
 }
 
 // RunRevision starts a DRAFT run of one explicit revision: validated

@@ -19,9 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RevisionsAPI_Materialize_FullMethodName   = "/graphene.management.v1.RevisionsAPI/Materialize"
-	RevisionsAPI_ListRevisions_FullMethodName = "/graphene.management.v1.RevisionsAPI/ListRevisions"
-	RevisionsAPI_RunRevision_FullMethodName   = "/graphene.management.v1.RevisionsAPI/RunRevision"
+	RevisionsAPI_Materialize_FullMethodName = "/graphene.management.v1.RevisionsAPI/Materialize"
+	RevisionsAPI_RunRevision_FullMethodName = "/graphene.management.v1.RevisionsAPI/RunRevision"
 )
 
 // RevisionsAPIClient is the client API for RevisionsAPI service.
@@ -38,7 +37,6 @@ type RevisionsAPIClient interface {
 	// silent request dies on the first idle NAT between the client and
 	// the door. The stream is also the Studio build log.
 	Materialize(ctx context.Context, in *MaterializeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MaterializeEvent], error)
-	ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error)
 	RunRevision(ctx context.Context, in *RunRevisionRequest, opts ...grpc.CallOption) (*RunRevisionResponse, error)
 }
 
@@ -69,16 +67,6 @@ func (c *revisionsAPIClient) Materialize(ctx context.Context, in *MaterializeReq
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RevisionsAPI_MaterializeClient = grpc.ServerStreamingClient[MaterializeEvent]
 
-func (c *revisionsAPIClient) ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListRevisionsResponse)
-	err := c.cc.Invoke(ctx, RevisionsAPI_ListRevisions_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *revisionsAPIClient) RunRevision(ctx context.Context, in *RunRevisionRequest, opts ...grpc.CallOption) (*RunRevisionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RunRevisionResponse)
@@ -103,7 +91,6 @@ type RevisionsAPIServer interface {
 	// silent request dies on the first idle NAT between the client and
 	// the door. The stream is also the Studio build log.
 	Materialize(*MaterializeRequest, grpc.ServerStreamingServer[MaterializeEvent]) error
-	ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error)
 	RunRevision(context.Context, *RunRevisionRequest) (*RunRevisionResponse, error)
 	mustEmbedUnimplementedRevisionsAPIServer()
 }
@@ -117,9 +104,6 @@ type UnimplementedRevisionsAPIServer struct{}
 
 func (UnimplementedRevisionsAPIServer) Materialize(*MaterializeRequest, grpc.ServerStreamingServer[MaterializeEvent]) error {
 	return status.Error(codes.Unimplemented, "method Materialize not implemented")
-}
-func (UnimplementedRevisionsAPIServer) ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListRevisions not implemented")
 }
 func (UnimplementedRevisionsAPIServer) RunRevision(context.Context, *RunRevisionRequest) (*RunRevisionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunRevision not implemented")
@@ -156,24 +140,6 @@ func _RevisionsAPI_Materialize_Handler(srv interface{}, stream grpc.ServerStream
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RevisionsAPI_MaterializeServer = grpc.ServerStreamingServer[MaterializeEvent]
 
-func _RevisionsAPI_ListRevisions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListRevisionsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RevisionsAPIServer).ListRevisions(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RevisionsAPI_ListRevisions_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RevisionsAPIServer).ListRevisions(ctx, req.(*ListRevisionsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _RevisionsAPI_RunRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RunRevisionRequest)
 	if err := dec(in); err != nil {
@@ -199,10 +165,6 @@ var RevisionsAPI_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "graphene.management.v1.RevisionsAPI",
 	HandlerType: (*RevisionsAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "ListRevisions",
-			Handler:    _RevisionsAPI_ListRevisions_Handler,
-		},
 		{
 			MethodName: "RunRevision",
 			Handler:    _RevisionsAPI_RunRevision_Handler,

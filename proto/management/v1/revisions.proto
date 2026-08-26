@@ -14,7 +14,6 @@ service RevisionsAPI {
   // silent request dies on the first idle NAT between the client and
   // the door. The stream is also the Studio build log.
   rpc Materialize(MaterializeRequest) returns (stream MaterializeEvent);
-  rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
   rpc RunRevision(RunRevisionRequest) returns (RunRevisionResponse);
 }
 
@@ -44,24 +43,6 @@ message MaterializeResult {
   string image = 2;
   // The revision's manifest as protojson — what Plan renders.
   bytes manifest = 3;
-}
-
-message ListRevisionsRequest {
-  string pipeline_id = 1;
-}
-
-message ListRevisionsResponse {
-  message Revision {
-    string id = 1;
-    string image = 2;
-    string source_digest = 3;
-    string created_at = 4;
-    bool active = 5;
-    // Phase is the record's own lifecycle phase: creating | ready |
-    // create-failed — a build in flight is visible here.
-    string phase = 6;
-  }
-  repeated Revision revisions = 1;
 }
 
 message RunRevisionRequest {

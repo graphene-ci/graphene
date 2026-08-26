@@ -73,20 +73,41 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Revisions.ListRevisions(cmd.Context(), connect.NewRequest(&managementv1.ListRevisionsRequest{PipelineId: args[0]}))
+			// Revisions are ordinary records: the listing is the generic
+			// one, narrowed to this pipeline's own. The only thing this
+			// wrapper adds is WHICH of them is active — and that is a
+			// property of the pipeline, read from the pipeline.
+			resp, err := d.Resources.List(cmd.Context(), connect.NewRequest(&managementv1.ListRequest{
+				Query: "kind=revision, owner=pipeline/" + args[0],
+			}))
 			if err != nil {
 				return err
 			}
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\tCREATED\tIMAGE\n")
-			for _, r := range resp.Msg.GetRevisions() {
+			activeImage := ""
+			if got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
+				Ref: "pipeline/" + args[0],
+			})); err == nil {
+				var st struct {
+					Image string `json:"image"`
+				}
+				_ = json.Unmarshal(got.Msg.GetResource().GetState(), &st)
+				activeImage = st.Image
+			}
+			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\tIMAGE\n")
+			for _, r := range resp.Msg.GetResources() {
+				var st struct {
+					Image string `json:"image"`
+				}
+				_ = json.Unmarshal(r.GetState(), &st)
 				active := ""
-				if r.GetActive() {
+				if st.Image != "" && st.Image == activeImage {
 					active = "*"
 				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\t%s\n", r.GetId(), active, r.GetPhase(), r.GetCreatedAt(), r.GetImage())
+				id := strings.TrimPrefix(r.GetRef(), "revision/"+args[0]+".")
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\n", id, active, r.GetPhase(), st.Image)
 			}
 			return nil
 		},

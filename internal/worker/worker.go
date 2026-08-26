@@ -806,26 +806,6 @@ func (s *Worker) RevisionProgress(ctx context.Context, pipelineId, revisionId st
 	return ""
 }
 
-// ListRevisions lists a pipeline's revisions from visibility.
-func (s *Worker) ListRevisions(ctx context.Context, pipelineId string) ([]string, error) {
-	page, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Query: fmt.Sprintf("%s = 'revision' AND %s = %q",
-			entdefine.SearchAttrKind.GetName(), wire.SearchAttrOwner.GetName(), "pipeline/"+pipelineId),
-	})
-	if err != nil {
-		return nil, err
-	}
-	prefix := string(revisionflow.Kind) + "/" + pipelineId + "."
-	out := make([]string, 0, len(page.GetExecutions()))
-	for _, e := range page.GetExecutions() {
-		id := e.GetExecution().GetWorkflowId()
-		if len(id) > len(prefix) {
-			out = append(out, id[len(prefix):])
-		}
-	}
-	return out, nil
-}
-
 // PublishCapability writes a capability onto an agent's record — also
 // the HTTP door's implementation.
 func (s *Worker) PublishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error {
