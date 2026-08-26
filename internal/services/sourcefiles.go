@@ -1,21 +1,13 @@
 package services
 
-// The pipeline's working tree is EDITABLE: Studio reads and writes
-// files straight into it. A tree is one tar.gz in the blob store, so a
-// write is read-modify-write of that archive — atomic by construction,
-// durable the moment it returns, and the record's generation counts
-// every change.
+// The BYTES of a source. A managed tree is kept file by file, so a
+// write stores one blob and one index — never a read-modify-write of
+// the whole project. A Git checkout is readable the same way and
+// writable not at all: it follows a commit, and editing it would fork
+// the project silently.
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
-	"path"
 	"sort"
 	"strings"
 
@@ -24,117 +16,116 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/authz"
-	"github.com/graphene-ci/graphene/internal/pipelineflow"
+	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/sourceflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
 // maxFileBytes bounds one edited file.
 const maxFileBytes = 8 << 20
 
-// ListFiles lists the working tree.
+// ListFiles lists a source's tree.
 func (m *Management) ListFiles(ctx context.Context, creq *connect.Request[managementv1.ListFilesRequest]) (*connect.Response[managementv1.ListFilesResponse], error) {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindOf(creq.Msg.GetSource()))
 	if err != nil {
 		return nil, err
 	}
-	tree, st, err := m.pipelineTree(ctx, b.Namespace, creq.Msg.GetPipelineId())
+	ref := creq.Msg.GetSource()
+	// A managed tree answers from its INDEX — no archive is read.
+	if id, ok := managedId(ref); ok {
+		ix, err := b.Worker.SourceIndex(ctx, id)
+		if err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		_, _, st, _ := b.Worker.DescribeManagedSource(ctx, id)
+		files := make([]*managementv1.ListFilesResponse_File, 0, len(ix))
+		for path, e := range ix {
+			files = append(files, &managementv1.ListFilesResponse_File{Path: path, Size: e.Size})
+		}
+		sort.Slice(files, func(i, j int) bool { return files[i].GetPath() < files[j].GetPath() })
+		return connect.NewResponse(&managementv1.ListFilesResponse{Files: files, TreeDigest: st.TreeDigest}), nil
+	}
+	tree, digest, err := m.sourceTree(ctx, b, ref)
 	if err != nil {
 		return nil, err
 	}
 	files := make([]*managementv1.ListFilesResponse_File, 0, len(tree))
-	for p, content := range tree {
-		files = append(files, &managementv1.ListFilesResponse_File{Path: p, Size: int64(len(content))})
+	for path, content := range tree {
+		files = append(files, &managementv1.ListFilesResponse_File{Path: path, Size: int64(len(content))})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].GetPath() < files[j].GetPath() })
-	return connect.NewResponse(&managementv1.ListFilesResponse{Files: files, TreeDigest: st.TreeDigest}), nil
+	return connect.NewResponse(&managementv1.ListFilesResponse{Files: files, TreeDigest: digest}), nil
 }
 
-// ReadFile returns one file of the working tree.
+// ReadFile returns one file.
 func (m *Management) ReadFile(ctx context.Context, creq *connect.Request[managementv1.ReadFileRequest]) (*connect.Response[managementv1.ReadFileResponse], error) {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindOf(creq.Msg.GetSource()))
 	if err != nil {
 		return nil, err
 	}
-	clean, err := cleanPath(creq.Msg.GetPath())
+	clean, err := sourceflow.CleanPath(creq.Msg.GetPath())
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	tree, _, err := m.pipelineTree(ctx, b.Namespace, creq.Msg.GetPipelineId())
+	// One blob, not the whole tree.
+	if id, ok := managedId(creq.Msg.GetSource()); ok {
+		content, err := b.Worker.ReadSourceFile(ctx, id, clean)
+		if err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return connect.NewResponse(&managementv1.ReadFileResponse{Content: content}), nil
+	}
+	tree, _, err := m.sourceTree(ctx, b, creq.Msg.GetSource())
 	if err != nil {
 		return nil, err
 	}
 	content, ok := tree[clean]
 	if !ok {
-		return nil, status.Errorf(codes.NotFound, "no file %q in the pipeline", clean)
+		return nil, status.Errorf(codes.NotFound, "no file %q in the source", clean)
 	}
 	return connect.NewResponse(&managementv1.ReadFileResponse{Content: content}), nil
 }
 
-// WriteFile writes one file into the working tree — durable when this
-// call returns, no checkpoint needed.
+// WriteFile writes one file into a managed tree.
 func (m *Management) WriteFile(ctx context.Context, creq *connect.Request[managementv1.WriteFileRequest]) (*connect.Response[managementv1.WriteFileResponse], error) {
-	req := creq.Msg
-	if len(req.GetContent()) > maxFileBytes {
-		return nil, status.Errorf(codes.InvalidArgument, "a file may be up to %d bytes", maxFileBytes)
+	if len(creq.Msg.GetContent()) > maxFileBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "a file is at most %d bytes", maxFileBytes)
 	}
-	return m.editTree(ctx, req.GetPipelineId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
-		tree[clean] = req.GetContent()
-		return nil
-	})
+	return m.editFile(ctx, creq.Msg.GetSource(), creq.Msg.GetPath(),
+		func(b *nsbundle.Bundle, id, path string) (sourceflow.ManagedRes, error) {
+			return b.Worker.WriteSourceFile(ctx, id, path, creq.Msg.GetContent())
+		})
 }
 
-// DeleteFile removes one file from the working tree.
+// DeleteFile drops one file from a managed tree.
 func (m *Management) DeleteFile(ctx context.Context, creq *connect.Request[managementv1.DeleteFileRequest]) (*connect.Response[managementv1.WriteFileResponse], error) {
-	req := creq.Msg
-	return m.editTree(ctx, req.GetPipelineId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
-		if _, ok := tree[clean]; !ok {
-			return status.Errorf(codes.NotFound, "no file %q in the pipeline", clean)
-		}
-		delete(tree, clean)
-		return nil
-	})
+	return m.editFile(ctx, creq.Msg.GetSource(), creq.Msg.GetPath(),
+		func(b *nsbundle.Bundle, id, path string) (sourceflow.ManagedRes, error) {
+			return b.Worker.DeleteSourceFile(ctx, id, path)
+		})
 }
 
-// editTree applies one change to the working tree and stores the
-// result as the pipeline's new tree.
-func (m *Management) editTree(ctx context.Context, pipelineId, rawPath string, edit func(map[string][]byte, string) error) (*connect.Response[managementv1.WriteFileResponse], error) {
-	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindPipeline)
+// editFile is the one path a managed tree changes by.
+func (m *Management) editFile(ctx context.Context, ref, rawPath string,
+	edit func(*nsbundle.Bundle, string, string) (sourceflow.ManagedRes, error),
+) (*connect.Response[managementv1.WriteFileResponse], error) {
+	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindOf(ref))
 	if err != nil {
 		return nil, err
 	}
-	clean, err := cleanPath(rawPath)
+	clean, err := sourceflow.CleanPath(rawPath)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// A Git-sourced tree is a checkout of a commit: writing into it
-	// would fork the project silently. The refusal names the way out.
-	if _, spec, _, derr := b.Worker.DescribePipelineFull(ctx, pipelineId); derr == nil && !spec.Editable() {
+	id, ok := managedId(ref)
+	if !ok {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"pipeline %s follows a Git ref: its tree is read-only — fork it into an editable copy (`graphenectl pipeline fork %s <new>`)",
-			pipelineId, pipelineId)
+			"%s is not editable: a checkout follows its ref — copy it into a managed source to edit (`graphenectl apply managedsource <new> --spec '{\"pipelineId\":\"…\",\"from\":\"%s\"}'`)",
+			ref, ref)
 	}
-	tree, _, err := m.pipelineTree(ctx, b.Namespace, pipelineId)
+	res, err := edit(b, id, clean)
 	if err != nil {
-		return nil, err
-	}
-	if err := edit(tree, clean); err != nil {
-		return nil, err
-	}
-	packed, err := packTree(tree)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "pack tree: %v", err)
-	}
-	sum := sha256.Sum256(packed)
-	digest := "sha256:" + hex.EncodeToString(sum[:])
-	location := fmt.Sprintf("sources/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
-	if _, err := m.Blobs.Put(ctx, b.Namespace, location, bytes.NewReader(packed)); err != nil {
-		return nil, status.Errorf(codes.Internal, "store tree: %v", err)
-	}
-	// The record owns the tree: the edit lands through its own command,
-	// so the generation and the digest stay in one history.
-	res, err := b.Worker.SyncSource(ctx, pipelineId, pipelineflow.SyncCmd{Location: location, Digest: digest})
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "pipeline %s: %v", pipelineId, err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return connect.NewResponse(&managementv1.WriteFileResponse{
 		TreeDigest: res.TreeDigest,
@@ -142,102 +133,23 @@ func (m *Management) editTree(ctx context.Context, pipelineId, rawPath string, e
 	}), nil
 }
 
-// pipelineTree loads the working tree into memory.
-func (m *Management) pipelineTree(ctx context.Context, namespace, pipelineId string) (map[string][]byte, pipelineflow.State, error) {
-	b, err := m.Bundles.Get(namespace)
+// sourceTree loads a whole source tree — what a non-managed source
+// needs, since its bytes live in one archive.
+func (m *Management) sourceTree(ctx context.Context, b *nsbundle.Bundle, ref string) (map[string][]byte, string, error) {
+	files, err := b.Worker.SourceFiles(ctx, ref)
 	if err != nil {
-		return nil, pipelineflow.State{}, status.Error(codes.Internal, err.Error())
+		return nil, "", status.Error(codes.NotFound, err.Error())
 	}
-	_, _, st, err := b.Worker.DescribePipelineFull(ctx, pipelineId)
-	if err != nil {
-		return nil, pipelineflow.State{}, status.Errorf(codes.NotFound, "pipeline %s: %v", pipelineId, err)
+	digest := ""
+	if id, ok := strings.CutPrefix(ref, string(sourceflow.GitKind)+"/"); ok {
+		if _, _, st, err := b.Worker.DescribeGitSource(ctx, id); err == nil {
+			digest = st.TreeDigest
+		}
 	}
-	if st.TreeLocation == "" {
-		return nil, st, status.Error(codes.FailedPrecondition, "pipeline has no working tree yet")
-	}
-	rc, err := m.Blobs.Get(ctx, namespace, st.TreeLocation)
-	if err != nil {
-		return nil, st, status.Errorf(codes.Internal, "tree: %v", err)
-	}
-	defer func() { _ = rc.Close() }()
-	tree, err := unpackTree(rc)
-	if err != nil {
-		return nil, st, status.Errorf(codes.Internal, "tree: %v", err)
-	}
-	return tree, st, nil
+	return files, digest, nil
 }
 
-// unpackTree reads a tar.gz into path -> content.
-func unpackTree(r io.Reader) (map[string][]byte, error) {
-	zr, err := gzip.NewReader(r)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = zr.Close() }()
-	out := map[string][]byte{}
-	tr := tar.NewReader(zr)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return out, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		clean, err := cleanPath(hdr.Name)
-		if err != nil {
-			continue // a tree from elsewhere may hold oddities; skip them
-		}
-		content, err := io.ReadAll(io.LimitReader(tr, maxFileBytes+1))
-		if err != nil {
-			return nil, err
-		}
-		out[clean] = content
-	}
-}
-
-// packTree renders path -> content back into a tar.gz, deterministic
-// in order so the same tree keeps the same digest.
-func packTree(tree map[string][]byte) ([]byte, error) {
-	paths := make([]string, 0, len(tree))
-	for p := range tree {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(zw)
-	for _, p := range paths {
-		if err := tw.WriteHeader(&tar.Header{Name: p, Mode: 0o644, Size: int64(len(tree[p]))}); err != nil {
-			return nil, err
-		}
-		if _, err := tw.Write(tree[p]); err != nil {
-			return nil, err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// cleanPath keeps an edit inside the pipeline: no absolute paths, no
-// climbing out, no empty names.
-func cleanPath(p string) (string, error) {
-	clean := path.Clean(strings.TrimPrefix(strings.TrimSpace(p), "./"))
-	switch {
-	case clean == "" || clean == "." || clean == "/":
-		return "", status.Error(codes.InvalidArgument, "path is required")
-	case path.IsAbs(clean):
-		return "", status.Errorf(codes.InvalidArgument, "path %q must be relative to the pipeline", p)
-	case clean == ".." || strings.HasPrefix(clean, "../"):
-		return "", status.Errorf(codes.InvalidArgument, "path %q escapes the pipeline", p)
-	}
-	return clean, nil
+// managedId reports the id of a managed source reference.
+func managedId(ref string) (string, bool) {
+	return strings.CutPrefix(ref, string(sourceflow.ManagedKind)+"/")
 }

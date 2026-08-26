@@ -8,8 +8,6 @@ package worker
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +39,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/rbacflow"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	"github.com/graphene-ci/graphene/internal/secrets"
+	"github.com/graphene-ci/graphene/internal/sourceflow"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
@@ -102,6 +101,8 @@ type Worker struct {
 	varDef       *entdefine.Definition[valueflow.VarSpec, valueflow.VarState]
 	secretDef    *entdefine.Definition[valueflow.SecretSpec, valueflow.SecretState]
 	namespaceDef *entdefine.Definition[nsflow.Spec, nsflow.State]
+	gitSourceDef *entdefine.Definition[sourceflow.GitSpec, sourceflow.GitState]
+	managedDef   *entdefine.Definition[sourceflow.ManagedSpec, sourceflow.ManagedState]
 
 	// varCache holds variable values for a moment — one submit resolves
 	// several names, and each is a record read.
@@ -154,6 +155,8 @@ func New(deps Deps) (*Worker, error) {
 		varDef:       valueflow.NewVar(),
 		secretDef:    valueflow.NewSecret(),
 		namespaceDef: nsflow.New(),
+		gitSourceDef: sourceflow.NewGit(),
+		managedDef:   sourceflow.NewManaged(),
 		kinds:        buildKinds(),
 		varCache:     newValueCache(3 * time.Second),
 		secretWriter: deps.SecretWriter,
@@ -166,6 +169,7 @@ func New(deps Deps) (*Worker, error) {
 		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
 		s.varDef.Register(w), s.secretDef.Register(w),
 		s.namespaceDef.Register(w),
+		s.gitSourceDef.Register(w), s.managedDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -199,10 +203,13 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.forgetSecret, activity.RegisterOptions{Name: valueflow.ForgetActivity})
 	w.RegisterActivityWithOptions(s.ensureNamespace, activity.RegisterOptions{Name: nsflow.EnsureActivity})
 	w.RegisterActivityWithOptions(s.retireNamespace, activity.RegisterOptions{Name: nsflow.RetireActivity})
+	// The source contour: a checkout is fetched, a managed tree is laid
+	// out file by file.
+	w.RegisterActivityWithOptions(s.fetchGitSource, activity.RegisterOptions{Name: sourceflow.FetchActivity})
+	w.RegisterActivityWithOptions(s.adoptManagedSource, activity.RegisterOptions{Name: sourceflow.AdoptActivity})
 	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
-	w.RegisterActivityWithOptions(s.fetchPipelineSource, activity.RegisterOptions{Name: pipelineflow.FetchActivity})
 	return s, nil
 }
 
@@ -535,88 +542,6 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 	res.Image = out.ImageRef
 	res.ManifestLocation = out.ManifestLocation
 	return res, nil
-}
-
-// fetchPipelineSource resolves a pipeline's declared source into a
-// working tree: a Git checkout in an ephemeral container, or the
-// uploaded snapshot taken as it is.
-func (s *Worker) fetchPipelineSource(ctx context.Context, req pipelineflow.FetchReq) (pipelineflow.FetchRes, error) {
-	var res pipelineflow.FetchRes
-	switch {
-	case req.Spec.Snapshot != nil:
-		// The tree is COPIED, never referenced: a snapshot may name an
-		// upload area or another pipeline's tree, and both are
-		// overwritten by whoever owns them. A managed source owns its
-		// own bytes from the first moment.
-		return s.adoptTree(ctx, req.PipelineId, req.Spec.Snapshot.Location, req.Spec.Snapshot.Digest)
-	case req.Spec.Git == nil:
-		return res, fmt.Errorf("pipeline has no source")
-	}
-	if s.deps.Materializer == nil {
-		return res, fmt.Errorf("git checkout needs an execution backend on this installation")
-	}
-	git := req.Spec.Git
-	credential := ""
-	if git.CredentialRef != "" {
-		v, err := s.deps.Secrets.Get(id.SecretId(git.CredentialRef))
-		if err != nil {
-			return res, fmt.Errorf("git credential %q: %w", git.CredentialRef, err)
-		}
-		credential = v
-	}
-	out, err := s.deps.Materializer.FetchGit(ctx, materialize.GitRequest{
-		Url:        git.Url,
-		Ref:        git.Ref,
-		Subdir:     git.Subdir,
-		Credential: credential,
-		Location:   fmt.Sprintf("sources/%s/tree.tgz", req.PipelineId),
-		Namespace:  s.deps.Namespace,
-		Runtime:    req.Spec.Runtime,
-	}, func(stage, message string) { activity.RecordHeartbeat(ctx, stage+": "+message) })
-	if err != nil {
-		return res, err
-	}
-	return pipelineflow.FetchRes{
-		TreeLocation: out.TreeLocation,
-		TreeDigest:   out.TreeDigest,
-		GitCommit:    out.Commit,
-	}, nil
-}
-
-// adoptTree copies a tree into the pipeline's OWN blob and returns the
-// copy. Copying an already-owned tree is skipped, so a restart of the
-// same Init is free.
-func (s *Worker) adoptTree(ctx context.Context, pipelineId, location, digest string) (pipelineflow.FetchRes, error) {
-	var res pipelineflow.FetchRes
-	if s.deps.Blobs == nil {
-		return res, fmt.Errorf("this installation has no blob store")
-	}
-	own := fmt.Sprintf("sources/%s/", pipelineId)
-	if strings.HasPrefix(location, own) {
-		return pipelineflow.FetchRes{TreeLocation: location, TreeDigest: digest}, nil
-	}
-	rc, err := s.deps.Blobs.Get(ctx, s.deps.Namespace, location)
-	if err != nil {
-		return res, fmt.Errorf("source %s: %w", location, err)
-	}
-	defer func() { _ = rc.Close() }()
-	raw, err := io.ReadAll(rc)
-	if err != nil {
-		return res, err
-	}
-	sum := sha256.Sum256(raw)
-	own += hex.EncodeToString(sum[:])[:16] + ".tgz"
-	if _, err := s.deps.Blobs.Put(ctx, s.deps.Namespace, own, bytes.NewReader(raw)); err != nil {
-		return res, fmt.Errorf("copy source: %w", err)
-	}
-	return pipelineflow.FetchRes{TreeLocation: own, TreeDigest: "sha256:" + hex.EncodeToString(sum[:])}, nil
-}
-
-// SyncSource re-resolves a pipeline's source (or adopts a fresh tree)
-// and returns the resulting working tree.
-func (s *Worker) SyncSource(ctx context.Context, pipelineId string, cmd pipelineflow.SyncCmd) (pipelineflow.TreeRes, error) {
-	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
-	return entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId), pipelineflow.Spec{}, cmd)
 }
 
 // DeclareRevision creates (or attaches to) one revision record: the

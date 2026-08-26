@@ -22,8 +22,10 @@ const (
 )
 
 type UploadSourceRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Pipeline the uploaded tree is meant for; the upload area is per
+	// pipeline, and a managedsource adopts it by copy.
+	PipelineId string `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	// The tree as tar.gz.
 	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -130,7 +132,7 @@ func (x *UploadSourceResponse) GetDigest() string {
 
 type DownloadSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,9 +167,9 @@ func (*DownloadSourceRequest) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *DownloadSourceRequest) GetPipelineId() string {
+func (x *DownloadSourceRequest) GetSource() string {
 	if x != nil {
-		return x.PipelineId
+		return x.Source
 	}
 	return ""
 }
@@ -298,7 +300,7 @@ func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
 
 type ListFilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -333,9 +335,9 @@ func (*ListFilesRequest) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ListFilesRequest) GetPipelineId() string {
+func (x *ListFilesRequest) GetSource() string {
 	if x != nil {
-		return x.PipelineId
+		return x.Source
 	}
 	return ""
 }
@@ -394,7 +396,7 @@ func (x *ListFilesResponse) GetTreeDigest() string {
 
 type ReadFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -430,9 +432,9 @@ func (*ReadFileRequest) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ReadFileRequest) GetPipelineId() string {
+func (x *ReadFileRequest) GetSource() string {
 	if x != nil {
-		return x.PipelineId
+		return x.Source
 	}
 	return ""
 }
@@ -490,7 +492,7 @@ func (x *ReadFileResponse) GetContent() []byte {
 
 type WriteFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -527,9 +529,9 @@ func (*WriteFileRequest) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *WriteFileRequest) GetPipelineId() string {
+func (x *WriteFileRequest) GetSource() string {
 	if x != nil {
-		return x.PipelineId
+		return x.Source
 	}
 	return ""
 }
@@ -602,7 +604,7 @@ func (x *WriteFileResponse) GetGeneration() uint64 {
 
 type DeleteFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -638,9 +640,9 @@ func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *DeleteFileRequest) GetPipelineId() string {
+func (x *DeleteFileRequest) GetSource() string {
 	if x != nil {
-		return x.PipelineId
+		return x.Source
 	}
 	return ""
 }
@@ -783,10 +785,9 @@ const file_proto_management_v1_source_proto_rawDesc = "" +
 	"\x06source\x18\x02 \x01(\fR\x06source\"J\n" +
 	"\x14UploadSourceResponse\x12\x1a\n" +
 	"\blocation\x18\x01 \x01(\tR\blocation\x12\x16\n" +
-	"\x06digest\x18\x02 \x01(\tR\x06digest\"8\n" +
-	"\x15DownloadSourceRequest\x12\x1f\n" +
-	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\")\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\"/\n" +
+	"\x15DownloadSourceRequest\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\")\n" +
 	"\x13DownloadSourceChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x15\n" +
 	"\x13ListRuntimesRequest\"\xd6\x01\n" +
@@ -797,26 +798,23 @@ const file_proto_management_v1_source_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x04 \x01(\bR\tisDefault\"3\n" +
-	"\x10ListFilesRequest\x12\x1f\n" +
-	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\"\xaa\x01\n" +
+	"is_default\x18\x04 \x01(\bR\tisDefault\"*\n" +
+	"\x10ListFilesRequest\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\"\xaa\x01\n" +
 	"\x11ListFilesResponse\x12D\n" +
 	"\x05files\x18\x01 \x03(\v2..graphene.management.v1.ListFilesResponse.FileR\x05files\x12\x1f\n" +
 	"\vtree_digest\x18\x02 \x01(\tR\n" +
 	"treeDigest\x1a.\n" +
 	"\x04File\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x03R\x04size\"F\n" +
-	"\x0fReadFileRequest\x12\x1f\n" +
-	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\"=\n" +
+	"\x0fReadFileRequest\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\",\n" +
 	"\x10ReadFileResponse\x12\x18\n" +
-	"\acontent\x18\x01 \x01(\fR\acontent\"a\n" +
-	"\x10WriteFileRequest\x12\x1f\n" +
-	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\x12\x12\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent\"X\n" +
+	"\x10WriteFileRequest\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\"T\n" +
 	"\x11WriteFileResponse\x12\x1f\n" +
@@ -824,10 +822,9 @@ const file_proto_management_v1_source_proto_rawDesc = "" +
 	"treeDigest\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"H\n" +
-	"\x11DeleteFileRequest\x12\x1f\n" +
-	"\vpipeline_id\x18\x01 \x01(\tR\n" +
-	"pipelineId\x12\x12\n" +
+	"generation\"?\n" +
+	"\x11DeleteFileRequest\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path2\xd8\x05\n" +
 	"\tSourceAPI\x12i\n" +
 	"\fUploadSource\x12+.graphene.management.v1.UploadSourceRequest\x1a,.graphene.management.v1.UploadSourceResponse\x12n\n" +

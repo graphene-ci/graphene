@@ -46,25 +46,18 @@ func (m *Management) UploadSource(ctx context.Context, creq *connect.Request[man
 	return connect.NewResponse(&managementv1.UploadSourceResponse{Location: location, Digest: digest}), nil
 }
 
-// DownloadSource streams the pipeline's current working tree back —
-// the source of any revision is recoverable, git or not.
+// DownloadSource streams a source's tree back as one archive — a
+// checkout as it is, a managed tree packed from its files.
 func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[managementv1.DownloadSourceRequest], stream *connect.ServerStream[managementv1.DownloadSourceChunk]) error {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindOf(creq.Msg.GetSource()))
 	if err != nil {
 		return err
 	}
-	_, _, st, err := b.Worker.DescribePipelineFull(ctx, creq.Msg.GetPipelineId())
+	raw, err := b.Worker.SourceArchive(ctx, creq.Msg.GetSource())
 	if err != nil {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	if st.TreeLocation == "" {
-		return status.Error(codes.FailedPrecondition, "pipeline has no working tree yet")
-	}
-	rc, err := m.Blobs.Get(ctx, b.Namespace, st.TreeLocation)
-	if err != nil {
-		return status.Errorf(codes.Internal, "tree: %v", err)
-	}
-	defer func() { _ = rc.Close() }()
+	rc := bytes.NewReader(raw)
 	buf := make([]byte, downloadChunk)
 	for {
 		n, err := rc.Read(buf)

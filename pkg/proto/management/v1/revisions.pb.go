@@ -25,9 +25,12 @@ type MaterializeRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	PipelineId string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	// The full source tree as tar.gz — the tree root is the build root:
-	// `go build .`, one package main. Empty builds the PIPELINE's own
-	// working tree, which already lives on the server.
-	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	// `go build .`, one package main. Empty builds a SOURCE record of
+	// the pipeline, whose tree already lives on the server.
+	Source []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	// Source names which source to build ("gitsource/main"); empty takes
+	// the pipeline's only one.
+	SourceRef     string `protobuf:"bytes,3,opt,name=source_ref,json=sourceRef,proto3" json:"source_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,6 +77,13 @@ func (x *MaterializeRequest) GetSource() []byte {
 		return x.Source
 	}
 	return nil
+}
+
+func (x *MaterializeRequest) GetSourceRef() string {
+	if x != nil {
+		return x.SourceRef
+	}
+	return ""
 }
 
 type MaterializeEvent struct {
@@ -333,11 +343,13 @@ var File_proto_management_v1_revisions_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_revisions_proto_rawDesc = "" +
 	"\n" +
-	"#proto/management/v1/revisions.proto\x12\x16graphene.management.v1\"M\n" +
+	"#proto/management/v1/revisions.proto\x12\x16graphene.management.v1\"l\n" +
 	"\x12MaterializeRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\fR\x06source\"\x85\x01\n" +
+	"\x06source\x18\x02 \x01(\fR\x06source\x12\x1d\n" +
+	"\n" +
+	"source_ref\x18\x03 \x01(\tR\tsourceRef\"\x85\x01\n" +
 	"\x10MaterializeEvent\x12\x14\n" +
 	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12A\n" +

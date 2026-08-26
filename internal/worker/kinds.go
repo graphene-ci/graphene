@@ -22,6 +22,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
+	"github.com/graphene-ci/graphene/internal/sourceflow"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
@@ -147,9 +148,8 @@ func buildKinds() map[string]*kindEntry {
 	// The pipeline IS the project: its source, its working tree, the
 	// version its automatic starts use, and the arbiter of those
 	// starts — one record, one history.
-	add("pipeline", "a project: its source, its active version, the arbiter of its runs", true,
+	add("pipeline", "a project: the arbiter of its runs and the version they use", true,
 		reflect.TypeFor[pipelineflow.Spec](),
-		cmd("sync", reflect.TypeFor[pipelineflow.SyncCmd]()),
 		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
 		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
 		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))
@@ -167,6 +167,16 @@ func buildKinds() map[string]*kindEntry {
 	// channel — so the record declares only that the name exists.
 	add("secret", "a name whose value lives sealed beside it", true,
 		reflect.TypeFor[valueflow.SecretSpec]())
+
+	// The two source kinds differ in what may be DONE to them, which is
+	// why they are two kinds and not one with a mode field.
+	add("gitsource", "a checkout of a ref: read-only, moves by fetching again", true,
+		reflect.TypeFor[sourceflow.GitSpec](),
+		cmd("sync", nil))
+
+	add("managedsource", "the project's own tree: every file editable in place", true,
+		reflect.TypeFor[sourceflow.ManagedSpec](),
+		cmd("write", reflect.TypeFor[sourceflow.WriteCmd]()))
 
 	add("revision", "one immutable build of a source tree", true,
 		reflect.TypeFor[revisionflow.Spec]())
