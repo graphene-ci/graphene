@@ -308,5 +308,76 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 		},
 	}
 
-	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm)
+	fork := &cobra.Command{
+		Use:   "fork <pipeline> <new>",
+		Short: "Copy a Git-sourced pipeline into an editable managed one",
+		Long: `Copy a pipeline's current tree into a NEW pipeline whose source is
+managed: its files can be edited, and it no longer follows the Git ref.
+
+The copy keeps provenance — the repository, the ref and the commit it
+came from — but nothing syncs back. This is a deliberate divergence,
+not a hidden branch.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
+				Ref: "pipeline/" + args[0],
+			}))
+			if err != nil {
+				return err
+			}
+			var src struct {
+				Git *struct {
+					Url    string `json:"url"`
+					Ref    string `json:"ref"`
+					Subdir string `json:"subdir"`
+				} `json:"git"`
+				Runtime string `json:"runtime"`
+			}
+			var st struct {
+				TreeLocation string `json:"treeLocation"`
+				TreeDigest   string `json:"treeDigest"`
+				GitCommit    string `json:"gitCommit"`
+			}
+			if err := json.Unmarshal(got.Msg.GetResource().GetSpec(), &src); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(got.Msg.GetResource().GetState(), &st); err != nil {
+				return err
+			}
+			if st.TreeLocation == "" {
+				return fmt.Errorf("pipeline %s has no working tree to copy", args[0])
+			}
+			spec := map[string]any{
+				"runtime":  src.Runtime,
+				"snapshot": map[string]any{"location": st.TreeLocation, "digest": st.TreeDigest},
+			}
+			if src.Git != nil {
+				spec["origin"] = map[string]any{
+					"url": src.Git.Url, "ref": src.Git.Ref, "commit": st.GitCommit,
+				}
+			}
+			specJSON, err := json.Marshal(spec)
+			if err != nil {
+				return err
+			}
+			applied, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "pipeline", Id: args[1], Spec: specJSON,
+			}))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "%s applied — editable copy of %s\n", applied.Msg.GetRef(), args[0])
+			if src.Git != nil {
+				fmt.Fprintf(os.Stderr, "origin %s @ %s (%s); it does not follow that ref\n",
+					src.Git.Url, src.Git.Ref, st.GitCommit)
+			}
+			return nil
+		},
+	}
+
+	cmd.AddCommand(create, sync, fork, download, runtimesCmd, files, cat, write, rm)
 }

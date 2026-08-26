@@ -8,6 +8,8 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -541,10 +543,11 @@ func (s *Worker) fetchPipelineSource(ctx context.Context, req pipelineflow.Fetch
 	var res pipelineflow.FetchRes
 	switch {
 	case req.Spec.Snapshot != nil:
-		// The upload already sits in the store; the pipeline adopts it.
-		res.TreeLocation = req.Spec.Snapshot.Location
-		res.TreeDigest = req.Spec.Snapshot.Digest
-		return res, nil
+		// The tree is COPIED, never referenced: a snapshot may name an
+		// upload area or another pipeline's tree, and both are
+		// overwritten by whoever owns them. A managed source owns its
+		// own bytes from the first moment.
+		return s.adoptTree(ctx, req.PipelineId, req.Spec.Snapshot.Location, req.Spec.Snapshot.Digest)
 	case req.Spec.Git == nil:
 		return res, fmt.Errorf("pipeline has no source")
 	}
@@ -577,6 +580,35 @@ func (s *Worker) fetchPipelineSource(ctx context.Context, req pipelineflow.Fetch
 		TreeDigest:   out.TreeDigest,
 		GitCommit:    out.Commit,
 	}, nil
+}
+
+// adoptTree copies a tree into the pipeline's OWN blob and returns the
+// copy. Copying an already-owned tree is skipped, so a restart of the
+// same Init is free.
+func (s *Worker) adoptTree(ctx context.Context, pipelineId, location, digest string) (pipelineflow.FetchRes, error) {
+	var res pipelineflow.FetchRes
+	if s.deps.Blobs == nil {
+		return res, fmt.Errorf("this installation has no blob store")
+	}
+	own := fmt.Sprintf("sources/%s/", pipelineId)
+	if strings.HasPrefix(location, own) {
+		return pipelineflow.FetchRes{TreeLocation: location, TreeDigest: digest}, nil
+	}
+	rc, err := s.deps.Blobs.Get(ctx, s.deps.Namespace, location)
+	if err != nil {
+		return res, fmt.Errorf("source %s: %w", location, err)
+	}
+	defer func() { _ = rc.Close() }()
+	raw, err := io.ReadAll(rc)
+	if err != nil {
+		return res, err
+	}
+	sum := sha256.Sum256(raw)
+	own += hex.EncodeToString(sum[:])[:16] + ".tgz"
+	if _, err := s.deps.Blobs.Put(ctx, s.deps.Namespace, own, bytes.NewReader(raw)); err != nil {
+		return res, fmt.Errorf("copy source: %w", err)
+	}
+	return pipelineflow.FetchRes{TreeLocation: own, TreeDigest: "sha256:" + hex.EncodeToString(sum[:])}, nil
 }
 
 // SyncSource re-resolves a pipeline's source (or adopts a fresh tree)

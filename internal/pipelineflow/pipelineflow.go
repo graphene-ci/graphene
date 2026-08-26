@@ -41,7 +41,30 @@ type Spec struct {
 	// Runtime is the toolchain of this project ("go"); empty takes the
 	// installation's pinned one.
 	Runtime string `json:"runtime,omitempty"`
+	// Origin records where a MANAGED source came from when it was
+	// copied out of a Git one. It is provenance, not a link: the copy
+	// never syncs back, and Git never learns about it.
+	Origin *Origin `json:"origin,omitempty"`
 }
+
+// Origin is the provenance of a managed source forked from Git.
+type Origin struct {
+	Url    string `json:"url,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	Commit string `json:"commit,omitempty"`
+}
+
+// Editable reports whether this pipeline's working tree may be
+// changed in place.
+//
+// A Git-sourced pipeline is READ-ONLY. Editing it would create local
+// changes on top of a commit — a working tree that has to be kept
+// somewhere, diffed against upstream and merged on the next sync. That
+// is a version control system, and graphene is not one. To edit
+// Git-sourced code, fork it into a managed source: the copy carries
+// its provenance and stops following the branch, which is a deliberate
+// divergence rather than a hidden one.
+func (s Spec) Editable() bool { return s.Git == nil }
 
 // Validate rejects a pipeline that names two sources.
 func (s Spec) Validate() error {
@@ -334,6 +357,10 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd SyncCmd) (TreeRes, error) {
 		st := ec.State()
 		if cmd.Location != "" {
+			if !ec.Spec().Editable() {
+				err := fmt.Errorf("this pipeline's source is a Git checkout: its tree follows the ref and cannot be written to — fork it into a managed source to edit")
+				return TreeRes{}, temporal.NewNonRetryableApplicationError(err.Error(), "ReadOnlySource", err)
+			}
 			// A fresh tree replaces the current one; the SPEC keeps
 			// naming the source it came from — the tree is mutable,
 			// the source declaration is not.

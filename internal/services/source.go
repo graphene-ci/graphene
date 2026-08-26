@@ -108,7 +108,7 @@ func (m *Management) storeTree(ctx context.Context, namespace, pipelineId string
 	}
 	sum := sha256.Sum256(tree)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	location := fmt.Sprintf("pipelines/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
+	location := fmt.Sprintf("uploads/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
 	if _, err := m.Blobs.Put(ctx, namespace, location, bytes.NewReader(tree)); err != nil {
 		return "", "", status.Errorf(codes.Internal, "store source: %v", err)
 	}

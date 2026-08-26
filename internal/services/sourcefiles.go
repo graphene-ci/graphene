@@ -106,6 +106,13 @@ func (m *Management) editTree(ctx context.Context, pipelineId, rawPath string, e
 	if err != nil {
 		return nil, err
 	}
+	// A Git-sourced tree is a checkout of a commit: writing into it
+	// would fork the project silently. The refusal names the way out.
+	if _, spec, _, derr := b.Worker.DescribePipelineFull(ctx, pipelineId); derr == nil && !spec.Editable() {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"pipeline %s follows a Git ref: its tree is read-only — fork it into an editable copy (`graphenectl pipeline fork %s <new>`)",
+			pipelineId, pipelineId)
+	}
 	tree, _, err := m.pipelineTree(ctx, b.Namespace, pipelineId)
 	if err != nil {
 		return nil, err
@@ -119,7 +126,7 @@ func (m *Management) editTree(ctx context.Context, pipelineId, rawPath string, e
 	}
 	sum := sha256.Sum256(packed)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	location := fmt.Sprintf("pipelines/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
+	location := fmt.Sprintf("sources/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
 	if _, err := m.Blobs.Put(ctx, b.Namespace, location, bytes.NewReader(packed)); err != nil {
 		return nil, status.Errorf(codes.Internal, "store tree: %v", err)
 	}
