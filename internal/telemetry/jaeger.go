@@ -30,15 +30,22 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 	if err != nil {
 		return nil, err
 	}
-	want := map[string]string{
-		"graphene.namespace": sel.Namespace,
-		sel.Attribute:        sel.Value,
+	// The SUBJECT filters server-side: the correlation attribute lives
+	// on the spans, and the backend indexes span tags — fetching
+	// unfiltered traces and sieving them here found only whatever
+	// happened to be recent. The namespace stays a post-filter: it is a
+	// resource attribute (a process tag in Jaeger terms), stamped by
+	// the door, and belongs to a different half of the trace.
+	tags, err := json.Marshal(map[string]string{sel.Attribute: sel.Value})
+	if err != nil {
+		return nil, err
 	}
 	merged := []json.RawMessage{}
 	for _, service := range services {
 		q := url.Values{
 			"service": {service},
-			"limit":   {strconv.Itoa(limit * 4)},
+			"tags":    {string(tags)},
+			"limit":   {strconv.Itoa(limit)},
 		}
 		raw, err := j.get(ctx, "/api/traces?"+q.Encode())
 		if err != nil {
@@ -51,7 +58,7 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 			return nil, err
 		}
 		for _, trace := range page.Data {
-			if traceMatches(trace, want) && len(merged) < limit {
+			if traceInNamespace(trace, sel.Namespace) && len(merged) < limit {
 				merged = append(merged, trace)
 			}
 		}
@@ -63,9 +70,12 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 	return out, nil
 }
 
-// traceMatches reports whether any process of the trace carries every
-// wanted tag.
-func traceMatches(trace json.RawMessage, want map[string]string) bool {
+// traceInNamespace reports whether any process of the trace carries
+// the namespace stamp.
+func traceInNamespace(trace json.RawMessage, namespace string) bool {
+	if namespace == "" {
+		return true
+	}
 	var t struct {
 		Processes map[string]struct {
 			Tags []struct {
@@ -78,14 +88,10 @@ func traceMatches(trace json.RawMessage, want map[string]string) bool {
 		return false
 	}
 	for _, proc := range t.Processes {
-		matched := 0
 		for _, tag := range proc.Tags {
-			if v, ok := want[tag.Key]; ok && fmt.Sprint(tag.Value) == v {
-				matched++
+			if tag.Key == "graphene.namespace" && fmt.Sprint(tag.Value) == namespace {
+				return true
 			}
-		}
-		if matched == len(want) {
-			return true
 		}
 	}
 	return false
