@@ -172,6 +172,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		},
 		func(_ context.Context, name string) error { return bundles.Retire(name) },
 	)
+	bundles.SetDeclaredCheck(defaultBundle.Worker.NamespaceDeclared)
 	// Every namespace the durable core already holds is ADOPTED: the
 	// installation predates this record, so the record catches up.
 	registered, err := bundles.ListNamespaces(ctx, temporalClient)
