@@ -582,6 +582,20 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 	}
 	res.Image = out.ImageRef
 	res.ManifestLocation = out.ManifestLocation
+	// The binary's own name must be the record's: the door starts runs
+	// by the RECORD's name, and a worker that answers to another one
+	// leaves every run hanging on an empty queue. Refusing here turns
+	// a silent forever-Running into a build error.
+	if raw, rerr := s.blobBytes(ctx, out.ManifestLocation); rerr == nil {
+		var m struct {
+			PipelineId string `json:"pipelineId"`
+		}
+		if json.Unmarshal(raw, &m) == nil && m.PipelineId != "" && m.PipelineId != req.PipelineId {
+			return res, temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("the binary declares pipeline %q, the record is %q: pipeline.Main's name must match the record", m.PipelineId, req.PipelineId),
+				"WrongPipelineName", nil)
+		}
+	}
 	return res, nil
 }
 
