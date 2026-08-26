@@ -25,6 +25,11 @@ type Store interface {
 	Exists(ctx context.Context, namespace, location string) (bool, error)
 	// Delete removes the bytes; absence is not an error.
 	Delete(ctx context.Context, namespace, location string) error
+	// List names every blob under a prefix. Deleting a record has to
+	// take its bytes with it, and a record's bytes are only knowable
+	// as "everything under my prefix" — old file versions and old
+	// indexes included, which no live reference names any more.
+	List(ctx context.Context, namespace, prefix string) ([]string, error)
 
 	// TODO(presigned): hand the caller a short-lived URL so big bytes
 	// bypass the door without the store credentials leaving the server.

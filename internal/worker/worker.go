@@ -207,6 +207,10 @@ func New(deps Deps) (*Worker, error) {
 	// out file by file.
 	w.RegisterActivityWithOptions(s.fetchGitSource, activity.RegisterOptions{Name: sourceflow.FetchActivity})
 	w.RegisterActivityWithOptions(s.adoptManagedSource, activity.RegisterOptions{Name: sourceflow.AdoptActivity})
+	// Deleting a record takes its bytes with it.
+	w.RegisterActivityWithOptions(s.sweepSource, activity.RegisterOptions{Name: sourceflow.SweepActivity})
+	w.RegisterActivityWithOptions(s.sweepRevision, activity.RegisterOptions{Name: revisionflow.SweepActivity})
+	w.RegisterActivityWithOptions(s.sweepPipeline, activity.RegisterOptions{Name: pipelineflow.SweepActivity})
 	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})

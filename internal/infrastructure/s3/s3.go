@@ -111,6 +111,24 @@ func (s *Store) Delete(ctx context.Context, namespace, location string) error {
 	return s.client.RemoveObject(ctx, s.bucket, k, minio.RemoveObjectOptions{})
 }
 
+// List names every object of the namespace under the prefix.
+func (s *Store) List(ctx context.Context, namespace, prefix string) ([]string, error) {
+	if namespace == "" || strings.ContainsAny(namespace, "/\\") {
+		return nil, fmt.Errorf("bad namespace %q", namespace)
+	}
+	root := namespace + "/"
+	var out []string
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix: root + strings.TrimPrefix(prefix, "/"), Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		out = append(out, strings.TrimPrefix(obj.Key, root))
+	}
+	return out, nil
+}
+
 func key(namespace, location string) (string, error) {
 	loc := strings.TrimPrefix(location, "/")
 	if namespace == "" || loc == "" || strings.Contains(loc, "..") || strings.ContainsAny(namespace, "/\\") {

@@ -63,7 +63,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		}
 		sum := sha256.Sum256(req.GetSource())
 		digest = hex.EncodeToString(sum[:])
-		sourceLocation = fmt.Sprintf("sources/%s/%s.tgz", pipelineId, digest[:16])
+		sourceLocation = fmt.Sprintf("revisions/%s/%s/source.tgz", pipelineId, digest[:16])
 		if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(req.GetSource())); err != nil {
 			return status.Errorf(codes.Internal, "store source: %v", err)
 		}
@@ -80,7 +80,7 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		}
 		sum := sha256.Sum256(raw)
 		digest = hex.EncodeToString(sum[:])
-		sourceLocation = fmt.Sprintf("sources/%s/%s.tgz", pipelineId, digest[:16])
+		sourceLocation = fmt.Sprintf("revisions/%s/%s/source.tgz", pipelineId, digest[:16])
 		if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(raw)); err != nil {
 			return status.Errorf(codes.Internal, "store source: %v", err)
 		}

@@ -150,6 +150,8 @@ const (
 	StartActivity = "server.run.start"
 	// CountActivity counts the pipeline's running runs: (pipelineId) -> int64.
 	CountActivity = "server.run.count"
+	// SweepActivity erases a deleted pipeline's own blobs: (SweepReq).
+	SweepActivity = "pipeline.blobs.sweep"
 	// CancelActivity cancels the pipeline's running runs: (pipelineId).
 	CancelActivity = "server.run.cancel"
 	// ResolveActivity reads what a revision holds: (ResolveReq) ->
@@ -160,6 +162,11 @@ const (
 	// manifest that just became active.
 	ReconcileTriggersActivity = "server.trigger.reconcile"
 )
+
+// SweepReq names the prefix to erase.
+type SweepReq struct {
+	Prefix string `json:"prefix"`
+}
 
 // ResolveReq asks what a revision holds.
 type ResolveReq struct {
@@ -203,6 +210,18 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			return st, nil
 		}),
 		entdefine.WithReconcileEvery[Spec, State](tick, pendingTick),
+		// The pipeline's own bytes are the upload area its sources
+		// started from; everything else belongs to a record under it
+		// and is swept by that record's own deletion.
+		entdefine.WithFinalize[Spec, State](func(ctx workflow.Context, _ *State) error {
+			sctx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				TaskQueue:           wire.ServerQueue,
+				StartToCloseTimeout: 5 * time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 5},
+			})
+			return workflow.ExecuteActivity(sctx, SweepActivity,
+				SweepReq{Prefix: "uploads/" + pipelineId(ctx) + "/"}).Get(ctx, nil)
+		}),
 	)
 	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ActivateCmd) (PublishRes, error) {
