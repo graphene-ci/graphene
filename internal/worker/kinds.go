@@ -17,6 +17,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 
+	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
@@ -85,8 +86,10 @@ func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessag
 	if !entry.info.Declarable {
 		return "", fmt.Errorf("a %s is not declared directly: %s", kind, entry.info.Description)
 	}
-	if kind == string(nsflow.Kind) && s.deps.Namespace != "default" {
-		return "", fmt.Errorf("namespaces are declared in the default namespace only")
+	// The installation's own records live in ONE place: declaring them
+	// anywhere else would leave copies nobody reads.
+	if authz.IsSystem(authz.KindOf(kind+"/")) && s.deps.Namespace != nsflow.SystemNamespace {
+		return "", fmt.Errorf("a %s belongs to the %s namespace", kind, nsflow.SystemNamespace)
 	}
 	if len(spec) > 0 && entry.specType != nil {
 		probe := reflect.New(entry.specType).Interface()

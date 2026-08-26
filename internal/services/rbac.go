@@ -19,6 +19,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
@@ -137,8 +138,10 @@ func (m *Management) authenticate(ctx context.Context, token, namespace string) 
 			return auth.Identity{Identity: id, BoundRole: role}, true
 		}
 	}
-	// A service account's token: found by hash, never by value.
-	if b, err := m.Bundles.Get(namespace); err == nil {
+	// A service account's token: found by hash, never by value. The
+	// accounts are the INSTALLATION's, so they are looked up where they
+	// live — not in the namespace the call happens to name.
+	if b, err := m.Bundles.Get(nsflow.SystemNamespace); err == nil {
 		if account, ok := b.Worker.AccountForToken(ctx, rbacflow.HashToken(token)); ok {
 			return auth.Identity{Identity: authz.Identity{
 				Subject:   authz.Subject{Kind: authz.SubjectServiceAccount, Name: account},

@@ -99,6 +99,22 @@ func KindOf(ref string) Kind {
 	return KindResource
 }
 
+// SystemKinds are the kinds whose records live in the system
+// namespace, not in the caller's: they describe the installation, not
+// a project inside it.
+var SystemKinds = []Kind{KindNamespace, KindRole, KindRoleBinding, KindServiceAccount}
+
+// IsSystem reports whether this kind's records live in the system
+// namespace.
+func IsSystem(k Kind) bool {
+	for _, s := range SystemKinds {
+		if k == s {
+			return true
+		}
+	}
+	return false
+}
+
 // Rule grants verbs on kinds. Both lists may hold "*".
 type Rule struct {
 	Verbs []Verb `json:"verbs"`

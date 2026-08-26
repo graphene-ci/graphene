@@ -20,6 +20,13 @@ import (
 // Kind is the entity kind name; the record id is the namespace name.
 const Kind = entity.KindName("namespace")
 
+// SystemNamespace holds what belongs to the INSTALLATION rather than to
+// any project: the namespace records themselves and the authorization
+// contour. It exists on every installation and cannot be deleted — a
+// container cannot hold its own declaration, and the records of who
+// may do what must outlive every namespace they speak about.
+const SystemNamespace = "graphene-system"
+
 // Spec is what a namespace IS to the installation.
 type Spec struct {
 	// RetentionDays bounds how long closed workflows are kept; 0 takes
