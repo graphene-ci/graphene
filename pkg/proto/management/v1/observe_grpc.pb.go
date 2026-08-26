@@ -43,12 +43,15 @@ type ObserveAPIClient interface {
 	// Events is dimension 2: the entity's own history, translated —
 	// classification without omission (raw carries everything).
 	Events(ctx context.Context, in *EventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
-	// Logs is dimension 3 (telemetry plane).
-	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogRecord], error)
-	// Metrics is dimension 4 (telemetry plane).
-	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error)
-	// Trace is dimension 5 (telemetry plane).
-	Trace(ctx context.Context, in *TraceRequest, opts ...grpc.CallOption) (*TraceResponse, error)
+	// Logs is dimension 3 (telemetry plane). History first, then — with
+	// follow — the live push from the collector: no polling anywhere.
+	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error)
+	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
+	// range JSON), then — with follow — live OTLP metric chunks.
+	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsChunk], error)
+	// Trace is dimension 5: one snapshot chunk (Jaeger JSON), then —
+	// with follow — live OTLP span chunks.
+	Trace(ctx context.Context, in *TraceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TraceChunk], error)
 }
 
 type observeAPIClient struct {
@@ -88,13 +91,13 @@ func (c *observeAPIClient) Events(ctx context.Context, in *EventsRequest, opts .
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ObserveAPI_EventsClient = grpc.ServerStreamingClient[Event]
 
-func (c *observeAPIClient) Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogRecord], error) {
+func (c *observeAPIClient) Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ObserveAPI_ServiceDesc.Streams[1], ObserveAPI_Logs_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[LogsRequest, LogRecord]{ClientStream: stream}
+	x := &grpc.GenericClientStream[LogsRequest, LogChunk]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -105,27 +108,45 @@ func (c *observeAPIClient) Logs(ctx context.Context, in *LogsRequest, opts ...gr
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ObserveAPI_LogsClient = grpc.ServerStreamingClient[LogRecord]
+type ObserveAPI_LogsClient = grpc.ServerStreamingClient[LogChunk]
 
-func (c *observeAPIClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsResponse, error) {
+func (c *observeAPIClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MetricsResponse)
-	err := c.cc.Invoke(ctx, ObserveAPI_Metrics_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ObserveAPI_ServiceDesc.Streams[2], ObserveAPI_Metrics_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[MetricsRequest, MetricsChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
 
-func (c *observeAPIClient) Trace(ctx context.Context, in *TraceRequest, opts ...grpc.CallOption) (*TraceResponse, error) {
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ObserveAPI_MetricsClient = grpc.ServerStreamingClient[MetricsChunk]
+
+func (c *observeAPIClient) Trace(ctx context.Context, in *TraceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TraceChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(TraceResponse)
-	err := c.cc.Invoke(ctx, ObserveAPI_Trace_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ObserveAPI_ServiceDesc.Streams[3], ObserveAPI_Trace_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[TraceRequest, TraceChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ObserveAPI_TraceClient = grpc.ServerStreamingClient[TraceChunk]
 
 // ObserveAPIServer is the server API for ObserveAPI service.
 // All implementations must embed UnimplementedObserveAPIServer
@@ -136,12 +157,15 @@ type ObserveAPIServer interface {
 	// Events is dimension 2: the entity's own history, translated —
 	// classification without omission (raw carries everything).
 	Events(*EventsRequest, grpc.ServerStreamingServer[Event]) error
-	// Logs is dimension 3 (telemetry plane).
-	Logs(*LogsRequest, grpc.ServerStreamingServer[LogRecord]) error
-	// Metrics is dimension 4 (telemetry plane).
-	Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error)
-	// Trace is dimension 5 (telemetry plane).
-	Trace(context.Context, *TraceRequest) (*TraceResponse, error)
+	// Logs is dimension 3 (telemetry plane). History first, then — with
+	// follow — the live push from the collector: no polling anywhere.
+	Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error
+	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
+	// range JSON), then — with follow — live OTLP metric chunks.
+	Metrics(*MetricsRequest, grpc.ServerStreamingServer[MetricsChunk]) error
+	// Trace is dimension 5: one snapshot chunk (Jaeger JSON), then —
+	// with follow — live OTLP span chunks.
+	Trace(*TraceRequest, grpc.ServerStreamingServer[TraceChunk]) error
 	mustEmbedUnimplementedObserveAPIServer()
 }
 
@@ -158,14 +182,14 @@ func (UnimplementedObserveAPIServer) State(context.Context, *ObserveStateRequest
 func (UnimplementedObserveAPIServer) Events(*EventsRequest, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
 }
-func (UnimplementedObserveAPIServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogRecord]) error {
+func (UnimplementedObserveAPIServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error {
 	return status.Error(codes.Unimplemented, "method Logs not implemented")
 }
-func (UnimplementedObserveAPIServer) Metrics(context.Context, *MetricsRequest) (*MetricsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Metrics not implemented")
+func (UnimplementedObserveAPIServer) Metrics(*MetricsRequest, grpc.ServerStreamingServer[MetricsChunk]) error {
+	return status.Error(codes.Unimplemented, "method Metrics not implemented")
 }
-func (UnimplementedObserveAPIServer) Trace(context.Context, *TraceRequest) (*TraceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Trace not implemented")
+func (UnimplementedObserveAPIServer) Trace(*TraceRequest, grpc.ServerStreamingServer[TraceChunk]) error {
+	return status.Error(codes.Unimplemented, "method Trace not implemented")
 }
 func (UnimplementedObserveAPIServer) mustEmbedUnimplementedObserveAPIServer() {}
 func (UnimplementedObserveAPIServer) testEmbeddedByValue()                    {}
@@ -222,47 +246,33 @@ func _ObserveAPI_Logs_Handler(srv interface{}, stream grpc.ServerStream) error {
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ObserveAPIServer).Logs(m, &grpc.GenericServerStream[LogsRequest, LogRecord]{ServerStream: stream})
+	return srv.(ObserveAPIServer).Logs(m, &grpc.GenericServerStream[LogsRequest, LogChunk]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ObserveAPI_LogsServer = grpc.ServerStreamingServer[LogRecord]
+type ObserveAPI_LogsServer = grpc.ServerStreamingServer[LogChunk]
 
-func _ObserveAPI_Metrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MetricsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _ObserveAPI_Metrics_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(MetricsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(ObserveAPIServer).Metrics(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ObserveAPI_Metrics_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ObserveAPIServer).Metrics(ctx, req.(*MetricsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(ObserveAPIServer).Metrics(m, &grpc.GenericServerStream[MetricsRequest, MetricsChunk]{ServerStream: stream})
 }
 
-func _ObserveAPI_Trace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TraceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ObserveAPI_MetricsServer = grpc.ServerStreamingServer[MetricsChunk]
+
+func _ObserveAPI_Trace_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TraceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(ObserveAPIServer).Trace(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ObserveAPI_Trace_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ObserveAPIServer).Trace(ctx, req.(*TraceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(ObserveAPIServer).Trace(m, &grpc.GenericServerStream[TraceRequest, TraceChunk]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ObserveAPI_TraceServer = grpc.ServerStreamingServer[TraceChunk]
 
 // ObserveAPI_ServiceDesc is the grpc.ServiceDesc for ObserveAPI service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -275,14 +285,6 @@ var ObserveAPI_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "State",
 			Handler:    _ObserveAPI_State_Handler,
 		},
-		{
-			MethodName: "Metrics",
-			Handler:    _ObserveAPI_Metrics_Handler,
-		},
-		{
-			MethodName: "Trace",
-			Handler:    _ObserveAPI_Trace_Handler,
-		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -293,6 +295,16 @@ var ObserveAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Logs",
 			Handler:       _ObserveAPI_Logs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Metrics",
+			Handler:       _ObserveAPI_Metrics_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Trace",
+			Handler:       _ObserveAPI_Trace_Handler,
 			ServerStreams: true,
 		},
 	},

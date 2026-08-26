@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
@@ -36,7 +37,10 @@ type Observe struct {
 	LogsBackend    telemetry.Logs
 	MetricsBackend telemetry.Metrics
 	TracesBackend  telemetry.Traces
-	Log            *xlog.Logger
+	// Hub is the LIVE half: follow streams are pushed from the
+	// collector, never polled from a backend.
+	Hub *telemetry.Hub
+	Log *xlog.Logger
 }
 
 // State returns dimension 1: execution status plus, for entity refs,
@@ -97,92 +101,193 @@ func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1
 	return nil
 }
 
-// Logs streams dimension 3 from the telemetry backend, oldest first;
-// follow keeps polling for new records until the client goes away.
-func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.LogsRequest], stream *connect.ServerStream[managementv1.LogRecord]) error {
-	if o.LogsBackend == nil {
-		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
-	}
+// Logs streams dimension 3: the backend's history first, then — with
+// follow — the live push straight from the collector. The
+// subscription opens BEFORE the history is read and the seam is
+// deduplicated by time, so the moment between "read the past" and
+// "listen to the present" cannot lose a line.
+func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.LogsRequest], stream *connect.ServerStream[managementv1.LogChunk]) error {
 	req := creq.Msg
 	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
 		return asConnectError(err)
 	}
 	sel := telemetry.SelectorFor(namespace, req.GetRef())
+	var sub *telemetry.Subscription
+	if req.GetFollow() && o.Hub != nil {
+		sub = o.Hub.Subscribe(sel, "log")
+		defer sub.Close()
+	}
 	since := time.Time{}
 	if req.GetSinceUnixNano() > 0 {
 		since = time.Unix(0, req.GetSinceUnixNano())
 	}
-	for {
+	last := since
+	if o.LogsBackend != nil {
 		records, err := o.LogsBackend.Query(ctx, sel, since, 1000)
-		if err != nil {
+		if err != nil && sub == nil {
 			return asConnectError(status.Error(codes.Unavailable, err.Error()))
 		}
 		for _, rec := range records {
-			if err := stream.Send(&managementv1.LogRecord{
-				TimeUnixNano: rec.Time.UnixNano(),
-				Severity:     rec.Severity,
-				Body:         rec.Body,
-				Attributes:   rec.Attributes,
-			}); err != nil {
+			if err := sendLog(stream, rec); err != nil {
 				return err
 			}
-			if rec.Time.After(since) {
-				since = rec.Time
+			if rec.Time.After(last) {
+				last = rec.Time
 			}
 		}
-		if !req.GetFollow() {
-			return nil
-		}
+	} else if sub == nil {
+		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	if sub == nil {
+		return nil
+	}
+	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(2 * time.Second):
+		case env, ok := <-sub.C():
+			if !ok {
+				return nil
+			}
+			if d := sub.Dropped(); d > 0 {
+				if err := stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Dropped{Dropped: d}}); err != nil {
+					return err
+				}
+			}
+			for _, rec := range telemetry.LogRecordsFrom(env) {
+				// The seam: history already carried everything up to
+				// `last`; the buffer may hold the same lines again.
+				if !rec.Time.After(last) {
+					continue
+				}
+				if err := sendLog(stream, rec); err != nil {
+					return err
+				}
+			}
 		}
 	}
 }
 
-// Metrics returns dimension 4: the backend's standard PromQL range
-// response for every series of the entity.
-func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv1.MetricsRequest]) (*connect.Response[managementv1.MetricsResponse], error) {
-	if o.MetricsBackend == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
-	}
+// sendLog renders one record chunk.
+func sendLog(stream *connect.ServerStream[managementv1.LogChunk], rec telemetry.LogRecord) error {
+	return stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Record{Record: &managementv1.LogRecord{
+		TimeUnixNano: rec.Time.UnixNano(),
+		Severity:     rec.Severity,
+		Body:         rec.Body,
+		Attributes:   rec.Attributes,
+	}}})
+}
+
+// Metrics streams dimension 4: one snapshot chunk — the backend's own
+// PromQL range JSON — then, with follow, live OTLP metric batches of
+// this subject, decodable by any standard OTel library.
+func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv1.MetricsRequest], stream *connect.ServerStream[managementv1.MetricsChunk]) error {
 	req := creq.Msg
 	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
-		return nil, asConnectError(err)
+		return asConnectError(err)
 	}
-	end := time.Now()
-	if req.GetEndUnixNano() > 0 {
-		end = time.Unix(0, req.GetEndUnixNano())
+	sel := telemetry.SelectorFor(namespace, req.GetRef())
+	var sub *telemetry.Subscription
+	if req.GetFollow() && o.Hub != nil {
+		sub = o.Hub.Subscribe(sel, "metric")
+		defer sub.Close()
 	}
-	start := end.Add(-time.Hour)
-	if req.GetStartUnixNano() > 0 {
-		start = time.Unix(0, req.GetStartUnixNano())
+	if o.MetricsBackend != nil {
+		end := time.Now()
+		if req.GetEndUnixNano() > 0 {
+			end = time.Unix(0, req.GetEndUnixNano())
+		}
+		start := end.Add(-time.Hour)
+		if req.GetStartUnixNano() > 0 {
+			start = time.Unix(0, req.GetStartUnixNano())
+		}
+		series, serr := o.MetricsBackend.Series(ctx, sel, start, end)
+		if serr != nil && sub == nil {
+			return asConnectError(status.Error(codes.Unavailable, serr.Error()))
+		}
+		if serr == nil {
+			if err := stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: series}}); err != nil {
+				return err
+			}
+		}
+	} else if sub == nil {
+		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
 	}
-	series, err := o.MetricsBackend.Series(ctx, telemetry.SelectorFor(namespace, req.GetRef()), start, end)
-	if err != nil {
-		return nil, asConnectError(status.Error(codes.Unavailable, err.Error()))
-	}
-	return connect.NewResponse(&managementv1.MetricsResponse{Series: series}), nil
+	return followOtlp(ctx, sub,
+		func(raw []byte) error {
+			return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Otlp{Otlp: raw}})
+		},
+		func(d int64) error {
+			return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Dropped{Dropped: d}})
+		})
 }
 
-// Trace returns dimension 5: standard Jaeger JSON of the entity's
-// traces.
-func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.TraceRequest]) (*connect.Response[managementv1.TraceResponse], error) {
-	if o.TracesBackend == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
-	}
+// Trace streams dimension 5: one snapshot chunk — Jaeger JSON of the
+// subject's traces — then, with follow, live OTLP span batches.
+func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.TraceRequest], stream *connect.ServerStream[managementv1.TraceChunk]) error {
+	req := creq.Msg
 	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
 	if err != nil {
-		return nil, asConnectError(err)
+		return asConnectError(err)
 	}
-	trace, err := o.TracesBackend.Search(ctx, telemetry.SelectorFor(namespace, creq.Msg.GetRef()), 20)
-	if err != nil {
-		return nil, asConnectError(status.Error(codes.Unavailable, err.Error()))
+	sel := telemetry.SelectorFor(namespace, req.GetRef())
+	var sub *telemetry.Subscription
+	if req.GetFollow() && o.Hub != nil {
+		sub = o.Hub.Subscribe(sel, "span")
+		defer sub.Close()
 	}
-	return connect.NewResponse(&managementv1.TraceResponse{Trace: trace}), nil
+	if o.TracesBackend != nil {
+		trace, serr := o.TracesBackend.Search(ctx, sel, 20)
+		if serr != nil && sub == nil {
+			return asConnectError(status.Error(codes.Unavailable, serr.Error()))
+		}
+		if serr == nil {
+			if err := stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: trace}}); err != nil {
+				return err
+			}
+		}
+	} else if sub == nil {
+		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	return followOtlp(ctx, sub,
+		func(raw []byte) error {
+			return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Otlp{Otlp: raw}})
+		},
+		func(d int64) error {
+			return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Dropped{Dropped: d}})
+		})
+}
+
+// followOtlp drains a live subscription into OTLP chunks; a nil
+// subscription ends the stream after the snapshot.
+func followOtlp(ctx context.Context, sub *telemetry.Subscription, send func([]byte) error, sendDropped func(int64) error) error {
+	if sub == nil {
+		return nil
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case env, ok := <-sub.C():
+			if !ok {
+				return nil
+			}
+			if d := sub.Dropped(); d > 0 {
+				if err := sendDropped(d); err != nil {
+					return err
+				}
+			}
+			raw, err := proto.Marshal(env.Payload)
+			if err != nil {
+				continue
+			}
+			if err := send(raw); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 var errNoBackend = fmt.Errorf("no telemetry backend is configured behind the collector yet")

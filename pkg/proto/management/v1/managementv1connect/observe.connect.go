@@ -60,12 +60,15 @@ type ObserveAPIClient interface {
 	// Events is dimension 2: the entity's own history, translated —
 	// classification without omission (raw carries everything).
 	Events(context.Context, *connect.Request[v1.EventsRequest]) (*connect.ServerStreamForClient[v1.Event], error)
-	// Logs is dimension 3 (telemetry plane).
-	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogRecord], error)
-	// Metrics is dimension 4 (telemetry plane).
-	Metrics(context.Context, *connect.Request[v1.MetricsRequest]) (*connect.Response[v1.MetricsResponse], error)
-	// Trace is dimension 5 (telemetry plane).
-	Trace(context.Context, *connect.Request[v1.TraceRequest]) (*connect.Response[v1.TraceResponse], error)
+	// Logs is dimension 3 (telemetry plane). History first, then — with
+	// follow — the live push from the collector: no polling anywhere.
+	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error)
+	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
+	// range JSON), then — with follow — live OTLP metric chunks.
+	Metrics(context.Context, *connect.Request[v1.MetricsRequest]) (*connect.ServerStreamForClient[v1.MetricsChunk], error)
+	// Trace is dimension 5: one snapshot chunk (Jaeger JSON), then —
+	// with follow — live OTLP span chunks.
+	Trace(context.Context, *connect.Request[v1.TraceRequest]) (*connect.ServerStreamForClient[v1.TraceChunk], error)
 }
 
 // NewObserveAPIClient constructs a client for the graphene.management.v1.ObserveAPI service. By
@@ -91,19 +94,19 @@ func NewObserveAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(observeAPIMethods.ByName("Events")),
 			connect.WithClientOptions(opts...),
 		),
-		logs: connect.NewClient[v1.LogsRequest, v1.LogRecord](
+		logs: connect.NewClient[v1.LogsRequest, v1.LogChunk](
 			httpClient,
 			baseURL+ObserveAPILogsProcedure,
 			connect.WithSchema(observeAPIMethods.ByName("Logs")),
 			connect.WithClientOptions(opts...),
 		),
-		metrics: connect.NewClient[v1.MetricsRequest, v1.MetricsResponse](
+		metrics: connect.NewClient[v1.MetricsRequest, v1.MetricsChunk](
 			httpClient,
 			baseURL+ObserveAPIMetricsProcedure,
 			connect.WithSchema(observeAPIMethods.ByName("Metrics")),
 			connect.WithClientOptions(opts...),
 		),
-		trace: connect.NewClient[v1.TraceRequest, v1.TraceResponse](
+		trace: connect.NewClient[v1.TraceRequest, v1.TraceChunk](
 			httpClient,
 			baseURL+ObserveAPITraceProcedure,
 			connect.WithSchema(observeAPIMethods.ByName("Trace")),
@@ -116,9 +119,9 @@ func NewObserveAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...
 type observeAPIClient struct {
 	state   *connect.Client[v1.ObserveStateRequest, v1.ObserveStateResponse]
 	events  *connect.Client[v1.EventsRequest, v1.Event]
-	logs    *connect.Client[v1.LogsRequest, v1.LogRecord]
-	metrics *connect.Client[v1.MetricsRequest, v1.MetricsResponse]
-	trace   *connect.Client[v1.TraceRequest, v1.TraceResponse]
+	logs    *connect.Client[v1.LogsRequest, v1.LogChunk]
+	metrics *connect.Client[v1.MetricsRequest, v1.MetricsChunk]
+	trace   *connect.Client[v1.TraceRequest, v1.TraceChunk]
 }
 
 // State calls graphene.management.v1.ObserveAPI.State.
@@ -132,18 +135,18 @@ func (c *observeAPIClient) Events(ctx context.Context, req *connect.Request[v1.E
 }
 
 // Logs calls graphene.management.v1.ObserveAPI.Logs.
-func (c *observeAPIClient) Logs(ctx context.Context, req *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogRecord], error) {
+func (c *observeAPIClient) Logs(ctx context.Context, req *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error) {
 	return c.logs.CallServerStream(ctx, req)
 }
 
 // Metrics calls graphene.management.v1.ObserveAPI.Metrics.
-func (c *observeAPIClient) Metrics(ctx context.Context, req *connect.Request[v1.MetricsRequest]) (*connect.Response[v1.MetricsResponse], error) {
-	return c.metrics.CallUnary(ctx, req)
+func (c *observeAPIClient) Metrics(ctx context.Context, req *connect.Request[v1.MetricsRequest]) (*connect.ServerStreamForClient[v1.MetricsChunk], error) {
+	return c.metrics.CallServerStream(ctx, req)
 }
 
 // Trace calls graphene.management.v1.ObserveAPI.Trace.
-func (c *observeAPIClient) Trace(ctx context.Context, req *connect.Request[v1.TraceRequest]) (*connect.Response[v1.TraceResponse], error) {
-	return c.trace.CallUnary(ctx, req)
+func (c *observeAPIClient) Trace(ctx context.Context, req *connect.Request[v1.TraceRequest]) (*connect.ServerStreamForClient[v1.TraceChunk], error) {
+	return c.trace.CallServerStream(ctx, req)
 }
 
 // ObserveAPIHandler is an implementation of the graphene.management.v1.ObserveAPI service.
@@ -153,12 +156,15 @@ type ObserveAPIHandler interface {
 	// Events is dimension 2: the entity's own history, translated —
 	// classification without omission (raw carries everything).
 	Events(context.Context, *connect.Request[v1.EventsRequest], *connect.ServerStream[v1.Event]) error
-	// Logs is dimension 3 (telemetry plane).
-	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogRecord]) error
-	// Metrics is dimension 4 (telemetry plane).
-	Metrics(context.Context, *connect.Request[v1.MetricsRequest]) (*connect.Response[v1.MetricsResponse], error)
-	// Trace is dimension 5 (telemetry plane).
-	Trace(context.Context, *connect.Request[v1.TraceRequest]) (*connect.Response[v1.TraceResponse], error)
+	// Logs is dimension 3 (telemetry plane). History first, then — with
+	// follow — the live push from the collector: no polling anywhere.
+	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogChunk]) error
+	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
+	// range JSON), then — with follow — live OTLP metric chunks.
+	Metrics(context.Context, *connect.Request[v1.MetricsRequest], *connect.ServerStream[v1.MetricsChunk]) error
+	// Trace is dimension 5: one snapshot chunk (Jaeger JSON), then —
+	// with follow — live OTLP span chunks.
+	Trace(context.Context, *connect.Request[v1.TraceRequest], *connect.ServerStream[v1.TraceChunk]) error
 }
 
 // NewObserveAPIHandler builds an HTTP handler from the service implementation. It returns the path
@@ -186,13 +192,13 @@ func NewObserveAPIHandler(svc ObserveAPIHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(observeAPIMethods.ByName("Logs")),
 		connect.WithHandlerOptions(opts...),
 	)
-	observeAPIMetricsHandler := connect.NewUnaryHandler(
+	observeAPIMetricsHandler := connect.NewServerStreamHandler(
 		ObserveAPIMetricsProcedure,
 		svc.Metrics,
 		connect.WithSchema(observeAPIMethods.ByName("Metrics")),
 		connect.WithHandlerOptions(opts...),
 	)
-	observeAPITraceHandler := connect.NewUnaryHandler(
+	observeAPITraceHandler := connect.NewServerStreamHandler(
 		ObserveAPITraceProcedure,
 		svc.Trace,
 		connect.WithSchema(observeAPIMethods.ByName("Trace")),
@@ -227,14 +233,14 @@ func (UnimplementedObserveAPIHandler) Events(context.Context, *connect.Request[v
 	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Events is not implemented"))
 }
 
-func (UnimplementedObserveAPIHandler) Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogRecord]) error {
+func (UnimplementedObserveAPIHandler) Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Logs is not implemented"))
 }
 
-func (UnimplementedObserveAPIHandler) Metrics(context.Context, *connect.Request[v1.MetricsRequest]) (*connect.Response[v1.MetricsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Metrics is not implemented"))
+func (UnimplementedObserveAPIHandler) Metrics(context.Context, *connect.Request[v1.MetricsRequest], *connect.ServerStream[v1.MetricsChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Metrics is not implemented"))
 }
 
-func (UnimplementedObserveAPIHandler) Trace(context.Context, *connect.Request[v1.TraceRequest]) (*connect.Response[v1.TraceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Trace is not implemented"))
+func (UnimplementedObserveAPIHandler) Trace(context.Context, *connect.Request[v1.TraceRequest], *connect.ServerStream[v1.TraceChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Trace is not implemented"))
 }

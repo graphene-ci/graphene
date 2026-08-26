@@ -11,6 +11,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
+
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -35,16 +41,17 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			if err != nil || len(rest) != 0 {
 				return fmt.Errorf("usage: %s <kind> <id>", dim)
 			}
-			return run(cmd.Context(), f, dim, ref, follow)
+			return Run(cmd.Context(), f, dim, ref, follow)
 		},
 	}
-	if dim == "events" || dim == "logs" {
-		cmd.Flags().BoolVar(&follow, "follow", false, "keep streaming new entries")
-	}
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep streaming live entries (push from the collector, no polling)")
 	return cmd
 }
 
-func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) error {
+// Run executes one dimension read — the shared engine of the verb
+// form ("gctl logs pipeline/x") and the resource-first form
+// ("gctl pipeline/x logs").
+func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
@@ -91,13 +98,21 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 		}
 		n := 0
 		for stream.Receive() {
-			n++
-			rec := stream.Msg()
-			if done, err := f.Emit(rec); err != nil {
+			chunk := stream.Msg()
+			if done, err := f.Emit(chunk); err != nil {
 				return err
 			} else if done {
 				continue
 			}
+			if d := chunk.GetDropped(); d > 0 {
+				fmt.Fprintf(os.Stderr, "... %d lines dropped (slow consumer)\n", d)
+				continue
+			}
+			rec := chunk.GetRecord()
+			if rec == nil {
+				continue
+			}
+			n++
 			fmt.Fprintf(cmdutil.Out, "%s  %s\n", cmdutil.Stamp(rec.GetTimeUnixNano()), rec.GetBody())
 		}
 		if err := stream.Err(); err != nil {
@@ -108,18 +123,110 @@ func run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 		}
 		return nil
 	case "metrics":
-		resp, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref}))
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref, Follow: follow}))
 		if err != nil {
 			return err
 		}
-		return renderMetrics(f, resp.Msg.GetSeries())
+		for stream.Receive() {
+			chunk := stream.Msg()
+			if done, err := f.Emit(chunk); err != nil {
+				return err
+			} else if done {
+				continue
+			}
+			switch {
+			case chunk.GetSnapshot() != nil:
+				if err := renderMetrics(f, chunk.GetSnapshot()); err != nil {
+					return err
+				}
+			case chunk.GetOtlp() != nil:
+				renderLiveMetrics(chunk.GetOtlp())
+			case chunk.GetDropped() > 0:
+				fmt.Fprintf(os.Stderr, "... %d metric batches dropped\n", chunk.GetDropped())
+			}
+		}
+		return stream.Err()
 	case "trace":
-		resp, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Ref: ref}))
+		stream, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Ref: ref, Follow: follow}))
 		if err != nil {
 			return err
 		}
-		return renderTrace(f, resp.Msg.GetTrace())
+		for stream.Receive() {
+			chunk := stream.Msg()
+			if done, err := f.Emit(chunk); err != nil {
+				return err
+			} else if done {
+				continue
+			}
+			switch {
+			case chunk.GetSnapshot() != nil:
+				if err := renderTrace(f, chunk.GetSnapshot()); err != nil {
+					return err
+				}
+			case chunk.GetOtlp() != nil:
+				renderLiveSpans(chunk.GetOtlp())
+			case chunk.GetDropped() > 0:
+				fmt.Fprintf(os.Stderr, "... %d span batches dropped\n", chunk.GetDropped())
+			}
+		}
+		return stream.Err()
 	default:
 		return fmt.Errorf("unknown dimension %q", dim)
+	}
+}
+
+// renderLiveMetrics prints one live OTLP metric batch: standard OTel
+// bytes, decoded with the standard types.
+func renderLiveMetrics(raw []byte) {
+	var req colmetricspb.ExportMetricsServiceRequest
+	if proto.Unmarshal(raw, &req) != nil {
+		return
+	}
+	for _, rm := range req.GetResourceMetrics() {
+		for _, sm := range rm.GetScopeMetrics() {
+			for _, m := range sm.GetMetrics() {
+				for _, p := range numberPoints(m) {
+					fmt.Fprintf(cmdutil.Out, "%s  %s = %g\n",
+						cmdutil.Stamp(int64(p.GetTimeUnixNano())), m.GetName(), pointValue(p)) //nolint:gosec // otel nanos
+				}
+			}
+		}
+	}
+}
+
+func numberPoints(m *metricspb.Metric) []*metricspb.NumberDataPoint {
+	switch data := m.GetData().(type) {
+	case *metricspb.Metric_Sum:
+		return data.Sum.GetDataPoints()
+	case *metricspb.Metric_Gauge:
+		return data.Gauge.GetDataPoints()
+	}
+	return nil
+}
+
+func pointValue(p *metricspb.NumberDataPoint) float64 {
+	if _, ok := p.GetValue().(*metricspb.NumberDataPoint_AsInt); ok {
+		return float64(p.GetAsInt())
+	}
+	return p.GetAsDouble()
+}
+
+// renderLiveSpans prints one live OTLP span batch.
+func renderLiveSpans(raw []byte) {
+	var req coltracepb.ExportTraceServiceRequest
+	if proto.Unmarshal(raw, &req) != nil {
+		return
+	}
+	for _, rs := range req.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, span := range ss.GetSpans() {
+				ms := float64(span.GetEndTimeUnixNano()-span.GetStartTimeUnixNano()) / 1e6
+				line := fmt.Sprintf("%s  %-32s %8.1fms", cmdutil.Stamp(int64(span.GetStartTimeUnixNano())), span.GetName(), ms) //nolint:gosec // otel nanos
+				if span.GetStatus().GetCode() == tracepb.Status_STATUS_CODE_ERROR {
+					line += "  error: " + span.GetStatus().GetMessage()
+				}
+				fmt.Fprintln(cmdutil.Out, line)
+			}
+		}
 	}
 }

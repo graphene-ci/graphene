@@ -97,10 +97,14 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 
 	// The telemetry half of the door — built before the bundles: the
 	// managed runner tails run containers into it.
+	// The live hub: the collector fans every accepted signal out to
+	// follow streams, so a tail is a push and never a poll.
+	hub := telemetry.NewHub()
 	otlp := &services.OTLP{
 		Traces:  cfg.OtelTraces,
 		Logs:    cfg.OtelLogs,
 		Metrics: cfg.OtelMetrics,
+		Hub:     hub,
 		Log:     log.With(xlog.String("component", "otlp")),
 	}
 	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
@@ -268,6 +272,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	observe := &services.Observe{
 		Bundles:    bundles,
 		Management: management,
+		Hub:        hub,
 		Log:        log.With(xlog.String("component", "observe")),
 	}
 	telemetryHTTP := &http.Client{Timeout: 30 * time.Second}

@@ -44,6 +44,26 @@ binary itself, over the same connection contexts.`,
 		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Resource-first grammar: `graphenectl pipeline/x logs -f`.
+		// The dimensions belong to the RECORD, so the record may come
+		// first; the verb form stays as the kubectl-style twin.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) >= 2 && strings.Contains(args[0], "/") {
+				dim := args[1]
+				switch dim {
+				case "events", "logs", "metrics", "trace":
+					follow := false
+					for _, a := range args[2:] {
+						if a == "-f" || a == "--follow" {
+							follow = true
+						}
+					}
+					return observecmd.Run(cmd.Context(), f, dim, args[0], follow)
+				}
+			}
+			return cmd.Help()
+		},
 	}
 	f.Bind(root)
 
