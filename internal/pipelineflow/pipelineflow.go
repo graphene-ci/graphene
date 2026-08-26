@@ -49,6 +49,9 @@ type State struct {
 	// Image is the pipeline's current worker image — what a push
 	// recorded last; runs started without an explicit image use it.
 	Image string `json:"image,omitempty"`
+	// RevisionId names the revision that was activated; empty on a
+	// pipeline pushed the old way, from a developer's machine.
+	RevisionId string `json:"revisionId,omitempty"`
 	// Concurrency is the policy for automatic starts: "queue"
 	// (default), "cancel-previous", "parallel".
 	Concurrency string `json:"concurrency,omitempty"`
@@ -222,6 +225,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		st := ec.State()
 		changed := st.Digest != digest || st.Image != rev.Image || st.Concurrency != rev.Concurrency
 		st.Manifest, st.Digest, st.Image, st.Concurrency = rev.Manifest, digest, rev.Image, rev.Concurrency
+		st.RevisionId = cmd.RevisionId
 		if cmd.WorkspaceId != "" && st.Owner == "" {
 			// The pipeline joins the project it is published from.
 			st.Owner = ref.OwnerRef("workspace/" + cmd.WorkspaceId)

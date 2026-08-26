@@ -86,28 +86,28 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			activeImage := ""
+			// Which one is active is a property of the PIPELINE — one
+			// read, not one per revision: a listing does not carry
+			// state, and asking for it per row is the N+1 this door
+			// was built to avoid.
+			activeId := ""
 			if got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
 				Ref: "pipeline/" + args[0],
 			})); err == nil {
 				var st struct {
-					Image string `json:"image"`
+					RevisionId string `json:"revisionId"`
 				}
 				_ = json.Unmarshal(got.Msg.GetResource().GetState(), &st)
-				activeImage = st.Image
+				activeId = st.RevisionId
 			}
-			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\tIMAGE\n")
+			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\n")
 			for _, r := range resp.Msg.GetResources() {
-				var st struct {
-					Image string `json:"image"`
-				}
-				_ = json.Unmarshal(r.GetState(), &st)
+				id := strings.TrimPrefix(r.GetRef(), "revision/"+args[0]+".")
 				active := ""
-				if st.Image != "" && st.Image == activeImage {
+				if id != "" && id == activeId {
 					active = "*"
 				}
-				id := strings.TrimPrefix(r.GetRef(), "revision/"+args[0]+".")
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%s\n", id, active, r.GetPhase(), st.Image)
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\n", id, active, r.GetPhase())
 			}
 			return nil
 		},
