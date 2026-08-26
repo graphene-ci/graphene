@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	connectcors "connectrpc.com/cors"
 	"github.com/go-chi/cors"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -89,12 +90,7 @@ type statusCodes struct{}
 func (statusCodes) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		res, err := next(ctx, req)
-		if err != nil {
-			if s, ok := status.FromError(err); ok {
-				return nil, connect.NewError(connect.Code(s.Code()), errors.New(s.Message()))
-			}
-		}
-		return res, err
+		return res, asConnectError(err)
 	}
 }
 
@@ -102,6 +98,30 @@ func (statusCodes) WrapStreamingClient(next connect.StreamingClientFunc) connect
 	return next
 }
 
+// WrapStreamingHandler translates a STREAM's error too. A streaming
+// method fails the same way a unary one does — "name the source to
+// build" is invalid_argument whether the answer is one message or
+// many — and without this the client sees `unknown` and prints the
+// gRPC status as raw text.
 func (statusCodes) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return next
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		return asConnectError(next(ctx, conn))
+	}
+}
+
+// asConnectError maps a gRPC status onto the numerically identical connect
+// code; anything else passes through untouched.
+func asConnectError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// An error the handler already shaped as a connect error keeps its
+	// code: translating it again would flatten it to unknown.
+	if connect.CodeOf(err) != connect.CodeUnknown {
+		return err
+	}
+	if s, ok := status.FromError(err); ok && s.Code() != codes.Unknown {
+		return connect.NewError(connect.Code(s.Code()), errors.New(s.Message()))
+	}
+	return err
 }

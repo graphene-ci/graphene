@@ -187,15 +187,6 @@ func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.
 
 var errNoBackend = fmt.Errorf("no telemetry backend is configured behind the collector yet")
 
-// asConnectError translates the shared helpers' gRPC statuses on the
-// STREAMING paths, where the unary interceptor cannot.
-func asConnectError(err error) error {
-	if s, ok := status.FromError(err); ok {
-		return connect.NewError(connect.Code(s.Code()), fmt.Errorf("%s", s.Message()))
-	}
-	return err
-}
-
 // translate renders one history event: classification without
 // omission.
 func translate(he *historypb.HistoryEvent, sched map[int64]*historypb.ActivityTaskScheduledEventAttributes) *managementv1.Event {
