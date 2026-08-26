@@ -36,30 +36,42 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 	// happened to be recent. The namespace stays a post-filter: it is a
 	// resource attribute (a process tag in Jaeger terms), stamped by
 	// the door, and belongs to a different half of the trace.
-	tags, err := json.Marshal(map[string]string{sel.Attribute: sel.Value})
-	if err != nil {
-		return nil, err
+	axes := []map[string]string{{sel.Attribute: sel.Value}}
+	if sel.AltAttribute != "" {
+		axes = append(axes, map[string]string{sel.AltAttribute: sel.AltValue})
 	}
 	merged := []json.RawMessage{}
+	seen := map[string]bool{}
 	for _, service := range services {
-		q := url.Values{
-			"service": {service},
-			"tags":    {string(tags)},
-			"limit":   {strconv.Itoa(limit)},
-		}
-		raw, err := j.get(ctx, "/api/traces?"+q.Encode())
-		if err != nil {
-			return nil, err
-		}
-		var page struct {
-			Data []json.RawMessage `json:"data"`
-		}
-		if err := json.Unmarshal(raw, &page); err != nil {
-			return nil, err
-		}
-		for _, trace := range page.Data {
-			if traceInNamespace(trace, sel.Namespace) && len(merged) < limit {
-				merged = append(merged, trace)
+		for _, axis := range axes {
+			tags, err := json.Marshal(axis)
+			if err != nil {
+				return nil, err
+			}
+			q := url.Values{
+				"service": {service},
+				"tags":    {string(tags)},
+				"limit":   {strconv.Itoa(limit)},
+			}
+			raw, err := j.get(ctx, "/api/traces?"+q.Encode())
+			if err != nil {
+				return nil, err
+			}
+			var page struct {
+				Data []json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(raw, &page); err != nil {
+				return nil, err
+			}
+			for _, trace := range page.Data {
+				key := traceKey(trace)
+				if seen[key] {
+					continue
+				}
+				if traceInNamespace(trace, sel.Namespace) && len(merged) < limit {
+					seen[key] = true
+					merged = append(merged, trace)
+				}
 			}
 		}
 	}
@@ -68,6 +80,15 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 		return nil, err
 	}
 	return out, nil
+}
+
+// traceKey identifies a trace for axis-merge dedup.
+func traceKey(trace json.RawMessage) string {
+	var t struct {
+		TraceID string `json:"traceID"`
+	}
+	_ = json.Unmarshal(trace, &t)
+	return t.TraceID
 }
 
 // traceInNamespace reports whether any process of the trace carries

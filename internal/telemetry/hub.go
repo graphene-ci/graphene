@@ -44,7 +44,10 @@ func (e Envelope) Matches(sel Selector) bool {
 	if sel.Namespace != "" && e.Namespace != sel.Namespace {
 		return false
 	}
-	return e.Keys[sel.Attribute] == sel.Value
+	if e.Keys[sel.Attribute] == sel.Value {
+		return true
+	}
+	return sel.AltAttribute != "" && e.Keys[sel.AltAttribute] == sel.AltValue
 }
 
 // subBuffer bounds one subscriber. Telemetry is not a transaction

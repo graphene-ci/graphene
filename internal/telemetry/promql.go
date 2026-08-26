@@ -29,6 +29,11 @@ func (p *PromQL) Series(ctx context.Context, sel Selector, start, end time.Time)
 	matcher := fmt.Sprintf("{%s=%q,%s=%q}",
 		p.label("graphene.namespace"), sel.Namespace,
 		p.label(sel.Attribute), sel.Value)
+	if sel.AltAttribute != "" {
+		matcher = fmt.Sprintf("%s or {%s=%q,%s=%q}", matcher,
+			p.label("graphene.namespace"), sel.Namespace,
+			p.label(sel.AltAttribute), sel.AltValue)
+	}
 	step := max(int(end.Sub(start).Seconds())/200, 15)
 	q := url.Values{
 		"query": {matcher},
