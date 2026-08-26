@@ -156,23 +156,31 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		},
 		Log: log,
 	})
-	// The default namespace exists on every installation.
-	if err := bundles.CreateNamespace(ctx, temporalClient, "default", 0); err != nil {
-		return fmt.Errorf("default namespace: %w", err)
+	// Two namespaces exist on every installation: the SYSTEM one, which
+	// holds what describes the installation itself, and the default
+	// working one, which holds a first project.
+	for _, name := range []string{nsflow.SystemNamespace, "default"} {
+		if err := bundles.CreateNamespace(ctx, temporalClient, name, 0); err != nil {
+			return fmt.Errorf("%s namespace: %w", name, err)
+		}
+	}
+	systemBundle, err := bundles.Get(nsflow.SystemNamespace)
+	if err != nil {
+		return err
 	}
 	defaultBundle, err := bundles.Get("default")
 	if err != nil {
 		return err
 	}
-	// The namespace RECORDS live in the default namespace, and only its
-	// worker can register a namespace or stop serving one.
-	defaultBundle.Worker.SetNamespaceOps(
+	// Registering a namespace and stopping one are the system
+	// namespace's own side effects — its records decide them.
+	systemBundle.Worker.SetNamespaceOps(
 		func(ctx context.Context, name string, retentionDays int32) error {
 			return bundles.CreateNamespace(ctx, temporalClient, name, retentionDays)
 		},
 		func(_ context.Context, name string) error { return bundles.Retire(name) },
 	)
-	bundles.SetDeclaredCheck(defaultBundle.Worker.NamespaceDeclared)
+	bundles.SetDeclaredCheck(systemBundle.Worker.NamespaceDeclared)
 	// Every namespace the durable core already holds is ADOPTED: the
 	// installation predates this record, so the record catches up.
 	registered, err := bundles.ListNamespaces(ctx, temporalClient)
@@ -182,10 +190,10 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	for _, name := range registered {
 		// One that already has a record — living or retired — is left
 		// alone: adoption is for what the records have never seen.
-		if defaultBundle.Worker.NamespaceKnown(ctx, name) {
+		if systemBundle.Worker.NamespaceKnown(ctx, name) {
 			continue
 		}
-		if err := defaultBundle.Worker.DeclareNamespace(ctx, name, nsflow.Spec{}); err != nil {
+		if err := systemBundle.Worker.DeclareNamespace(ctx, name, nsflow.Spec{}); err != nil {
 			return fmt.Errorf("namespace %s: %w", name, err)
 		}
 	}
@@ -217,7 +225,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Runtimes: runtimes.New(cfg.Runtimes),
 		// Authorization reads the namespace's roles and bindings — the
 		// default namespace's worker is the store.
-		Authz:  authz.NewResolver(defaultBundle.Worker),
+		Authz:  authz.NewResolver(systemBundle.Worker),
 		Minter: minter,
 		Log:    log.With(xlog.String("component", "management")),
 	}

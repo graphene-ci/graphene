@@ -19,6 +19,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/pipeline/pkg/id"
 )
 
@@ -67,14 +68,29 @@ func (m *Management) allow(ctx context.Context, verb authz.Verb, kind authz.Kind
 		// caller's own role, so a partially configured installation
 		// still enforces something rather than nothing.
 		if rules, ok := authz.Builtins()[boundRole]; ok && rules.Allows(verb, kind) {
-			return b, nil
+			return m.route(b, kind)
 		}
 		return nil, status.Errorf(codes.PermissionDenied, "%s may not %s %s", id.Subject, verb, kind)
 	}
 	if d := resolver.Allow(ctx, id, boundRole, verb, kind); !d.Allowed {
 		return nil, status.Errorf(codes.PermissionDenied, "%s", d.Reason)
 	}
-	return b, nil
+	return m.route(b, kind)
+}
+
+// route sends a call to the namespace whose records answer it. A
+// system kind describes the INSTALLATION, so its records live in one
+// place — but the permission to touch it was decided a moment ago
+// against the CALLER's namespace, which is what scopes a role.
+func (m *Management) route(b *nsbundle.Bundle, kind authz.Kind) (*nsbundle.Bundle, error) {
+	if !authz.IsSystem(kind) {
+		return b, nil
+	}
+	sys, err := m.Bundles.Get(nsflow.SystemNamespace)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("system namespace: %v", err))
+	}
+	return sys, nil
 }
 
 // callerNamespace is the namespace the call acts in: the token's own,

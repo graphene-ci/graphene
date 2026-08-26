@@ -32,6 +32,7 @@ import (
 	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/secrets"
@@ -565,6 +566,14 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	b, err := m.allow(ctx, authz.VerbDelete, authz.KindOf(req.GetRef()))
 	if err != nil {
 		return nil, err
+	}
+	// The installation's own namespaces are not deletable: the system
+	// one holds the records that say which namespaces exist, and the
+	// default one is where a first project lives.
+	for _, undeletable := range []string{nsflow.SystemNamespace, "default"} {
+		if req.GetRef() == string(nsflow.Kind)+"/"+undeletable {
+			return nil, status.Errorf(codes.FailedPrecondition, "the %s namespace cannot be deleted", undeletable)
+		}
 	}
 	// The note goes first: after the cascade there is no history left
 	// to write it into.
