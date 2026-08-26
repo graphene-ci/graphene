@@ -180,6 +180,11 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		return fmt.Errorf("list namespaces: %w", err)
 	}
 	for _, name := range registered {
+		// One that already has a record — living or retired — is left
+		// alone: adoption is for what the records have never seen.
+		if defaultBundle.Worker.NamespaceKnown(ctx, name) {
+			continue
+		}
 		if err := defaultBundle.Worker.DeclareNamespace(ctx, name, nsflow.Spec{}); err != nil {
 			return fmt.Errorf("namespace %s: %w", name, err)
 		}
