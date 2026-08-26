@@ -41,7 +41,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
-	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
@@ -94,7 +93,6 @@ type Worker struct {
 	pipelineDef  *entdefine.Definition[pipelineflow.Spec, pipelineflow.State]
 	triggerDef   *entdefine.Definition[triggerflow.Spec, triggerflow.State]
 	revisionDef  *entdefine.Definition[revisionflow.Spec, revisionflow.State]
-	workspaceDef *entdefine.Definition[workspaceflow.Spec, workspaceflow.State]
 	roleDef      *entdefine.Definition[rbacflow.RoleSpec, rbacflow.RoleState]
 	bindingDef   *entdefine.Definition[rbacflow.BindingSpec, rbacflow.BindingState]
 	accountDef   *entdefine.Definition[rbacflow.AccountSpec, rbacflow.AccountState]
@@ -147,7 +145,6 @@ func New(deps Deps) (*Worker, error) {
 		pipelineDef:  pipelineflow.New(standTick),
 		triggerDef:   triggerflow.New(standTick),
 		revisionDef:  revisionflow.New(),
-		workspaceDef: workspaceflow.New(),
 		roleDef:      rbacflow.NewRole(),
 		bindingDef:   rbacflow.NewBinding(),
 		accountDef:   rbacflow.NewAccount(),
@@ -163,7 +160,6 @@ func New(deps Deps) (*Worker, error) {
 		s.agentDef.Register(w), s.artifactDef.Register(w),
 		s.standDef.Register(w), s.pipelineDef.Register(w),
 		s.triggerDef.Register(w), s.revisionDef.Register(w),
-		s.workspaceDef.Register(w),
 		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
 		s.varDef.Register(w), s.secretDef.Register(w),
 		s.namespaceDef.Register(w),
@@ -203,7 +199,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
-	w.RegisterActivityWithOptions(s.fetchWorkspaceSource, activity.RegisterOptions{Name: workspaceflow.FetchActivity})
+	w.RegisterActivityWithOptions(s.fetchPipelineSource, activity.RegisterOptions{Name: pipelineflow.FetchActivity})
 	return s, nil
 }
 
@@ -384,16 +380,10 @@ func (s *Worker) standCascade(ctx context.Context, held string) error {
 // by content inside). A non-empty image also updates the pipeline's
 // current worker image — that is what a push records.
 func (s *Worker) PublishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image string) error {
-	return s.publishManifest(ctx, pipelineId, raw, image, "")
+	return s.publishManifest(ctx, pipelineId, raw, image)
 }
 
-// PublishManifestFromWorkspace publishes AND records the ownership
-// edge: the pipeline belongs to the workspace it is published from.
-func (s *Worker) PublishManifestFromWorkspace(ctx context.Context, pipelineId string, raw json.RawMessage, image, workspaceId string) error {
-	return s.publishManifest(ctx, pipelineId, raw, image, workspaceId)
-}
-
-func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image, workspaceId string) error {
+func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw json.RawMessage, image string) error {
 	var m manifestpb.Manifest
 	if err := protojson.Unmarshal(raw, &m); err != nil {
 		return fmt.Errorf("manifest: %w", err)
@@ -403,20 +393,10 @@ func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw jso
 	}
 	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
 	_, err := entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId),
-		pipelineflow.Spec{WorkspaceId: workspaceId},
-		pipelineflow.PublishCmd{Manifest: raw, Image: image, Concurrency: m.GetConcurrency(), WorkspaceId: workspaceId})
+		pipelineflow.Spec{},
+		pipelineflow.PublishCmd{Manifest: raw, Image: image, Concurrency: m.GetConcurrency()})
 	if err != nil {
 		return err
-	}
-	// A pipeline that predates its workspace joins it now: ownership is
-	// given, never taken, so the transfer is the ordinary command.
-	if workspaceId != "" {
-		if st, derr := s.GetPipeline(ctx, pipelineId); derr == nil && st.Owner == "" {
-			_ = s.Transfer(ctx, wire.TransferResourceRequest{
-				Resource: ref.OwnerRef("pipeline/" + pipelineId),
-				NewOwner: ref.OwnerRef("workspace/" + workspaceId),
-			})
-		}
 	}
 	return s.reconcileTriggers(ctx, pipelineId, m.GetTriggers())
 }
@@ -504,6 +484,17 @@ func (s *Worker) GetPipeline(ctx context.Context, pipelineId string) (pipelinefl
 	return desc.State, nil
 }
 
+// DescribePipelineFull reads a pipeline record whole — its declared
+// source as well as its current state.
+func (s *Worker) DescribePipelineFull(ctx context.Context, pipelineId string) (entity.Phase, pipelineflow.Spec, pipelineflow.State, error) {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	out, err := pipelines.Describe(ctx, entity.ResourceID(pipelineId))
+	if err != nil {
+		return "", pipelineflow.Spec{}, pipelineflow.State{}, err
+	}
+	return out.Phase, out.Spec, out.State, nil
+}
+
 // materializeRevision is the activity behind a revision's Init: read
 // the uploaded source, build it, keep the log. Progress goes out as
 // heartbeats — the record's own liveness, readable by anyone watching
@@ -543,19 +534,19 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 	return res, nil
 }
 
-// fetchWorkspaceSource resolves a workspace's source into a working
-// tree: a Git checkout in an ephemeral container, or the uploaded
-// snapshot taken as it is.
-func (s *Worker) fetchWorkspaceSource(ctx context.Context, req workspaceflow.FetchReq) (workspaceflow.FetchRes, error) {
-	var res workspaceflow.FetchRes
+// fetchPipelineSource resolves a pipeline's declared source into a
+// working tree: a Git checkout in an ephemeral container, or the
+// uploaded snapshot taken as it is.
+func (s *Worker) fetchPipelineSource(ctx context.Context, req pipelineflow.FetchReq) (pipelineflow.FetchRes, error) {
+	var res pipelineflow.FetchRes
 	switch {
 	case req.Spec.Snapshot != nil:
-		// The upload already sits in the store; the workspace adopts it.
+		// The upload already sits in the store; the pipeline adopts it.
 		res.TreeLocation = req.Spec.Snapshot.Location
 		res.TreeDigest = req.Spec.Snapshot.Digest
 		return res, nil
 	case req.Spec.Git == nil:
-		return res, fmt.Errorf("workspace has no source")
+		return res, fmt.Errorf("pipeline has no source")
 	}
 	if s.deps.Materializer == nil {
 		return res, fmt.Errorf("git checkout needs an execution backend on this installation")
@@ -574,50 +565,25 @@ func (s *Worker) fetchWorkspaceSource(ctx context.Context, req workspaceflow.Fet
 		Ref:        git.Ref,
 		Subdir:     git.Subdir,
 		Credential: credential,
-		Location:   fmt.Sprintf("workspaces/%s/tree.tgz", req.WorkspaceId),
+		Location:   fmt.Sprintf("sources/%s/tree.tgz", req.PipelineId),
 		Namespace:  s.deps.Namespace,
 		Runtime:    req.Spec.Runtime,
 	}, func(stage, message string) { activity.RecordHeartbeat(ctx, stage+": "+message) })
 	if err != nil {
 		return res, err
 	}
-	return workspaceflow.FetchRes{
+	return pipelineflow.FetchRes{
 		TreeLocation: out.TreeLocation,
 		TreeDigest:   out.TreeDigest,
 		GitCommit:    out.Commit,
 	}, nil
 }
 
-// DeclareWorkspace creates (or attaches to) one workspace record.
-func (s *Worker) DeclareWorkspace(ctx context.Context, workspaceId string, spec workspaceflow.Spec) error {
-	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
-	_, err := workspaces.CreateOrAttach(ctx, entity.ResourceID(workspaceId), spec)
-	return err
-}
-
-// DescribeWorkspace reads one workspace record.
-func (s *Worker) DescribeWorkspace(ctx context.Context, workspaceId string) (entity.Phase, workspaceflow.Spec, workspaceflow.State, error) {
-	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
-	out, err := workspaces.Describe(ctx, entity.ResourceID(workspaceId))
-	if err != nil {
-		return "", workspaceflow.Spec{}, workspaceflow.State{}, err
-	}
-	return out.Phase, out.Spec, out.State, nil
-}
-
-// SyncWorkspace re-resolves a workspace's source (or adopts a fresh
-// upload) and returns the resulting tree.
-func (s *Worker) SyncWorkspace(ctx context.Context, workspaceId string, cmd workspaceflow.SyncCmd) (workspaceflow.TreeRes, error) {
-	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
-	return entclient.Exec(ctx, workspaces, entity.ResourceID(workspaceId), cmd)
-}
-
-// BindWorkspacePipeline records the pipeline a workspace publishes.
-func (s *Worker) BindWorkspacePipeline(ctx context.Context, workspaceId, pipelineId string) error {
-	workspaces := entclient.Bind(s.workspaceDef, s.deps.Client, wire.ServerQueue)
-	_, err := entclient.Exec(ctx, workspaces, entity.ResourceID(workspaceId),
-		workspaceflow.BindPipelineCmd{PipelineId: pipelineId})
-	return err
+// SyncSource re-resolves a pipeline's source (or adopts a fresh tree)
+// and returns the resulting working tree.
+func (s *Worker) SyncSource(ctx context.Context, pipelineId string, cmd pipelineflow.SyncCmd) (pipelineflow.TreeRes, error) {
+	pipelines := entclient.Bind(s.pipelineDef, s.deps.Client, wire.ServerQueue)
+	return entclient.ExecWithStart(ctx, pipelines, entity.ResourceID(pipelineId), pipelineflow.Spec{}, cmd)
 }
 
 // DeclareRevision creates (or attaches to) one revision record: the
@@ -964,15 +930,10 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		// The stand LIVES the handover: its own timer enforces the
 		// keep, its history records it.
 		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
-		// The stand belongs to the PROJECT: it takes the workspace of
-		// the pipeline it stands for, so re-creating that pipeline
-		// never cascades into what is parked on the stand.
-		workspaceId := ""
-		if st, err := s.GetPipeline(ctx, standId); err == nil {
-			workspaceId = strings.TrimPrefix(string(st.Owner), "workspace/")
-		}
+		// The stand is the PIPELINE's: the pipeline is the project, so
+		// what stands beside it is its child.
 		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
-			standflow.Spec{PipelineId: standId, WorkspaceId: workspaceId},
+			standflow.Spec{PipelineId: standId},
 			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From})
 		return err
 	}

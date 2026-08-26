@@ -24,13 +24,10 @@ const (
 type MaterializeRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	PipelineId string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
-	// The full source tree as tar.gz — the workspace root is the build
-	// root: `go build .`, one package main. Empty when workspace_id is
-	// given: the workspace's own working tree is built instead.
-	Source []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	// WorkspaceId builds THAT workspace's current tree; the pipeline is
-	// the one the workspace publishes.
-	WorkspaceId   string `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	// The full source tree as tar.gz — the tree root is the build root:
+	// `go build .`, one package main. Empty builds the PIPELINE's own
+	// working tree, which already lives on the server.
+	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,13 +74,6 @@ func (x *MaterializeRequest) GetSource() []byte {
 		return x.Source
 	}
 	return nil
-}
-
-func (x *MaterializeRequest) GetWorkspaceId() string {
-	if x != nil {
-		return x.WorkspaceId
-	}
-	return ""
 }
 
 type MaterializeEvent struct {
@@ -343,12 +333,11 @@ var File_proto_management_v1_revisions_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_revisions_proto_rawDesc = "" +
 	"\n" +
-	"#proto/management/v1/revisions.proto\x12\x16graphene.management.v1\"p\n" +
+	"#proto/management/v1/revisions.proto\x12\x16graphene.management.v1\"M\n" +
 	"\x12MaterializeRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\fR\x06source\x12!\n" +
-	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\"\x85\x01\n" +
+	"\x06source\x18\x02 \x01(\fR\x06source\"\x85\x01\n" +
 	"\x10MaterializeEvent\x12\x14\n" +
 	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12A\n" +

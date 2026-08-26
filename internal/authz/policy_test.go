@@ -27,7 +27,7 @@ func TestKindOf(t *testing.T) {
 		"revision/delivery.abc":                     KindRevision,
 		"k8s.compute.yandex-cloud.../Instance/vm-1": KindResource,
 		"docker/hello":                              KindResource,
-		"workspace/ws":                              KindWorkspace,
+		"workspace/ws":                              KindResource,
 	} {
 		if got := KindOf(ref); got != want {
 			t.Fatalf("KindOf(%q) = %q, want %q", ref, got, want)

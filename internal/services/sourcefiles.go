@@ -1,6 +1,6 @@
 package services
 
-// The workspace's working tree is EDITABLE: Studio reads and writes
+// The pipeline's working tree is EDITABLE: Studio reads and writes
 // files straight into it. A tree is one tar.gz in the blob store, so a
 // write is read-modify-write of that archive — atomic by construction,
 // durable the moment it returns, and the record's generation counts
@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/authz"
-	"github.com/graphene-ci/graphene/internal/workspaceflow"
+	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -33,11 +33,11 @@ const maxFileBytes = 8 << 20
 
 // ListFiles lists the working tree.
 func (m *Management) ListFiles(ctx context.Context, creq *connect.Request[managementv1.ListFilesRequest]) (*connect.Response[managementv1.ListFilesResponse], error) {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
-	tree, st, err := m.workspaceTree(ctx, b.Namespace, creq.Msg.GetWorkspaceId())
+	tree, st, err := m.pipelineTree(ctx, b.Namespace, creq.Msg.GetPipelineId())
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (m *Management) ListFiles(ctx context.Context, creq *connect.Request[manage
 
 // ReadFile returns one file of the working tree.
 func (m *Management) ReadFile(ctx context.Context, creq *connect.Request[managementv1.ReadFileRequest]) (*connect.Response[managementv1.ReadFileResponse], error) {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +59,13 @@ func (m *Management) ReadFile(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return nil, err
 	}
-	tree, _, err := m.workspaceTree(ctx, b.Namespace, creq.Msg.GetWorkspaceId())
+	tree, _, err := m.pipelineTree(ctx, b.Namespace, creq.Msg.GetPipelineId())
 	if err != nil {
 		return nil, err
 	}
 	content, ok := tree[clean]
 	if !ok {
-		return nil, status.Errorf(codes.NotFound, "no file %q in the workspace", clean)
+		return nil, status.Errorf(codes.NotFound, "no file %q in the pipeline", clean)
 	}
 	return connect.NewResponse(&managementv1.ReadFileResponse{Content: content}), nil
 }
@@ -77,7 +77,7 @@ func (m *Management) WriteFile(ctx context.Context, creq *connect.Request[manage
 	if len(req.GetContent()) > maxFileBytes {
 		return nil, status.Errorf(codes.InvalidArgument, "a file may be up to %d bytes", maxFileBytes)
 	}
-	return m.editTree(ctx, req.GetWorkspaceId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
+	return m.editTree(ctx, req.GetPipelineId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
 		tree[clean] = req.GetContent()
 		return nil
 	})
@@ -86,9 +86,9 @@ func (m *Management) WriteFile(ctx context.Context, creq *connect.Request[manage
 // DeleteFile removes one file from the working tree.
 func (m *Management) DeleteFile(ctx context.Context, creq *connect.Request[managementv1.DeleteFileRequest]) (*connect.Response[managementv1.WriteFileResponse], error) {
 	req := creq.Msg
-	return m.editTree(ctx, req.GetWorkspaceId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
+	return m.editTree(ctx, req.GetPipelineId(), req.GetPath(), func(tree map[string][]byte, clean string) error {
 		if _, ok := tree[clean]; !ok {
-			return status.Errorf(codes.NotFound, "no file %q in the workspace", clean)
+			return status.Errorf(codes.NotFound, "no file %q in the pipeline", clean)
 		}
 		delete(tree, clean)
 		return nil
@@ -96,9 +96,9 @@ func (m *Management) DeleteFile(ctx context.Context, creq *connect.Request[manag
 }
 
 // editTree applies one change to the working tree and stores the
-// result as the workspace's new tree.
-func (m *Management) editTree(ctx context.Context, workspaceId, rawPath string, edit func(map[string][]byte, string) error) (*connect.Response[managementv1.WriteFileResponse], error) {
-	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindWorkspace)
+// result as the pipeline's new tree.
+func (m *Management) editTree(ctx context.Context, pipelineId, rawPath string, edit func(map[string][]byte, string) error) (*connect.Response[managementv1.WriteFileResponse], error) {
+	b, err := m.allow(ctx, authz.VerbUpdate, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (m *Management) editTree(ctx context.Context, workspaceId, rawPath string, 
 	if err != nil {
 		return nil, err
 	}
-	tree, _, err := m.workspaceTree(ctx, b.Namespace, workspaceId)
+	tree, _, err := m.pipelineTree(ctx, b.Namespace, pipelineId)
 	if err != nil {
 		return nil, err
 	}
@@ -119,15 +119,15 @@ func (m *Management) editTree(ctx context.Context, workspaceId, rawPath string, 
 	}
 	sum := sha256.Sum256(packed)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	location := fmt.Sprintf("workspaces/%s/%s.tgz", workspaceId, hex.EncodeToString(sum[:])[:16])
+	location := fmt.Sprintf("pipelines/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
 	if _, err := m.Blobs.Put(ctx, b.Namespace, location, bytes.NewReader(packed)); err != nil {
 		return nil, status.Errorf(codes.Internal, "store tree: %v", err)
 	}
 	// The record owns the tree: the edit lands through its own command,
 	// so the generation and the digest stay in one history.
-	res, err := b.Worker.SyncWorkspace(ctx, workspaceId, workspaceflow.SyncCmd{Location: location, Digest: digest})
+	res, err := b.Worker.SyncSource(ctx, pipelineId, pipelineflow.SyncCmd{Location: location, Digest: digest})
 	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "workspace %s: %v", workspaceId, err)
+		return nil, status.Errorf(codes.FailedPrecondition, "pipeline %s: %v", pipelineId, err)
 	}
 	return connect.NewResponse(&managementv1.WriteFileResponse{
 		TreeDigest: res.TreeDigest,
@@ -135,18 +135,18 @@ func (m *Management) editTree(ctx context.Context, workspaceId, rawPath string, 
 	}), nil
 }
 
-// workspaceTree loads the working tree into memory.
-func (m *Management) workspaceTree(ctx context.Context, namespace, workspaceId string) (map[string][]byte, workspaceflow.State, error) {
+// pipelineTree loads the working tree into memory.
+func (m *Management) pipelineTree(ctx context.Context, namespace, pipelineId string) (map[string][]byte, pipelineflow.State, error) {
 	b, err := m.Bundles.Get(namespace)
 	if err != nil {
-		return nil, workspaceflow.State{}, status.Error(codes.Internal, err.Error())
+		return nil, pipelineflow.State{}, status.Error(codes.Internal, err.Error())
 	}
-	_, _, st, err := b.Worker.DescribeWorkspace(ctx, workspaceId)
+	_, _, st, err := b.Worker.DescribePipelineFull(ctx, pipelineId)
 	if err != nil {
-		return nil, workspaceflow.State{}, status.Errorf(codes.NotFound, "workspace %s: %v", workspaceId, err)
+		return nil, pipelineflow.State{}, status.Errorf(codes.NotFound, "pipeline %s: %v", pipelineId, err)
 	}
 	if st.TreeLocation == "" {
-		return nil, st, status.Error(codes.FailedPrecondition, "workspace has no working tree yet")
+		return nil, st, status.Error(codes.FailedPrecondition, "pipeline has no working tree yet")
 	}
 	rc, err := m.Blobs.Get(ctx, namespace, st.TreeLocation)
 	if err != nil {
@@ -220,7 +220,7 @@ func packTree(tree map[string][]byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// cleanPath keeps an edit inside the workspace: no absolute paths, no
+// cleanPath keeps an edit inside the pipeline: no absolute paths, no
 // climbing out, no empty names.
 func cleanPath(p string) (string, error) {
 	clean := path.Clean(strings.TrimPrefix(strings.TrimSpace(p), "./"))
@@ -228,9 +228,9 @@ func cleanPath(p string) (string, error) {
 	case clean == "" || clean == "." || clean == "/":
 		return "", status.Error(codes.InvalidArgument, "path is required")
 	case path.IsAbs(clean):
-		return "", status.Errorf(codes.InvalidArgument, "path %q must be relative to the workspace", p)
+		return "", status.Errorf(codes.InvalidArgument, "path %q must be relative to the pipeline", p)
 	case clean == ".." || strings.HasPrefix(clean, "../"):
-		return "", status.Errorf(codes.InvalidArgument, "path %q escapes the workspace", p)
+		return "", status.Errorf(codes.InvalidArgument, "path %q escapes the pipeline", p)
 	}
 	return clean, nil
 }

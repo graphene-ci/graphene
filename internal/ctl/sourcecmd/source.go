@@ -1,8 +1,8 @@
-// Package workspacecmd is the ctl surface of workspaces: create from a
-// Git repository or a local directory, re-sync the source, download
-// the working tree. Reading, listing and deleting are the ordinary
-// record verbs — a workspace is a record like any other.
-package workspacecmd
+// Package sourcecmd is the ctl surface of a pipeline's SOURCE side:
+// create one from a Git repository or a local directory, re-sync it,
+// download or edit the working tree. Reading, listing and deleting are
+// the ordinary record verbs — a pipeline is a record like any other.
+package sourcecmd
 
 import (
 	"encoding/json"
@@ -18,25 +18,22 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
-// New builds the `workspace` tree.
-func New(f *cmdutil.Factory) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "workspace",
-		Short: "Workspaces: create, sync, download — the project's working area",
-	}
+// Attach hangs the source verbs on the `pipeline` tree: a project's
+// source is the pipeline's own, not a separate thing to manage.
+func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 
-	var gitUrl, gitRef, subdir, credential, upload, runtime, pipelineId string
+	var gitUrl, gitRef, subdir, credential, upload, runtime string
 	create := &cobra.Command{
-		Use:   "create <workspace>",
-		Short: "Create a workspace from a git repository or a local directory",
+		Use:   "create <pipeline>",
+		Short: "Create a pipeline from a git repository or a local directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var tree []byte
 			switch {
 			case gitUrl != "" && upload != "":
-				return fmt.Errorf("a workspace has one source: --git or --upload, not both")
+				return fmt.Errorf("a pipeline has one source: --git or --upload, not both")
 			case gitUrl == "" && upload == "":
-				return fmt.Errorf("a workspace needs a source: --git <url> or --upload <dir>")
+				return fmt.Errorf("a pipeline needs a source: --git <url> or --upload <dir>")
 			case upload != "":
 				packed, err := revisioncmd.PackSource(upload)
 				if err != nil {
@@ -49,19 +46,19 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// A workspace is declared through the one door every kind is
+			// A pipeline is declared through the one door every kind is
 			// declared through. An UPLOADED source is the exception the
 			// rule allows: bytes travel their own channel first, and the
 			// declaration carries the reference.
-			spec := map[string]any{"runtime": runtime, "pipelineId": pipelineId}
+			spec := map[string]any{"runtime": runtime}
 			switch {
 			case gitUrl != "":
 				spec["git"] = map[string]any{
 					"url": gitUrl, "ref": gitRef, "subdir": subdir, "credentialRef": credential,
 				}
 			default:
-				up, err := d.Workspaces.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
-					WorkspaceId: args[0], Source: tree,
+				up, err := d.Source.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
+					PipelineId: args[0], Source: tree,
 				}))
 				if err != nil {
 					return err
@@ -75,7 +72,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			applied, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
-				Kind: "workspace", Id: args[0], Spec: specJSON,
+				Kind: "pipeline", Id: args[0], Spec: specJSON,
 			}))
 			if err != nil {
 				return err
@@ -90,11 +87,10 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	create.Flags().StringVar(&credential, "credential", "", "name of the secret holding the git token")
 	create.Flags().StringVarP(&upload, "upload", "f", "", "local directory or .tgz to upload as the source")
 	create.Flags().StringVar(&runtime, "runtime", "", "project runtime (default: the installation's)")
-	create.Flags().StringVar(&pipelineId, "pipeline", "", "the pipeline this workspace publishes")
 
 	var syncUpload string
 	sync := &cobra.Command{
-		Use:   "sync <workspace>",
+		Use:   "sync <pipeline>",
 		Short: "Re-fetch the git ref, or replace the tree with a local directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -109,8 +105,8 @@ func New(f *cmdutil.Factory) *cobra.Command {
 					return err
 				}
 				fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", syncUpload, len(tree)/1024)
-				up, err := d.Workspaces.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
-					WorkspaceId: args[0], Source: tree,
+				up, err := d.Source.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
+					PipelineId: args[0], Source: tree,
 				}))
 				if err != nil {
 					return err
@@ -122,7 +118,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			resp, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
-				Ref: "workspace/" + args[0], Command: "sync", Payload: raw,
+				Ref: "pipeline/" + args[0], Command: "sync", Payload: raw,
 			}))
 			if err != nil {
 				return err
@@ -144,16 +140,16 @@ func New(f *cmdutil.Factory) *cobra.Command {
 
 	var out string
 	download := &cobra.Command{
-		Use:   "download <workspace>",
-		Short: "Download the workspace's current working tree (tar.gz)",
+		Use:   "download <pipeline>",
+		Short: "Download the pipeline's current working tree (tar.gz)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			stream, err := d.Workspaces.DownloadSource(cmd.Context(),
-				connect.NewRequest(&managementv1.DownloadSourceRequest{WorkspaceId: args[0]}))
+			stream, err := d.Source.DownloadSource(cmd.Context(),
+				connect.NewRequest(&managementv1.DownloadSourceRequest{PipelineId: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -195,7 +191,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.ListRuntimes(cmd.Context(), connect.NewRequest(&managementv1.ListRuntimesRequest{}))
+			resp, err := d.Source.ListRuntimes(cmd.Context(), connect.NewRequest(&managementv1.ListRuntimesRequest{}))
 			if err != nil {
 				return err
 			}
@@ -215,15 +211,15 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	files := &cobra.Command{
-		Use:   "files <workspace>",
-		Short: "List the workspace's working tree",
+		Use:   "files <pipeline>",
+		Short: "List the pipeline's working tree",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.ListFiles(cmd.Context(), connect.NewRequest(&managementv1.ListFilesRequest{WorkspaceId: args[0]}))
+			resp, err := d.Source.ListFiles(cmd.Context(), connect.NewRequest(&managementv1.ListFilesRequest{PipelineId: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -239,7 +235,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cat := &cobra.Command{
-		Use:   "cat <workspace> <path>",
+		Use:   "cat <pipeline> <path>",
 		Short: "Read one file of the working tree",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -247,8 +243,8 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.ReadFile(cmd.Context(), connect.NewRequest(&managementv1.ReadFileRequest{
-				WorkspaceId: args[0], Path: args[1],
+			resp, err := d.Source.ReadFile(cmd.Context(), connect.NewRequest(&managementv1.ReadFileRequest{
+				PipelineId: args[0], Path: args[1],
 			}))
 			if err != nil {
 				return err
@@ -260,7 +256,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 
 	var fromFile string
 	write := &cobra.Command{
-		Use:   "write <workspace> <path>",
+		Use:   "write <pipeline> <path>",
 		Short: "Write one file into the working tree (stdin, or --from)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -278,8 +274,8 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.WriteFile(cmd.Context(), connect.NewRequest(&managementv1.WriteFileRequest{
-				WorkspaceId: args[0], Path: args[1], Content: content,
+			resp, err := d.Source.WriteFile(cmd.Context(), connect.NewRequest(&managementv1.WriteFileRequest{
+				PipelineId: args[0], Path: args[1], Content: content,
 			}))
 			if err != nil {
 				return err
@@ -292,7 +288,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	write.Flags().StringVar(&fromFile, "from", "", "read the content from this local file")
 
 	rm := &cobra.Command{
-		Use:   "rm <workspace> <path>",
+		Use:   "rm <pipeline> <path>",
 		Short: "Delete one file from the working tree",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -300,8 +296,8 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := d.Workspaces.DeleteFile(cmd.Context(), connect.NewRequest(&managementv1.DeleteFileRequest{
-				WorkspaceId: args[0], Path: args[1],
+			resp, err := d.Source.DeleteFile(cmd.Context(), connect.NewRequest(&managementv1.DeleteFileRequest{
+				PipelineId: args[0], Path: args[1],
 			}))
 			if err != nil {
 				return err
@@ -313,5 +309,4 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm)
-	return cmd
 }

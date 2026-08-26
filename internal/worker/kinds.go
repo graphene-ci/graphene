@@ -25,7 +25,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
-	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/manifest"
@@ -145,13 +144,12 @@ func buildKinds() map[string]*kindEntry {
 		reg[name] = e
 	}
 
-	add("workspace", "the project's working area: one source, one runtime, one pipeline", true,
-		reflect.TypeFor[workspaceflow.Spec](),
-		cmd("sync", reflect.TypeFor[workspaceflow.SyncCmd]()),
-		cmd("bind-pipeline", reflect.TypeFor[workspaceflow.BindPipelineCmd]()))
-
-	add("pipeline", "what a workspace publishes; the arbiter of its runs", false,
+	// The pipeline IS the project: its source, its working tree, the
+	// version its automatic starts use, and the arbiter of those
+	// starts — one record, one history.
+	add("pipeline", "a project: its source, its active version, the arbiter of its runs", true,
 		reflect.TypeFor[pipelineflow.Spec](),
+		cmd("sync", reflect.TypeFor[pipelineflow.SyncCmd]()),
 		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
 		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
 		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))

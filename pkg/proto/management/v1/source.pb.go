@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v0.14.1-v0.16.6-bufbuild-protocompile-easyp
-// source: proto/management/v1/workspaces.proto
+// source: proto/management/v1/source.proto
 
 package managementv1
 
@@ -22,8 +22,8 @@ const (
 )
 
 type UploadSourceRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	PipelineId string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	// The tree as tar.gz.
 	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -32,7 +32,7 @@ type UploadSourceRequest struct {
 
 func (x *UploadSourceRequest) Reset() {
 	*x = UploadSourceRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
+	mi := &file_proto_management_v1_source_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +44,7 @@ func (x *UploadSourceRequest) String() string {
 func (*UploadSourceRequest) ProtoMessage() {}
 
 func (x *UploadSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[0]
+	mi := &file_proto_management_v1_source_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,12 +57,12 @@ func (x *UploadSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadSourceRequest.ProtoReflect.Descriptor instead.
 func (*UploadSourceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{0}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *UploadSourceRequest) GetWorkspaceId() string {
+func (x *UploadSourceRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -86,7 +86,7 @@ type UploadSourceResponse struct {
 
 func (x *UploadSourceResponse) Reset() {
 	*x = UploadSourceResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
+	mi := &file_proto_management_v1_source_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -98,7 +98,7 @@ func (x *UploadSourceResponse) String() string {
 func (*UploadSourceResponse) ProtoMessage() {}
 
 func (x *UploadSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[1]
+	mi := &file_proto_management_v1_source_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -111,7 +111,7 @@ func (x *UploadSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadSourceResponse.ProtoReflect.Descriptor instead.
 func (*UploadSourceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{1}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *UploadSourceResponse) GetLocation() string {
@@ -130,14 +130,14 @@ func (x *UploadSourceResponse) GetDigest() string {
 
 type DownloadSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DownloadSourceRequest) Reset() {
 	*x = DownloadSourceRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
+	mi := &file_proto_management_v1_source_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -149,7 +149,7 @@ func (x *DownloadSourceRequest) String() string {
 func (*DownloadSourceRequest) ProtoMessage() {}
 
 func (x *DownloadSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[2]
+	mi := &file_proto_management_v1_source_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -162,12 +162,12 @@ func (x *DownloadSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadSourceRequest.ProtoReflect.Descriptor instead.
 func (*DownloadSourceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{2}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *DownloadSourceRequest) GetWorkspaceId() string {
+func (x *DownloadSourceRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -181,7 +181,7 @@ type DownloadSourceChunk struct {
 
 func (x *DownloadSourceChunk) Reset() {
 	*x = DownloadSourceChunk{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
+	mi := &file_proto_management_v1_source_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -193,7 +193,7 @@ func (x *DownloadSourceChunk) String() string {
 func (*DownloadSourceChunk) ProtoMessage() {}
 
 func (x *DownloadSourceChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[3]
+	mi := &file_proto_management_v1_source_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -206,7 +206,7 @@ func (x *DownloadSourceChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadSourceChunk.ProtoReflect.Descriptor instead.
 func (*DownloadSourceChunk) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{3}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DownloadSourceChunk) GetData() []byte {
@@ -224,7 +224,7 @@ type ListRuntimesRequest struct {
 
 func (x *ListRuntimesRequest) Reset() {
 	*x = ListRuntimesRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
+	mi := &file_proto_management_v1_source_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -236,7 +236,7 @@ func (x *ListRuntimesRequest) String() string {
 func (*ListRuntimesRequest) ProtoMessage() {}
 
 func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[4]
+	mi := &file_proto_management_v1_source_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -249,7 +249,7 @@ func (x *ListRuntimesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesRequest.ProtoReflect.Descriptor instead.
 func (*ListRuntimesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{4}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{4}
 }
 
 type ListRuntimesResponse struct {
@@ -261,7 +261,7 @@ type ListRuntimesResponse struct {
 
 func (x *ListRuntimesResponse) Reset() {
 	*x = ListRuntimesResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
+	mi := &file_proto_management_v1_source_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -273,7 +273,7 @@ func (x *ListRuntimesResponse) String() string {
 func (*ListRuntimesResponse) ProtoMessage() {}
 
 func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[5]
+	mi := &file_proto_management_v1_source_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +286,7 @@ func (x *ListRuntimesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesResponse.ProtoReflect.Descriptor instead.
 func (*ListRuntimesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{5}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
@@ -298,14 +298,14 @@ func (x *ListRuntimesResponse) GetRuntimes() []*ListRuntimesResponse_Runtime {
 
 type ListFilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
+	mi := &file_proto_management_v1_source_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +317,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[6]
+	mi := &file_proto_management_v1_source_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,12 +330,12 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ListFilesRequest) GetWorkspaceId() string {
+func (x *ListFilesRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -350,7 +350,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
+	mi := &file_proto_management_v1_source_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -362,7 +362,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[7]
+	mi := &file_proto_management_v1_source_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -375,7 +375,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{7}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListFilesResponse) GetFiles() []*ListFilesResponse_File {
@@ -394,7 +394,7 @@ func (x *ListFilesResponse) GetTreeDigest() string {
 
 type ReadFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -402,7 +402,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_source_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -414,7 +414,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_source_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -427,12 +427,12 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{8}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ReadFileRequest) GetWorkspaceId() string {
+func (x *ReadFileRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -453,7 +453,7 @@ type ReadFileResponse struct {
 
 func (x *ReadFileResponse) Reset() {
 	*x = ReadFileResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	mi := &file_proto_management_v1_source_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -465,7 +465,7 @@ func (x *ReadFileResponse) String() string {
 func (*ReadFileResponse) ProtoMessage() {}
 
 func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[9]
+	mi := &file_proto_management_v1_source_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -478,7 +478,7 @@ func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{9}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReadFileResponse) GetContent() []byte {
@@ -490,7 +490,7 @@ func (x *ReadFileResponse) GetContent() []byte {
 
 type WriteFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -499,7 +499,7 @@ type WriteFileRequest struct {
 
 func (x *WriteFileRequest) Reset() {
 	*x = WriteFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_source_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -511,7 +511,7 @@ func (x *WriteFileRequest) String() string {
 func (*WriteFileRequest) ProtoMessage() {}
 
 func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[10]
+	mi := &file_proto_management_v1_source_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -524,12 +524,12 @@ func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{10}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *WriteFileRequest) GetWorkspaceId() string {
+func (x *WriteFileRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -558,7 +558,7 @@ type WriteFileResponse struct {
 
 func (x *WriteFileResponse) Reset() {
 	*x = WriteFileResponse{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	mi := &file_proto_management_v1_source_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -570,7 +570,7 @@ func (x *WriteFileResponse) String() string {
 func (*WriteFileResponse) ProtoMessage() {}
 
 func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[11]
+	mi := &file_proto_management_v1_source_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -583,7 +583,7 @@ func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
 func (*WriteFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{11}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WriteFileResponse) GetTreeDigest() string {
@@ -602,7 +602,7 @@ func (x *WriteFileResponse) GetGeneration() uint64 {
 
 type DeleteFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -610,7 +610,7 @@ type DeleteFileRequest struct {
 
 func (x *DeleteFileRequest) Reset() {
 	*x = DeleteFileRequest{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	mi := &file_proto_management_v1_source_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -622,7 +622,7 @@ func (x *DeleteFileRequest) String() string {
 func (*DeleteFileRequest) ProtoMessage() {}
 
 func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[12]
+	mi := &file_proto_management_v1_source_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -635,12 +635,12 @@ func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{12}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *DeleteFileRequest) GetWorkspaceId() string {
+func (x *DeleteFileRequest) GetPipelineId() string {
 	if x != nil {
-		return x.WorkspaceId
+		return x.PipelineId
 	}
 	return ""
 }
@@ -664,7 +664,7 @@ type ListRuntimesResponse_Runtime struct {
 
 func (x *ListRuntimesResponse_Runtime) Reset() {
 	*x = ListRuntimesResponse_Runtime{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	mi := &file_proto_management_v1_source_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +676,7 @@ func (x *ListRuntimesResponse_Runtime) String() string {
 func (*ListRuntimesResponse_Runtime) ProtoMessage() {}
 
 func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[13]
+	mi := &file_proto_management_v1_source_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +689,7 @@ func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRuntimesResponse_Runtime.ProtoReflect.Descriptor instead.
 func (*ListRuntimesResponse_Runtime) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{5, 0}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{5, 0}
 }
 
 func (x *ListRuntimesResponse_Runtime) GetName() string {
@@ -730,7 +730,7 @@ type ListFilesResponse_File struct {
 
 func (x *ListFilesResponse_File) Reset() {
 	*x = ListFilesResponse_File{}
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	mi := &file_proto_management_v1_source_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +742,7 @@ func (x *ListFilesResponse_File) String() string {
 func (*ListFilesResponse_File) ProtoMessage() {}
 
 func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_workspaces_proto_msgTypes[14]
+	mi := &file_proto_management_v1_source_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +755,7 @@ func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse_File.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse_File) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_workspaces_proto_rawDescGZIP(), []int{7, 0}
+	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{7, 0}
 }
 
 func (x *ListFilesResponse_File) GetPath() string {
@@ -772,19 +772,21 @@ func (x *ListFilesResponse_File) GetSize() int64 {
 	return 0
 }
 
-var File_proto_management_v1_workspaces_proto protoreflect.FileDescriptor
+var File_proto_management_v1_source_proto protoreflect.FileDescriptor
 
-const file_proto_management_v1_workspaces_proto_rawDesc = "" +
+const file_proto_management_v1_source_proto_rawDesc = "" +
 	"\n" +
-	"$proto/management/v1/workspaces.proto\x12\x16graphene.management.v1\"P\n" +
-	"\x13UploadSourceRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x16\n" +
+	" proto/management/v1/source.proto\x12\x16graphene.management.v1\"N\n" +
+	"\x13UploadSourceRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\fR\x06source\"J\n" +
 	"\x14UploadSourceResponse\x12\x1a\n" +
 	"\blocation\x18\x01 \x01(\tR\blocation\x12\x16\n" +
-	"\x06digest\x18\x02 \x01(\tR\x06digest\":\n" +
-	"\x15DownloadSourceRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\")\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\"8\n" +
+	"\x15DownloadSourceRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\")\n" +
 	"\x13DownloadSourceChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"\x15\n" +
 	"\x13ListRuntimesRequest\"\xd6\x01\n" +
@@ -795,23 +797,26 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\x04 \x01(\bR\tisDefault\"5\n" +
-	"\x10ListFilesRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\"\xaa\x01\n" +
+	"is_default\x18\x04 \x01(\bR\tisDefault\"3\n" +
+	"\x10ListFilesRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\"\xaa\x01\n" +
 	"\x11ListFilesResponse\x12D\n" +
 	"\x05files\x18\x01 \x03(\v2..graphene.management.v1.ListFilesResponse.FileR\x05files\x12\x1f\n" +
 	"\vtree_digest\x18\x02 \x01(\tR\n" +
 	"treeDigest\x1a.\n" +
 	"\x04File\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x03R\x04size\"H\n" +
-	"\x0fReadFileRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\"F\n" +
+	"\x0fReadFileRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\",\n" +
 	"\x10ReadFileResponse\x12\x18\n" +
-	"\acontent\x18\x01 \x01(\fR\acontent\"c\n" +
-	"\x10WriteFileRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent\"a\n" +
+	"\x10WriteFileRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\"T\n" +
 	"\x11WriteFileResponse\x12\x1f\n" +
@@ -819,11 +824,12 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"treeDigest\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"J\n" +
-	"\x11DeleteFileRequest\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path2\xdc\x05\n" +
-	"\rWorkspacesAPI\x12i\n" +
+	"generation\"H\n" +
+	"\x11DeleteFileRequest\x12\x1f\n" +
+	"\vpipeline_id\x18\x01 \x01(\tR\n" +
+	"pipelineId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path2\xd8\x05\n" +
+	"\tSourceAPI\x12i\n" +
 	"\fUploadSource\x12+.graphene.management.v1.UploadSourceRequest\x1a,.graphene.management.v1.UploadSourceResponse\x12n\n" +
 	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01\x12i\n" +
 	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponse\x12`\n" +
@@ -834,19 +840,19 @@ const file_proto_management_v1_workspaces_proto_rawDesc = "" +
 	"DeleteFile\x12).graphene.management.v1.DeleteFileRequest\x1a).graphene.management.v1.WriteFileResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
-	file_proto_management_v1_workspaces_proto_rawDescOnce sync.Once
-	file_proto_management_v1_workspaces_proto_rawDescData []byte
+	file_proto_management_v1_source_proto_rawDescOnce sync.Once
+	file_proto_management_v1_source_proto_rawDescData []byte
 )
 
-func file_proto_management_v1_workspaces_proto_rawDescGZIP() []byte {
-	file_proto_management_v1_workspaces_proto_rawDescOnce.Do(func() {
-		file_proto_management_v1_workspaces_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_management_v1_workspaces_proto_rawDesc), len(file_proto_management_v1_workspaces_proto_rawDesc)))
+func file_proto_management_v1_source_proto_rawDescGZIP() []byte {
+	file_proto_management_v1_source_proto_rawDescOnce.Do(func() {
+		file_proto_management_v1_source_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_management_v1_source_proto_rawDesc), len(file_proto_management_v1_source_proto_rawDesc)))
 	})
-	return file_proto_management_v1_workspaces_proto_rawDescData
+	return file_proto_management_v1_source_proto_rawDescData
 }
 
-var file_proto_management_v1_workspaces_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
-var file_proto_management_v1_workspaces_proto_goTypes = []any{
+var file_proto_management_v1_source_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_proto_management_v1_source_proto_goTypes = []any{
 	(*UploadSourceRequest)(nil),          // 0: graphene.management.v1.UploadSourceRequest
 	(*UploadSourceResponse)(nil),         // 1: graphene.management.v1.UploadSourceResponse
 	(*DownloadSourceRequest)(nil),        // 2: graphene.management.v1.DownloadSourceRequest
@@ -863,23 +869,23 @@ var file_proto_management_v1_workspaces_proto_goTypes = []any{
 	(*ListRuntimesResponse_Runtime)(nil), // 13: graphene.management.v1.ListRuntimesResponse.Runtime
 	(*ListFilesResponse_File)(nil),       // 14: graphene.management.v1.ListFilesResponse.File
 }
-var file_proto_management_v1_workspaces_proto_depIdxs = []int32{
+var file_proto_management_v1_source_proto_depIdxs = []int32{
 	13, // 0: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
 	14, // 1: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
-	0,  // 2: graphene.management.v1.WorkspacesAPI.UploadSource:input_type -> graphene.management.v1.UploadSourceRequest
-	2,  // 3: graphene.management.v1.WorkspacesAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
-	4,  // 4: graphene.management.v1.WorkspacesAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
-	6,  // 5: graphene.management.v1.WorkspacesAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
-	8,  // 6: graphene.management.v1.WorkspacesAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
-	10, // 7: graphene.management.v1.WorkspacesAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
-	12, // 8: graphene.management.v1.WorkspacesAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
-	1,  // 9: graphene.management.v1.WorkspacesAPI.UploadSource:output_type -> graphene.management.v1.UploadSourceResponse
-	3,  // 10: graphene.management.v1.WorkspacesAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
-	5,  // 11: graphene.management.v1.WorkspacesAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
-	7,  // 12: graphene.management.v1.WorkspacesAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
-	9,  // 13: graphene.management.v1.WorkspacesAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
-	11, // 14: graphene.management.v1.WorkspacesAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
-	11, // 15: graphene.management.v1.WorkspacesAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
+	0,  // 2: graphene.management.v1.SourceAPI.UploadSource:input_type -> graphene.management.v1.UploadSourceRequest
+	2,  // 3: graphene.management.v1.SourceAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
+	4,  // 4: graphene.management.v1.SourceAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
+	6,  // 5: graphene.management.v1.SourceAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
+	8,  // 6: graphene.management.v1.SourceAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
+	10, // 7: graphene.management.v1.SourceAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
+	12, // 8: graphene.management.v1.SourceAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
+	1,  // 9: graphene.management.v1.SourceAPI.UploadSource:output_type -> graphene.management.v1.UploadSourceResponse
+	3,  // 10: graphene.management.v1.SourceAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
+	5,  // 11: graphene.management.v1.SourceAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
+	7,  // 12: graphene.management.v1.SourceAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
+	9,  // 13: graphene.management.v1.SourceAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
+	11, // 14: graphene.management.v1.SourceAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
+	11, // 15: graphene.management.v1.SourceAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
 	9,  // [9:16] is the sub-list for method output_type
 	2,  // [2:9] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
@@ -887,26 +893,26 @@ var file_proto_management_v1_workspaces_proto_depIdxs = []int32{
 	0,  // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_proto_management_v1_workspaces_proto_init() }
-func file_proto_management_v1_workspaces_proto_init() {
-	if File_proto_management_v1_workspaces_proto != nil {
+func init() { file_proto_management_v1_source_proto_init() }
+func file_proto_management_v1_source_proto_init() {
+	if File_proto_management_v1_source_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_workspaces_proto_rawDesc), len(file_proto_management_v1_workspaces_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_source_proto_rawDesc), len(file_proto_management_v1_source_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_management_v1_workspaces_proto_goTypes,
-		DependencyIndexes: file_proto_management_v1_workspaces_proto_depIdxs,
-		MessageInfos:      file_proto_management_v1_workspaces_proto_msgTypes,
+		GoTypes:           file_proto_management_v1_source_proto_goTypes,
+		DependencyIndexes: file_proto_management_v1_source_proto_depIdxs,
+		MessageInfos:      file_proto_management_v1_source_proto_msgTypes,
 	}.Build()
-	File_proto_management_v1_workspaces_proto = out.File
-	file_proto_management_v1_workspaces_proto_goTypes = nil
-	file_proto_management_v1_workspaces_proto_depIdxs = nil
+	File_proto_management_v1_source_proto = out.File
+	file_proto_management_v1_source_proto_goTypes = nil
+	file_proto_management_v1_source_proto_depIdxs = nil
 }

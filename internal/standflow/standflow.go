@@ -29,11 +29,10 @@ const CascadeActivity = "server.stand.cascade"
 
 // Spec is the stand's identity.
 type Spec struct {
+	// PipelineId is the project the stand belongs to. The pipeline IS
+	// the project — source, arbiter and active version in one record —
+	// so its stand is its child, named after it.
 	PipelineId string `json:"pipelineId"`
-	// WorkspaceId owns the stand: a stand is the PROJECT's standing
-	// ground, so re-creating a pipeline never cascades into a live
-	// machine parked on it.
-	WorkspaceId string `json:"workspaceId,omitempty"`
 }
 
 // Holding is one resource the stand keeps.
@@ -104,8 +103,8 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		entdefine.WithInit[Spec, State](func(ctx workflow.Context, spec Spec) (State, error) {
 			st := State{Holdings: map[string]Holding{}}
 			owner := ref.OwnerRef("")
-			if spec.WorkspaceId != "" {
-				owner = ref.OwnerRef("workspace/" + spec.WorkspaceId)
+			if spec.PipelineId != "" {
+				owner = ref.OwnerRef("pipeline/" + spec.PipelineId)
 			}
 			ownership.Init(ctx, &st.State, owner)
 			return st, nil

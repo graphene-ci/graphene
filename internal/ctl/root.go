@@ -22,7 +22,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/ctl/rbaccmd"
 	"github.com/graphene-ci/graphene/internal/ctl/revisioncmd"
 	"github.com/graphene-ci/graphene/internal/ctl/runcmd"
-	"github.com/graphene-ci/graphene/internal/ctl/workspacecmd"
 )
 
 // Version is stamped by the build.
@@ -73,7 +72,7 @@ binary itself, over the same connection contexts.`,
 		lifecyclecmd.NewInvoke(f),
 	)
 	add("runs", runcmd.New(f))
-	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), revisioncmd.New(f), workspacecmd.New(f),
+	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), revisioncmd.New(f),
 		rbaccmd.NewRole(f), rbaccmd.NewBinding(f), rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f))
 
 	initCmd := &cobra.Command{

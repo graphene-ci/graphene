@@ -1,9 +1,9 @@
 package services
 
-// WorkspacesAPI — the project's working area: one source (a Git
+// PipelinesAPI — the project's working area: one source (a Git
 // checkout or an uploaded tree), one runtime, one working tree kept on
 // the server, at most one pipeline. Listing, reading and deleting go
-// through the ordinary ResourcesAPI: a workspace is a record like any
+// through the ordinary ResourcesAPI: a pipeline is a record like any
 // other, and its deletion is the end of the project.
 
 import (
@@ -32,33 +32,33 @@ const downloadChunk = 512 << 10
 // carry a reference instead.
 func (m *Management) UploadSource(ctx context.Context, creq *connect.Request[managementv1.UploadSourceRequest]) (*connect.Response[managementv1.UploadSourceResponse], error) {
 	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbCreate, authz.KindWorkspace)
+	b, err := m.allow(ctx, authz.VerbCreate, authz.KindPipeline)
 	if err != nil {
 		return nil, err
 	}
 	if len(req.GetSource()) == 0 || len(req.GetSource()) > maxSourceBytes {
 		return nil, status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
 	}
-	location, digest, err := m.storeTree(ctx, b.Namespace, req.GetWorkspaceId(), req.GetSource())
+	location, digest, err := m.storeTree(ctx, b.Namespace, req.GetPipelineId(), req.GetSource())
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&managementv1.UploadSourceResponse{Location: location, Digest: digest}), nil
 }
 
-// DownloadSource streams the workspace's current working tree back —
+// DownloadSource streams the pipeline's current working tree back —
 // the source of any revision is recoverable, git or not.
 func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[managementv1.DownloadSourceRequest], stream *connect.ServerStream[managementv1.DownloadSourceChunk]) error {
-	b, err := m.allow(ctx, authz.VerbGet, authz.KindWorkspace)
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindPipeline)
 	if err != nil {
 		return err
 	}
-	_, _, st, err := b.Worker.DescribeWorkspace(ctx, creq.Msg.GetWorkspaceId())
+	_, _, st, err := b.Worker.DescribePipelineFull(ctx, creq.Msg.GetPipelineId())
 	if err != nil {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	if st.TreeLocation == "" {
-		return status.Error(codes.FailedPrecondition, "workspace has no working tree yet")
+		return status.Error(codes.FailedPrecondition, "pipeline has no working tree yet")
 	}
 	rc, err := m.Blobs.Get(ctx, b.Namespace, st.TreeLocation)
 	if err != nil {
@@ -84,7 +84,7 @@ func (m *Management) DownloadSource(ctx context.Context, creq *connect.Request[m
 
 // ListRuntimes answers which languages this installation carries.
 func (m *Management) ListRuntimes(ctx context.Context, _ *connect.Request[managementv1.ListRuntimesRequest]) (*connect.Response[managementv1.ListRuntimesResponse], error) {
-	if _, err := m.allow(ctx, authz.VerbList, authz.KindWorkspace); err != nil {
+	if _, err := m.allow(ctx, authz.VerbList, authz.KindPipeline); err != nil {
 		return nil, err
 	}
 	catalogue := m.Runtimes
@@ -101,14 +101,14 @@ func (m *Management) ListRuntimes(ctx context.Context, _ *connect.Request[manage
 }
 
 // storeTree puts an uploaded tree into the blob store under the
-// workspace and returns its location and digest.
-func (m *Management) storeTree(ctx context.Context, namespace, workspaceId string, tree []byte) (string, string, error) {
+// pipeline and returns its location and digest.
+func (m *Management) storeTree(ctx context.Context, namespace, pipelineId string, tree []byte) (string, string, error) {
 	if len(tree) == 0 {
 		return "", "", status.Error(codes.InvalidArgument, "source is empty")
 	}
 	sum := sha256.Sum256(tree)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	location := fmt.Sprintf("workspaces/%s/%s.tgz", workspaceId, hex.EncodeToString(sum[:])[:16])
+	location := fmt.Sprintf("pipelines/%s/%s.tgz", pipelineId, hex.EncodeToString(sum[:])[:16])
 	if _, err := m.Blobs.Put(ctx, namespace, location, bytes.NewReader(tree)); err != nil {
 		return "", "", status.Errorf(codes.Internal, "store source: %v", err)
 	}
