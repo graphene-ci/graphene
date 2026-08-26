@@ -74,7 +74,7 @@ binary itself, over the same connection contexts.`,
 	)
 	add("runs", runcmd.New(f))
 	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), revisioncmd.New(f), workspacecmd.New(f),
-		rbaccmd.NewRole(f), rbaccmd.NewBinding(f), rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f), misccmd.NewNs(f))
+		rbaccmd.NewRole(f), rbaccmd.NewBinding(f), rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f))
 
 	initCmd := &cobra.Command{
 		Use:   "init <name>",

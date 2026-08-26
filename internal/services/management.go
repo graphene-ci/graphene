@@ -622,18 +622,7 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 
 // --- NamespacesAPI ---
 
-// CreateNamespace registers a namespace with the graphene search
-// attributes and starts its runtime bundle.
-func (m *Management) CreateNamespace(ctx context.Context, creq *connect.Request[managementv1.CreateNamespaceRequest]) (*connect.Response[managementv1.CreateNamespaceResponse], error) {
-	req := creq.Msg
-	if _, err := m.allow(ctx, authz.VerbCreate, authz.KindNamespace); err != nil {
-		return nil, err
-	}
-	if err := m.Bundles.CreateNamespace(ctx, m.Base, req.GetName(), req.GetRetentionDays()); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return connect.NewResponse(&managementv1.CreateNamespaceResponse{}), nil
-}
+// --- NamespacesAPI: what is NOT a record ---
 
 // Whoami answers who the caller's token is — login's handshake. Any
 // authenticated principal may ask; no role gate.
@@ -666,18 +655,6 @@ func (m *Management) ServerInfo(ctx context.Context, _ *connect.Request[manageme
 		Name: "temporal", Ok: temporalOk, Detail: detail,
 	})
 	return connect.NewResponse(resp), nil
-}
-
-// ListNamespaces lists the registered namespaces.
-func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[managementv1.ListNamespacesRequest]) (*connect.Response[managementv1.ListNamespacesResponse], error) {
-	if _, err := m.allow(ctx, authz.VerbList, authz.KindNamespace); err != nil {
-		return nil, err
-	}
-	names, err := m.Bundles.ListNamespaces(ctx, m.Base)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return connect.NewResponse(&managementv1.ListNamespacesResponse{Names: names}), nil
 }
 
 // --- SecretsAPI (management) ---

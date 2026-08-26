@@ -19,10 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NamespacesAPI_CreateNamespace_FullMethodName = "/graphene.management.v1.NamespacesAPI/CreateNamespace"
-	NamespacesAPI_ListNamespaces_FullMethodName  = "/graphene.management.v1.NamespacesAPI/ListNamespaces"
-	NamespacesAPI_Whoami_FullMethodName          = "/graphene.management.v1.NamespacesAPI/Whoami"
-	NamespacesAPI_ServerInfo_FullMethodName      = "/graphene.management.v1.NamespacesAPI/ServerInfo"
+	NamespacesAPI_Whoami_FullMethodName     = "/graphene.management.v1.NamespacesAPI/Whoami"
+	NamespacesAPI_ServerInfo_FullMethodName = "/graphene.management.v1.NamespacesAPI/ServerInfo"
 )
 
 // NamespacesAPIClient is the client API for NamespacesAPI service.
@@ -34,11 +32,11 @@ const (
 // queues, visibility, the ownership tree — all isolated by the durable
 // core itself. Tokens are scoped to one namespace; in the cloud a
 // namespace becomes an organization's home.
+// A namespace is DECLARED like everything else: `apply namespace <name>`
+// in the default namespace, listed by `get namespace`. What remains
+// here is what is not a record — who the caller is, and what the
+// installation is.
 type NamespacesAPIClient interface {
-	// Create registers the namespace in Temporal (with the graphene
-	// search attributes) and makes it schedulable. Idempotent.
-	CreateNamespace(ctx context.Context, in *CreateNamespaceRequest, opts ...grpc.CallOption) (*CreateNamespaceResponse, error)
-	ListNamespaces(ctx context.Context, in *ListNamespacesRequest, opts ...grpc.CallOption) (*ListNamespacesResponse, error)
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error)
@@ -53,26 +51,6 @@ type namespacesAPIClient struct {
 
 func NewNamespacesAPIClient(cc grpc.ClientConnInterface) NamespacesAPIClient {
 	return &namespacesAPIClient{cc}
-}
-
-func (c *namespacesAPIClient) CreateNamespace(ctx context.Context, in *CreateNamespaceRequest, opts ...grpc.CallOption) (*CreateNamespaceResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateNamespaceResponse)
-	err := c.cc.Invoke(ctx, NamespacesAPI_CreateNamespace_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *namespacesAPIClient) ListNamespaces(ctx context.Context, in *ListNamespacesRequest, opts ...grpc.CallOption) (*ListNamespacesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListNamespacesResponse)
-	err := c.cc.Invoke(ctx, NamespacesAPI_ListNamespaces_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *namespacesAPIClient) Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error) {
@@ -104,11 +82,11 @@ func (c *namespacesAPIClient) ServerInfo(ctx context.Context, in *ServerInfoRequ
 // queues, visibility, the ownership tree — all isolated by the durable
 // core itself. Tokens are scoped to one namespace; in the cloud a
 // namespace becomes an organization's home.
+// A namespace is DECLARED like everything else: `apply namespace <name>`
+// in the default namespace, listed by `get namespace`. What remains
+// here is what is not a record — who the caller is, and what the
+// installation is.
 type NamespacesAPIServer interface {
-	// Create registers the namespace in Temporal (with the graphene
-	// search attributes) and makes it schedulable. Idempotent.
-	CreateNamespace(context.Context, *CreateNamespaceRequest) (*CreateNamespaceResponse, error)
-	ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error)
 	// Whoami answers who the caller's token is: role and namespace scope.
 	// Any authenticated principal may ask — this is login's handshake.
 	Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error)
@@ -125,12 +103,6 @@ type NamespacesAPIServer interface {
 // pointer dereference when methods are called.
 type UnimplementedNamespacesAPIServer struct{}
 
-func (UnimplementedNamespacesAPIServer) CreateNamespace(context.Context, *CreateNamespaceRequest) (*CreateNamespaceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateNamespace not implemented")
-}
-func (UnimplementedNamespacesAPIServer) ListNamespaces(context.Context, *ListNamespacesRequest) (*ListNamespacesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListNamespaces not implemented")
-}
 func (UnimplementedNamespacesAPIServer) Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Whoami not implemented")
 }
@@ -156,42 +128,6 @@ func RegisterNamespacesAPIServer(s grpc.ServiceRegistrar, srv NamespacesAPIServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&NamespacesAPI_ServiceDesc, srv)
-}
-
-func _NamespacesAPI_CreateNamespace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateNamespaceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NamespacesAPIServer).CreateNamespace(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NamespacesAPI_CreateNamespace_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NamespacesAPIServer).CreateNamespace(ctx, req.(*CreateNamespaceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NamespacesAPI_ListNamespaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListNamespacesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NamespacesAPIServer).ListNamespaces(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NamespacesAPI_ListNamespaces_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NamespacesAPIServer).ListNamespaces(ctx, req.(*ListNamespacesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _NamespacesAPI_Whoami_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -237,14 +173,6 @@ var NamespacesAPI_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "graphene.management.v1.NamespacesAPI",
 	HandlerType: (*NamespacesAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "CreateNamespace",
-			Handler:    _NamespacesAPI_CreateNamespace_Handler,
-		},
-		{
-			MethodName: "ListNamespaces",
-			Handler:    _NamespacesAPI_ListNamespaces_Handler,
-		},
 		{
 			MethodName: "Whoami",
 			Handler:    _NamespacesAPI_Whoami_Handler,

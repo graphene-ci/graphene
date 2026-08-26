@@ -199,175 +199,6 @@ func (x *WhoamiResponse) GetNamespace() string {
 	return ""
 }
 
-type CreateNamespaceRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// RetentionDays for closed workflows (default 30).
-	RetentionDays int32 `protobuf:"varint,2,opt,name=retention_days,json=retentionDays,proto3" json:"retention_days,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateNamespaceRequest) Reset() {
-	*x = CreateNamespaceRequest{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateNamespaceRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateNamespaceRequest) ProtoMessage() {}
-
-func (x *CreateNamespaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateNamespaceRequest.ProtoReflect.Descriptor instead.
-func (*CreateNamespaceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *CreateNamespaceRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CreateNamespaceRequest) GetRetentionDays() int32 {
-	if x != nil {
-		return x.RetentionDays
-	}
-	return 0
-}
-
-type CreateNamespaceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateNamespaceResponse) Reset() {
-	*x = CreateNamespaceResponse{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateNamespaceResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateNamespaceResponse) ProtoMessage() {}
-
-func (x *CreateNamespaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateNamespaceResponse.ProtoReflect.Descriptor instead.
-func (*CreateNamespaceResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{5}
-}
-
-type ListNamespacesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListNamespacesRequest) Reset() {
-	*x = ListNamespacesRequest{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListNamespacesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListNamespacesRequest) ProtoMessage() {}
-
-func (x *ListNamespacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListNamespacesRequest.ProtoReflect.Descriptor instead.
-func (*ListNamespacesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{6}
-}
-
-type ListNamespacesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListNamespacesResponse) Reset() {
-	*x = ListNamespacesResponse{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListNamespacesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListNamespacesResponse) ProtoMessage() {}
-
-func (x *ListNamespacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListNamespacesResponse.ProtoReflect.Descriptor instead.
-func (*ListNamespacesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ListNamespacesResponse) GetNames() []string {
-	if x != nil {
-		return x.Names
-	}
-	return nil
-}
-
 type ServerInfoResponse_Component struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -380,7 +211,7 @@ type ServerInfoResponse_Component struct {
 
 func (x *ServerInfoResponse_Component) Reset() {
 	*x = ServerInfoResponse_Component{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +223,7 @@ func (x *ServerInfoResponse_Component) String() string {
 func (*ServerInfoResponse_Component) ProtoMessage() {}
 
 func (x *ServerInfoResponse_Component) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[8]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,17 +278,8 @@ const file_proto_management_v1_namespaces_proto_rawDesc = "" +
 	"\rWhoamiRequest\"B\n" +
 	"\x0eWhoamiResponse\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12\x1c\n" +
-	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"S\n" +
-	"\x16CreateNamespaceRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
-	"\x0eretention_days\x18\x02 \x01(\x05R\rretentionDays\"\x19\n" +
-	"\x17CreateNamespaceResponse\"\x17\n" +
-	"\x15ListNamespacesRequest\".\n" +
-	"\x16ListNamespacesResponse\x12\x14\n" +
-	"\x05names\x18\x01 \x03(\tR\x05names2\xb2\x03\n" +
-	"\rNamespacesAPI\x12r\n" +
-	"\x0fCreateNamespace\x12..graphene.management.v1.CreateNamespaceRequest\x1a/.graphene.management.v1.CreateNamespaceResponse\x12o\n" +
-	"\x0eListNamespaces\x12-.graphene.management.v1.ListNamespacesRequest\x1a..graphene.management.v1.ListNamespacesResponse\x12W\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace2\xcd\x01\n" +
+	"\rNamespacesAPI\x12W\n" +
 	"\x06Whoami\x12%.graphene.management.v1.WhoamiRequest\x1a&.graphene.management.v1.WhoamiResponse\x12c\n" +
 	"\n" +
 	"ServerInfo\x12).graphene.management.v1.ServerInfoRequest\x1a*.graphene.management.v1.ServerInfoResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
@@ -474,30 +296,22 @@ func file_proto_management_v1_namespaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_namespaces_proto_rawDescData
 }
 
-var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_proto_management_v1_namespaces_proto_goTypes = []any{
 	(*ServerInfoRequest)(nil),            // 0: graphene.management.v1.ServerInfoRequest
 	(*ServerInfoResponse)(nil),           // 1: graphene.management.v1.ServerInfoResponse
 	(*WhoamiRequest)(nil),                // 2: graphene.management.v1.WhoamiRequest
 	(*WhoamiResponse)(nil),               // 3: graphene.management.v1.WhoamiResponse
-	(*CreateNamespaceRequest)(nil),       // 4: graphene.management.v1.CreateNamespaceRequest
-	(*CreateNamespaceResponse)(nil),      // 5: graphene.management.v1.CreateNamespaceResponse
-	(*ListNamespacesRequest)(nil),        // 6: graphene.management.v1.ListNamespacesRequest
-	(*ListNamespacesResponse)(nil),       // 7: graphene.management.v1.ListNamespacesResponse
-	(*ServerInfoResponse_Component)(nil), // 8: graphene.management.v1.ServerInfoResponse.Component
+	(*ServerInfoResponse_Component)(nil), // 4: graphene.management.v1.ServerInfoResponse.Component
 }
 var file_proto_management_v1_namespaces_proto_depIdxs = []int32{
-	8, // 0: graphene.management.v1.ServerInfoResponse.components:type_name -> graphene.management.v1.ServerInfoResponse.Component
-	4, // 1: graphene.management.v1.NamespacesAPI.CreateNamespace:input_type -> graphene.management.v1.CreateNamespaceRequest
-	6, // 2: graphene.management.v1.NamespacesAPI.ListNamespaces:input_type -> graphene.management.v1.ListNamespacesRequest
-	2, // 3: graphene.management.v1.NamespacesAPI.Whoami:input_type -> graphene.management.v1.WhoamiRequest
-	0, // 4: graphene.management.v1.NamespacesAPI.ServerInfo:input_type -> graphene.management.v1.ServerInfoRequest
-	5, // 5: graphene.management.v1.NamespacesAPI.CreateNamespace:output_type -> graphene.management.v1.CreateNamespaceResponse
-	7, // 6: graphene.management.v1.NamespacesAPI.ListNamespaces:output_type -> graphene.management.v1.ListNamespacesResponse
-	3, // 7: graphene.management.v1.NamespacesAPI.Whoami:output_type -> graphene.management.v1.WhoamiResponse
-	1, // 8: graphene.management.v1.NamespacesAPI.ServerInfo:output_type -> graphene.management.v1.ServerInfoResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
+	4, // 0: graphene.management.v1.ServerInfoResponse.components:type_name -> graphene.management.v1.ServerInfoResponse.Component
+	2, // 1: graphene.management.v1.NamespacesAPI.Whoami:input_type -> graphene.management.v1.WhoamiRequest
+	0, // 2: graphene.management.v1.NamespacesAPI.ServerInfo:input_type -> graphene.management.v1.ServerInfoRequest
+	3, // 3: graphene.management.v1.NamespacesAPI.Whoami:output_type -> graphene.management.v1.WhoamiResponse
+	1, // 4: graphene.management.v1.NamespacesAPI.ServerInfo:output_type -> graphene.management.v1.ServerInfoResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -514,7 +328,7 @@ func file_proto_management_v1_namespaces_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_namespaces_proto_rawDesc), len(file_proto_management_v1_namespaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -32,6 +32,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/materialize"
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
@@ -99,6 +100,7 @@ type Worker struct {
 	accountDef   *entdefine.Definition[rbacflow.AccountSpec, rbacflow.AccountState]
 	varDef       *entdefine.Definition[valueflow.VarSpec, valueflow.VarState]
 	secretDef    *entdefine.Definition[valueflow.SecretSpec, valueflow.SecretState]
+	namespaceDef *entdefine.Definition[nsflow.Spec, nsflow.State]
 
 	// varCache holds variable values for a moment — one submit resolves
 	// several names, and each is a record read.
@@ -112,6 +114,17 @@ type Worker struct {
 	kinds map[string]*kindEntry
 
 	startRun RunStarter
+	// ensureNs and retireNs are the bundle manager's half of the
+	// namespace record; nil on a worker that is not the default one.
+	ensureNs func(ctx context.Context, name string, retentionDays int32) error
+	retireNs func(ctx context.Context, name string) error
+}
+
+// SetNamespaceOps wires what only the bundle manager can do: register
+// a namespace and stop serving one. The manager builds this worker, so
+// the wiring arrives after construction.
+func (s *Worker) SetNamespaceOps(ensure func(ctx context.Context, name string, retentionDays int32) error, retire func(ctx context.Context, name string) error) {
+	s.ensureNs, s.retireNs = ensure, retire
 }
 
 // SetRunStarter wires the start path for trigger-driven runs; called by
@@ -140,6 +153,7 @@ func New(deps Deps) (*Worker, error) {
 		accountDef:   rbacflow.NewAccount(),
 		varDef:       valueflow.NewVar(),
 		secretDef:    valueflow.NewSecret(),
+		namespaceDef: nsflow.New(),
 		kinds:        buildKinds(),
 		varCache:     newValueCache(3 * time.Second),
 		secretWriter: deps.SecretWriter,
@@ -152,6 +166,7 @@ func New(deps Deps) (*Worker, error) {
 		s.workspaceDef.Register(w),
 		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
 		s.varDef.Register(w), s.secretDef.Register(w),
+		s.namespaceDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -183,6 +198,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
 	w.RegisterActivityWithOptions(s.resolveRevision, activity.RegisterOptions{Name: pipelineflow.ResolveActivity})
 	w.RegisterActivityWithOptions(s.forgetSecret, activity.RegisterOptions{Name: valueflow.ForgetActivity})
+	w.RegisterActivityWithOptions(s.ensureNamespace, activity.RegisterOptions{Name: nsflow.EnsureActivity})
+	w.RegisterActivityWithOptions(s.retireNamespace, activity.RegisterOptions{Name: nsflow.RetireActivity})
 	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
