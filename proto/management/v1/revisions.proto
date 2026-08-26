@@ -20,9 +20,12 @@ service RevisionsAPI {
 message MaterializeRequest {
   string pipeline_id = 1;
   // The full source tree as tar.gz — the tree root is the build root:
-  // `go build .`, one package main. Empty builds the PIPELINE's own
-  // working tree, which already lives on the server.
+  // `go build .`, one package main. Empty builds a SOURCE record of
+  // the pipeline, whose tree already lives on the server.
   bytes source = 2;
+  // Source names which source to build ("gitsource/main"); empty takes
+  // the pipeline's only one.
+  string source_ref = 3;
 }
 
 message MaterializeEvent {

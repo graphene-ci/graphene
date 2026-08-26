@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -22,18 +23,19 @@ import (
 // source is the pipeline's own, not a separate thing to manage.
 func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 
-	var gitUrl, gitRef, subdir, credential, upload, runtime string
+	var gitUrl, gitRef, subdir, credential, upload, runtime, sourceName string
 	create := &cobra.Command{
 		Use:   "create <pipeline>",
-		Short: "Create a pipeline from a git repository or a local directory",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a pipeline and its source",
+		Long: `Declare a pipeline and one source under it: a gitsource, whose files
+follow a ref and are read-only, or a managedsource, whose files are the
+project's own and are edited in place.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var tree []byte
 			switch {
 			case gitUrl != "" && upload != "":
-				return fmt.Errorf("a pipeline has one source: --git or --upload, not both")
-			case gitUrl == "" && upload == "":
-				return fmt.Errorf("a pipeline needs a source: --git <url> or --upload <dir>")
+				return fmt.Errorf("a source comes from one place: --git or --upload, not both")
 			case upload != "":
 				packed, err := revisioncmd.PackSource(upload)
 				if err != nil {
@@ -46,33 +48,43 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 			if err != nil {
 				return err
 			}
-			// A pipeline is declared through the one door every kind is
-			// declared through. An UPLOADED source is the exception the
-			// rule allows: bytes travel their own channel first, and the
-			// declaration carries the reference.
-			spec := map[string]any{"runtime": runtime}
+			// The pipeline first: a source belongs to it, so it must
+			// exist before the source names it.
+			if _, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
+				Kind: "pipeline", Id: args[0], Spec: []byte("{}"),
+			})); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmdutil.Out, "pipeline/%s applied\n", args[0])
+
+			name := sourceName
+			if name == "" {
+				name = args[0]
+			}
+			kind := "managedsource"
+			spec := map[string]any{"pipelineId": args[0], "runtime": runtime}
 			switch {
 			case gitUrl != "":
-				spec["git"] = map[string]any{
-					"url": gitUrl, "ref": gitRef, "subdir": subdir, "credentialRef": credential,
-				}
-			default:
+				kind = "gitsource"
+				spec["url"], spec["ref"] = gitUrl, gitRef
+				spec["subdir"], spec["credentialRef"] = subdir, credential
+			case tree != nil:
+				// Bytes travel their own channel first; the declaration
+				// carries the reference.
 				up, err := d.Source.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
 					PipelineId: args[0], Source: tree,
 				}))
 				if err != nil {
 					return err
 				}
-				spec["snapshot"] = map[string]any{
-					"location": up.Msg.GetLocation(), "digest": up.Msg.GetDigest(),
-				}
+				spec["upload"] = up.Msg.GetLocation()
 			}
 			specJSON, err := json.Marshal(spec)
 			if err != nil {
 				return err
 			}
 			applied, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
-				Kind: "pipeline", Id: args[0], Spec: specJSON,
+				Kind: kind, Id: name, Spec: specJSON,
 			}))
 			if err != nil {
 				return err
@@ -81,67 +93,53 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 			return nil
 		},
 	}
-	create.Flags().StringVar(&gitUrl, "git", "", "git repository url")
+	create.Flags().StringVar(&gitUrl, "git", "", "git repository url (omit for an editable managed source)")
 	create.Flags().StringVar(&gitRef, "ref", "", "branch, tag or commit")
 	create.Flags().StringVar(&subdir, "subdir", "", "pipeline root inside a monorepo")
 	create.Flags().StringVar(&credential, "credential", "", "name of the secret holding the git token")
-	create.Flags().StringVarP(&upload, "upload", "f", "", "local directory or .tgz to upload as the source")
+	create.Flags().StringVarP(&upload, "upload", "f", "", "local directory or .tgz to start a managed source from")
 	create.Flags().StringVar(&runtime, "runtime", "", "project runtime (default: the installation's)")
+	create.Flags().StringVar(&sourceName, "source-name", "", "name of the source record (default: the pipeline's name)")
 
-	var syncUpload string
 	sync := &cobra.Command{
-		Use:   "sync <pipeline>",
-		Short: "Re-fetch the git ref, or replace the tree with a local directory",
-		Args:  cobra.ExactArgs(1),
+		Use:   "sync <source>",
+		Short: "Fetch a git source's ref again",
+		Long: `Re-read the ref a gitsource follows. A managed source has nothing to
+sync: its files ARE the source, and writing one is the change.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			payload := map[string]any{}
-			if syncUpload != "" {
-				tree, err := revisioncmd.PackSource(syncUpload)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", syncUpload, len(tree)/1024)
-				up, err := d.Source.UploadSource(cmd.Context(), connect.NewRequest(&managementv1.UploadSourceRequest{
-					PipelineId: args[0], Source: tree,
-				}))
-				if err != nil {
-					return err
-				}
-				payload["location"], payload["digest"] = up.Msg.GetLocation(), up.Msg.GetDigest()
-			}
-			raw, err := json.Marshal(payload)
-			if err != nil {
-				return err
+			ref := args[0]
+			if !strings.Contains(ref, "/") {
+				ref = "gitsource/" + ref
 			}
 			resp, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
-				Ref: "pipeline/" + args[0], Command: "sync", Payload: raw,
+				Ref: ref, Command: "sync", Payload: []byte("{}"),
 			}))
 			if err != nil {
 				return err
 			}
 			var out struct {
 				TreeDigest string `json:"treeDigest"`
-				GitCommit  string `json:"gitCommit"`
+				Commit     string `json:"commit"`
 				Generation uint64 `json:"generation"`
 			}
 			_ = json.Unmarshal(resp.Msg.GetResult(), &out)
 			fmt.Fprintf(cmdutil.Out, "tree       %s\ngeneration %d\n", out.TreeDigest, out.Generation)
-			if out.GitCommit != "" {
-				fmt.Fprintf(cmdutil.Out, "commit     %s\n", out.GitCommit)
+			if out.Commit != "" {
+				fmt.Fprintf(cmdutil.Out, "commit     %s\n", out.Commit)
 			}
 			return nil
 		},
 	}
-	sync.Flags().StringVarP(&syncUpload, "upload", "f", "", "local directory or .tgz replacing the working tree")
 
 	var out string
 	download := &cobra.Command{
-		Use:   "download <pipeline>",
-		Short: "Download the pipeline's current working tree (tar.gz)",
+		Use:   "download <source>",
+		Short: "Download the source's tree (tar.gz)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := f.Dial()
@@ -149,7 +147,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 				return err
 			}
 			stream, err := d.Source.DownloadSource(cmd.Context(),
-				connect.NewRequest(&managementv1.DownloadSourceRequest{PipelineId: args[0]}))
+				connect.NewRequest(&managementv1.DownloadSourceRequest{Source: sourceRef(args[0])}))
 			if err != nil {
 				return err
 			}
@@ -211,15 +209,15 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 	}
 
 	files := &cobra.Command{
-		Use:   "files <pipeline>",
-		Short: "List the pipeline's working tree",
+		Use:   "files <source>",
+		Short: "List the source's tree",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := f.Dial()
 			if err != nil {
 				return err
 			}
-			resp, err := d.Source.ListFiles(cmd.Context(), connect.NewRequest(&managementv1.ListFilesRequest{PipelineId: args[0]}))
+			resp, err := d.Source.ListFiles(cmd.Context(), connect.NewRequest(&managementv1.ListFilesRequest{Source: sourceRef(args[0])}))
 			if err != nil {
 				return err
 			}
@@ -235,7 +233,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 	}
 
 	cat := &cobra.Command{
-		Use:   "cat <pipeline> <path>",
+		Use:   "cat <source> <path>",
 		Short: "Read one file of the working tree",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -244,7 +242,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 				return err
 			}
 			resp, err := d.Source.ReadFile(cmd.Context(), connect.NewRequest(&managementv1.ReadFileRequest{
-				PipelineId: args[0], Path: args[1],
+				Source: sourceRef(args[0]), Path: args[1],
 			}))
 			if err != nil {
 				return err
@@ -256,7 +254,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 
 	var fromFile string
 	write := &cobra.Command{
-		Use:   "write <pipeline> <path>",
+		Use:   "write <source> <path>",
 		Short: "Write one file into the working tree (stdin, or --from)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -275,7 +273,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 				return err
 			}
 			resp, err := d.Source.WriteFile(cmd.Context(), connect.NewRequest(&managementv1.WriteFileRequest{
-				PipelineId: args[0], Path: args[1], Content: content,
+				Source: sourceRef(args[0]), Path: args[1], Content: content,
 			}))
 			if err != nil {
 				return err
@@ -288,7 +286,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 	write.Flags().StringVar(&fromFile, "from", "", "read the content from this local file")
 
 	rm := &cobra.Command{
-		Use:   "rm <pipeline> <path>",
+		Use:   "rm <source> <path>",
 		Short: "Delete one file from the working tree",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -297,7 +295,7 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 				return err
 			}
 			resp, err := d.Source.DeleteFile(cmd.Context(), connect.NewRequest(&managementv1.DeleteFileRequest{
-				PipelineId: args[0], Path: args[1],
+				Source: sourceRef(args[0]), Path: args[1],
 			}))
 			if err != nil {
 				return err
@@ -308,76 +306,15 @@ func Attach(f *cmdutil.Factory, cmd *cobra.Command) {
 		},
 	}
 
-	fork := &cobra.Command{
-		Use:   "fork <pipeline> <new>",
-		Short: "Copy a Git-sourced pipeline into an editable managed one",
-		Long: `Copy a pipeline's current tree into a NEW pipeline whose source is
-managed: its files can be edited, and it no longer follows the Git ref.
+	cmd.AddCommand(create, sync, download, runtimesCmd, files, cat, write, rm)
+}
 
-The copy keeps provenance — the repository, the ref and the commit it
-came from — but nothing syncs back. This is a deliberate divergence,
-not a hidden branch.`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
-				Ref: "pipeline/" + args[0],
-			}))
-			if err != nil {
-				return err
-			}
-			var src struct {
-				Git *struct {
-					Url    string `json:"url"`
-					Ref    string `json:"ref"`
-					Subdir string `json:"subdir"`
-				} `json:"git"`
-				Runtime string `json:"runtime"`
-			}
-			var st struct {
-				TreeLocation string `json:"treeLocation"`
-				TreeDigest   string `json:"treeDigest"`
-				GitCommit    string `json:"gitCommit"`
-			}
-			if err := json.Unmarshal(got.Msg.GetResource().GetSpec(), &src); err != nil {
-				return err
-			}
-			if err := json.Unmarshal(got.Msg.GetResource().GetState(), &st); err != nil {
-				return err
-			}
-			if st.TreeLocation == "" {
-				return fmt.Errorf("pipeline %s has no working tree to copy", args[0])
-			}
-			spec := map[string]any{
-				"runtime":  src.Runtime,
-				"snapshot": map[string]any{"location": st.TreeLocation, "digest": st.TreeDigest},
-			}
-			if src.Git != nil {
-				spec["origin"] = map[string]any{
-					"url": src.Git.Url, "ref": src.Git.Ref, "commit": st.GitCommit,
-				}
-			}
-			specJSON, err := json.Marshal(spec)
-			if err != nil {
-				return err
-			}
-			applied, err := d.Resources.Apply(cmd.Context(), connect.NewRequest(&managementv1.ApplyRequest{
-				Kind: "pipeline", Id: args[1], Spec: specJSON,
-			}))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmdutil.Out, "%s applied — editable copy of %s\n", applied.Msg.GetRef(), args[0])
-			if src.Git != nil {
-				fmt.Fprintf(os.Stderr, "origin %s @ %s (%s); it does not follow that ref\n",
-					src.Git.Url, src.Git.Ref, st.GitCommit)
-			}
-			return nil
-		},
+// sourceRef lets a bare name mean the managed source of that name:
+// "gctl pipeline files my-app" is the common case, and the kind is
+// only spelled out when it matters.
+func sourceRef(name string) string {
+	if strings.Contains(name, "/") {
+		return name
 	}
-
-	cmd.AddCommand(create, sync, fork, download, runtimesCmd, files, cat, write, rm)
+	return "managedsource/" + name
 }

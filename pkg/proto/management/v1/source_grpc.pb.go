@@ -32,11 +32,15 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SourceAPI is the pipeline's SOURCE side: the bytes of a project's
-// working tree. The pipeline itself is an ordinary record — declared
-// with Apply, changed with Invoke, read with Get — so what stays here
-// is only what a command cannot carry: bytes, and questions about the
+// SourceAPI is the BYTES side of a source. A source is an ordinary
+// record — gitsource or managedsource, declared with Apply, changed
+// with Invoke, read with Get — so what stays here is only what a
+// command cannot carry: file content, and questions about the
 // installation rather than about a record.
+//
+// Every request names a source as "kind/id" ("gitsource/main"). Files
+// of a gitsource are readable and not writable: it is a checkout of a
+// commit, and writing into it would fork the project silently.
 type SourceAPIClient interface {
 	// UploadSource stores a source tree and returns its reference. Bytes
 	// do not travel in commands: a command's payload becomes an event in
@@ -147,11 +151,15 @@ func (c *sourceAPIClient) DeleteFile(ctx context.Context, in *DeleteFileRequest,
 // All implementations must embed UnimplementedSourceAPIServer
 // for forward compatibility.
 //
-// SourceAPI is the pipeline's SOURCE side: the bytes of a project's
-// working tree. The pipeline itself is an ordinary record — declared
-// with Apply, changed with Invoke, read with Get — so what stays here
-// is only what a command cannot carry: bytes, and questions about the
+// SourceAPI is the BYTES side of a source. A source is an ordinary
+// record — gitsource or managedsource, declared with Apply, changed
+// with Invoke, read with Get — so what stays here is only what a
+// command cannot carry: file content, and questions about the
 // installation rather than about a record.
+//
+// Every request names a source as "kind/id" ("gitsource/main"). Files
+// of a gitsource are readable and not writable: it is a checkout of a
+// commit, and writing into it would fork the project silently.
 type SourceAPIServer interface {
 	// UploadSource stores a source tree and returns its reference. Bytes
 	// do not travel in commands: a command's payload becomes an event in

@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/authz"
+	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -67,19 +68,26 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			return status.Errorf(codes.Internal, "store source: %v", err)
 		}
 	default:
-		// Building the PIPELINE's own working tree: nothing is uploaded
-		// here, the tree already lives on the server.
-		_, spec, st, err := b.Worker.DescribePipelineFull(ctx, pipelineId)
+		// Building a SOURCE record of the pipeline: nothing is uploaded
+		// here, its tree already lives on the server.
+		sourceRef, err := m.resolveSource(ctx, b, pipelineId, req.GetSourceRef())
 		if err != nil {
-			return status.Errorf(codes.NotFound, "pipeline %s: %v", pipelineId, err)
+			return err
 		}
-		if st.TreeLocation == "" {
-			return status.Errorf(codes.FailedPrecondition, "pipeline %s has no working tree yet: declare a source or upload one", pipelineId)
+		raw, err := b.Worker.SourceArchive(ctx, sourceRef)
+		if err != nil {
+			return status.Errorf(codes.FailedPrecondition, "source %s: %v", sourceRef, err)
 		}
-		sourceLocation = st.TreeLocation
-		digest = strings.TrimPrefix(st.TreeDigest, "sha256:")
-		// The project's language is the pipeline's, not the build's.
-		runtimeName = spec.Runtime
+		sum := sha256.Sum256(raw)
+		digest = hex.EncodeToString(sum[:])
+		sourceLocation = fmt.Sprintf("sources/%s/%s.tgz", pipelineId, digest[:16])
+		if _, err := m.Blobs.Put(ctx, b.Namespace, sourceLocation, bytes.NewReader(raw)); err != nil {
+			return status.Errorf(codes.Internal, "store source: %v", err)
+		}
+		// The toolchain follows the CODE, so it comes from the source.
+		if runtimeName, err = b.Worker.SourceRuntime(ctx, sourceRef); err != nil {
+			return status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	// The revision id IS the source digest: the same tree declares the
@@ -162,6 +170,28 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			}
 		}
 	}
+}
+
+// resolveSource picks which source to build: the named one, or the
+// pipeline's only one. A pipeline with several sources must be told —
+// guessing would build yesterday's fork by accident.
+func (m *Management) resolveSource(ctx context.Context, b *nsbundle.Bundle, pipelineId, named string) (string, error) {
+	if named != "" {
+		return named, nil
+	}
+	sources, err := b.Worker.SourcesOf(ctx, pipelineId)
+	if err != nil {
+		return "", status.Error(codes.Internal, err.Error())
+	}
+	switch len(sources) {
+	case 0:
+		return "", status.Errorf(codes.FailedPrecondition,
+			"pipeline %s has no source: declare a gitsource or a managedsource under it", pipelineId)
+	case 1:
+		return sources[0], nil
+	}
+	return "", status.Errorf(codes.InvalidArgument,
+		"pipeline %s has %d sources (%s): name the one to build", pipelineId, len(sources), strings.Join(sources, ", "))
 }
 
 // buildDeadline bounds how long this STREAM waits; the build itself
