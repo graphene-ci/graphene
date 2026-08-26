@@ -84,6 +84,17 @@ type Hub struct {
 	mu   sync.Mutex
 	subs map[int]*Subscription
 	next int
+	// drops counts every shed envelope, hub-wide — the hub's own
+	// observability.
+	drops atomic.Int64
+}
+
+// Stats reports the hub's own state: live subscriptions and total
+// envelopes shed since start.
+func (h *Hub) Stats() (subscriptions int, dropped int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs), h.drops.Load()
 }
 
 // NewHub builds an empty hub.
@@ -126,12 +137,14 @@ func (h *Hub) Publish(env Envelope) {
 			select {
 			case <-sub.ch:
 				sub.dropped.Add(1)
+				h.drops.Add(1)
 			default:
 			}
 			select {
 			case sub.ch <- env:
 			default:
 				sub.dropped.Add(1)
+				h.drops.Add(1)
 			}
 		}
 	}

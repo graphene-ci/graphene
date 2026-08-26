@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -51,8 +52,13 @@ func (l *LogsQL) Query(ctx context.Context, sel Selector, since time.Time, limit
 		n, _ := resp.Body.Read(body)
 		return nil, fmt.Errorf("logs backend: %s: %s", resp.Status, body[:n])
 	}
+	return parseLogsQLStream(resp.Body)
+}
+
+// parseLogsQLStream reads the backend's JSONL response.
+func parseLogsQLStream(body io.Reader) ([]LogRecord, error) {
 	var out []LogRecord
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for scanner.Scan() {
 		var fields map[string]string

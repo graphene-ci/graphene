@@ -41,20 +41,105 @@ func renderMetrics(f *cmdutil.Factory, series []byte) error {
 		fmt.Fprintln(os.Stderr, "No metrics recorded.")
 		return nil
 	}
-	rows := make([][]string, 0, len(payload.Data.Result))
-	for _, s := range payload.Data.Result {
-		last := ""
-		if n := len(s.Values); n > 0 {
-			last = fmt.Sprint(s.Values[n-1][1])
-		}
-		rows = append(rows, []string{metricCell(s.Metric), fmt.Sprint(len(s.Values)), last})
+	// The FULL render: histogram series fold into count/avg/max, the
+	// SDK's own noise labels disappear, and what remains reads like a
+	// dashboard row rather than a Prometheus dump.
+	type agg struct {
+		count, sum, inf float64
+		last            float64
+		points          int
+		labels          map[string]string
+		isHist          bool
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
-	cmdutil.Table([]string{"METRIC", "POINTS", "LAST"}, rows)
+	byKey := map[string]*agg{}
+	order := []string{}
+	for _, sr := range payload.Data.Result {
+		name := sr.Metric["__name__"]
+		base := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(name, "_bucket"), "_sum"), "_count")
+		labels := cleanLabels(sr.Metric)
+		key := base + "|" + labelKey(labels)
+		a, ok := byKey[key]
+		if !ok {
+			a = &agg{labels: labels}
+			byKey[key] = a
+			order = append(order, key)
+		}
+		var lastVal float64
+		if n := len(sr.Values); n > 0 {
+			fmt.Sscan(fmt.Sprint(sr.Values[n-1][1]), &lastVal)
+			if len(sr.Values) > a.points {
+				a.points = len(sr.Values)
+			}
+		}
+		switch {
+		case strings.HasSuffix(name, "_count"):
+			a.isHist, a.count = true, lastVal
+		case strings.HasSuffix(name, "_sum"):
+			a.isHist, a.sum = true, lastVal
+		case strings.HasSuffix(name, "_bucket"):
+			a.isHist = true
+			if sr.Metric["le"] == "+Inf" {
+				a.inf = lastVal
+			}
+		default:
+			a.last = lastVal
+		}
+	}
+	sort.Strings(order)
+	rows := make([][]string, 0, len(order))
+	for _, key := range order {
+		a := byKey[key]
+		base := strings.SplitN(key, "|", 2)[0]
+		cell := base
+		if lk := labelKey(a.labels); lk != "" {
+			cell += "{" + lk + "}"
+		}
+		value := fmt.Sprintf("%g", a.last)
+		if a.isHist {
+			avg := 0.0
+			if a.count > 0 {
+				avg = a.sum / a.count
+			}
+			value = fmt.Sprintf("n=%g avg=%.3gs", a.count, avg)
+		}
+		rows = append(rows, []string{cell, fmt.Sprint(a.points), value})
+	}
+	cmdutil.Table([]string{"METRIC", "POINTS", "VALUE"}, rows)
 	return nil
 }
 
-// metricCell renders a PromQL label set the way prometheus does:
+// noiseLabels are the SDK's own stamps — true for every series, so
+// they say nothing when reading one entity.
+var noiseLabels = map[string]bool{
+	"__name__": true, "le": true,
+	"telemetry.sdk.language": true, "telemetry.sdk.name": true, "telemetry.sdk.version": true,
+	"scope.name": true, "scope.version": true, "service.name": true,
+	"graphene.namespace": true, "graphene.entity": true, "graphene.attempt": true,
+	"telemetry_sdk_language": true, "telemetry_sdk_name": true, "telemetry_sdk_version": true,
+	"scope_name": true, "scope_version": true, "service_name": true,
+	"graphene_namespace": true, "graphene_entity": true, "graphene_attempt": true,
+}
+
+func cleanLabels(in map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		if !noiseLabels[k] {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func labelKey(labels map[string]string) string {
+	parts := make([]string, 0, len(labels))
+	for k, v := range labels {
+		parts = append(parts, k+"="+v)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+// metricCell renders// metricCell renders a PromQL label set the way prometheus does:
 // name{label="v",...}.
 func metricCell(labels map[string]string) string {
 	name := labels["__name__"]

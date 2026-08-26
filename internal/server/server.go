@@ -100,6 +100,24 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	// The live hub: the collector fans every accepted signal out to
 	// follow streams, so a tail is a push and never a poll.
 	hub := telemetry.NewHub()
+	// The hub's own dimension 4, on the server's obs pipeline. The
+	// gauge readings are signals like any other; nobody subscribes to
+	// the server's own metrics by default, so the loop does not feed
+	// itself.
+	go func() {
+		tick := time.NewTicker(30 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stop.Context().Done():
+				return
+			case <-tick.C:
+				subs, drops := hub.Stats()
+				obs.Gauge(context.Background(), "graphene.hub.subscriptions", float64(subs))
+				obs.Gauge(context.Background(), "graphene.hub.dropped.total", float64(drops))
+			}
+		}
+	}()
 	otlp := &services.OTLP{
 		Traces:  cfg.OtelTraces,
 		Logs:    cfg.OtelLogs,

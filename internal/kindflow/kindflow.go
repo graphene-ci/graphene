@@ -110,8 +110,14 @@ func (DeclareCmd) Result() Res { return Res{} }
 type BringCmd struct {
 	PipelineId string `json:"pipelineId"`
 	// Commands are the kind's own commands as the manifest declares
-	// them; empty until the SDK exports schemas.
+	// them.
 	Commands []Command `json:"commands,omitempty"`
+	// The rest is the SDK's full description (RecordKindInfo); empty
+	// fields leave the entry as it stands, so a library that only
+	// names its kind does not blank a richer entry.
+	Description string          `json:"description,omitempty"`
+	SpecSchema  json.RawMessage `json:"specSchema,omitempty"`
+	Dimensions  []string        `json:"dimensions,omitempty"`
 }
 
 // Name is the command's wire identity.
@@ -204,6 +210,15 @@ func New() *entdefine.Definition[Spec, State] {
 		}
 		if len(cmd.Commands) > 0 {
 			st.Commands = cmd.Commands
+		}
+		if cmd.Description != "" {
+			st.Description = cmd.Description
+		}
+		if len(cmd.SpecSchema) > 0 {
+			st.SpecSchema = cmd.SpecSchema
+		}
+		if len(cmd.Dimensions) > 0 {
+			st.Dimensions = cmd.Dimensions
 		}
 		st.UpdatedAt = workflow.Now(ctx).UTC().Format(time.RFC3339)
 		return Res{Origin: st.Origin, BroughtBy: st.BroughtBy}, nil
