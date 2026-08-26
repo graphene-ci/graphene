@@ -82,18 +82,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		log.Warn("secrets are IN MEMORY — set secrets.key for persistence")
 		secretStore = secrets.NewNamespaced(cfg.Secrets)
 	}
-	// Variables ride the same engine as secrets — one file format, the
-	// same key — but their PLANE differs: values read back.
-	var varStore *secrets.Namespaced
-	if cfg.SecretsKey != "" {
-		varStore, err = secrets.NewPersistent(cfg.VarsStore, cfg.SecretsKey, cfg.Vars)
-		if err != nil {
-			return fmt.Errorf("var store: %w", err)
-		}
-	} else {
-		varStore = secrets.NewNamespaced(cfg.Vars)
-	}
-
 	blobStore, err := buildBlobStore(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("blob store: %w", err)
@@ -140,7 +128,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		TemporalLogger:   logging.Temporal(log),
 		Registry:         registry,
 		Secrets:          secretStore,
-		Vars:             varStore,
 		Materializer:     materializer,
 		Blobs:            blobStore,
 		External:         cfg.External,
@@ -176,6 +163,13 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Variables are RECORDS: the configured ones are declared into the
+	// default namespace, the same way a person would declare them.
+	for name, value := range cfg.Vars {
+		if err := defaultBundle.Worker.DeclareVar(ctx, name, value); err != nil {
+			return fmt.Errorf("var %s: %w", name, err)
+		}
+	}
 
 	// Health: cached states fed by runners over the infra dependencies;
 	// grpc.health.v1 inside (no token — balancers probe it), HTTP
@@ -191,7 +185,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Bundles:  bundles,
 		Base:     temporalClient,
 		Secrets:  secretStore,
-		Vars:     varStore,
 		Version:  cfg.Version,
 		Blobs:    blobStore,
 		Runtimes: runtimes.New(cfg.Runtimes),

@@ -58,12 +58,12 @@ func NewPipeline(f *cmdutil.Factory) *cobra.Command {
 func NewSecret(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secret",
-		Short: "Secrets: set, list, delete — values never print",
+		Short: "Secrets: set a value (the rest is `get secret` / `delete secret`)",
 	}
 	var value, valueFile string
 	set := &cobra.Command{
 		Use:   "set <name>",
-		Short: "Set a secret (no flags: the value comes from stdin)",
+		Short: "Set a secret value (no flags: the value comes from stdin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var v string
@@ -93,125 +93,20 @@ func NewSecret(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := d.Secrets.SetSecret(cmd.Context(), connect.NewRequest(&managementv1.SetSecretRequest{
+			resp, err := d.Secrets.SetSecret(cmd.Context(), connect.NewRequest(&managementv1.SetSecretRequest{
 				Name: args[0], Value: v,
-			})); err != nil {
+			}))
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "secret %s set\n", args[0])
+			fmt.Fprintf(os.Stderr, "secret %s set (version %d)\n", args[0], resp.Msg.GetVersion())
 			return nil
 		},
 	}
 	set.Flags().StringVar(&value, "value", "", "secret value inline")
 	set.Flags().StringVar(&valueFile, "value-file", "", "secret value from a file, raw bytes")
 
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List secret names",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			resp, err := d.Secrets.ListSecrets(cmd.Context(), connect.NewRequest(&managementv1.ListSecretsRequest{}))
-			if err != nil {
-				return err
-			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
-			}
-			for _, name := range resp.Msg.GetNames() {
-				fmt.Fprintln(cmdutil.Out, name)
-			}
-			return nil
-		},
-	}
-	del := &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Delete a secret",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			if _, err := d.Secrets.DeleteSecret(cmd.Context(), connect.NewRequest(&managementv1.DeleteSecretRequest{Name: args[0]})); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "secret %s deleted\n", args[0])
-			return nil
-		},
-	}
-	cmd.AddCommand(set, list, del)
-	return cmd
-}
-
-// NewVar builds the `var` tree: variables are the visible sibling of
-// secrets — environment configuration params reference as
-// "${var:name}"; the door substitutes values on run start.
-func NewVar(f *cmdutil.Factory) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "var",
-		Short: "Variables: set, list, delete — visible configuration",
-	}
-	set := &cobra.Command{
-		Use:   "set <name> <value>",
-		Short: "Set a variable",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			if _, err := d.Vars.SetVar(cmd.Context(), connect.NewRequest(&managementv1.SetVarRequest{
-				Name: args[0], Value: args[1],
-			})); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "var %s set\n", args[0])
-			return nil
-		},
-	}
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List variables with values",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			resp, err := d.Vars.ListVars(cmd.Context(), connect.NewRequest(&managementv1.ListVarsRequest{}))
-			if err != nil {
-				return err
-			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
-			}
-			for _, v := range resp.Msg.GetVars() {
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\n", v.GetName(), v.GetValue())
-			}
-			return nil
-		},
-	}
-	del := &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Delete a variable",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			if _, err := d.Vars.DeleteVar(cmd.Context(), connect.NewRequest(&managementv1.DeleteVarRequest{Name: args[0]})); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "var %s deleted\n", args[0])
-			return nil
-		},
-	}
-	cmd.AddCommand(set, list, del)
+	cmd.AddCommand(set)
 	return cmd
 }
 

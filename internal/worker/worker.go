@@ -39,6 +39,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
+	"github.com/graphene-ci/graphene/internal/valueflow"
 	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
@@ -72,7 +73,10 @@ type Deps struct {
 	Blobs blob.Store
 	// Secrets resolves this namespace's secret values (git credentials).
 	Secrets secrets.Store
-	Log     *xlog.Logger
+	// SecretWriter is the sealed store the secret RECORDS keep their
+	// values in; nil disables writing them.
+	SecretWriter *secrets.Namespaced
+	Log          *xlog.Logger
 }
 
 // RunStarter starts one run — wired by the bundle after the managed
@@ -93,6 +97,15 @@ type Worker struct {
 	roleDef      *entdefine.Definition[rbacflow.RoleSpec, rbacflow.RoleState]
 	bindingDef   *entdefine.Definition[rbacflow.BindingSpec, rbacflow.BindingState]
 	accountDef   *entdefine.Definition[rbacflow.AccountSpec, rbacflow.AccountState]
+	varDef       *entdefine.Definition[valueflow.VarSpec, valueflow.VarState]
+	secretDef    *entdefine.Definition[valueflow.SecretSpec, valueflow.SecretState]
+
+	// varCache holds variable values for a moment — one submit resolves
+	// several names, and each is a record read.
+	varCache *valueCache
+	// secretWriter is the sealed store behind the secret records; nil
+	// on an installation without one.
+	secretWriter *secrets.Namespaced
 
 	// kinds is what this installation knows how to declare and command
 	// — the vocabulary a generic Apply and a UI both read.
@@ -125,7 +138,11 @@ func New(deps Deps) (*Worker, error) {
 		roleDef:      rbacflow.NewRole(),
 		bindingDef:   rbacflow.NewBinding(),
 		accountDef:   rbacflow.NewAccount(),
+		varDef:       valueflow.NewVar(),
+		secretDef:    valueflow.NewSecret(),
 		kinds:        buildKinds(),
+		varCache:     newValueCache(3 * time.Second),
+		secretWriter: deps.SecretWriter,
 	}
 
 	if err := errors.Join(
@@ -134,6 +151,7 @@ func New(deps Deps) (*Worker, error) {
 		s.triggerDef.Register(w), s.revisionDef.Register(w),
 		s.workspaceDef.Register(w),
 		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
+		s.varDef.Register(w), s.secretDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -164,6 +182,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.countRuns, activity.RegisterOptions{Name: pipelineflow.CountActivity})
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
 	w.RegisterActivityWithOptions(s.resolveRevision, activity.RegisterOptions{Name: pipelineflow.ResolveActivity})
+	w.RegisterActivityWithOptions(s.forgetSecret, activity.RegisterOptions{Name: valueflow.ForgetActivity})
 	w.RegisterActivityWithOptions(s.reconcileTriggersAct, activity.RegisterOptions{Name: pipelineflow.ReconcileTriggersActivity})
 	// The source-first contour: the revision record's Init calls this.
 	w.RegisterActivityWithOptions(s.materializeRevision, activity.RegisterOptions{Name: revisionflow.MaterializeActivity})
