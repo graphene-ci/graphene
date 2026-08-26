@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/graphene-ci/graphene/internal/kindflow"
+	manifestpb "github.com/graphene-ci/pipeline/pkg/proto/manifest/v1"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
@@ -74,24 +75,47 @@ func (s *Worker) KindInfos() []KindInfo {
 // called next to the trigger reconcile whenever a manifest lands. Only
 // the fast half lives here; the slow half (pruning, self-removal) is
 // the entries' own audit tick.
-func (s *Worker) reconcileKindRecords(ctx context.Context, pipelineId string, names []string) error {
+func (s *Worker) reconcileKindRecords(ctx context.Context, pipelineId string, names []string, decls []*manifestpb.KindDecl) error {
 	entries := entclient.Bind(s.kindDef, s.deps.Client, wire.ServerQueue)
+	declared := map[string]*manifestpb.KindDecl{}
+	for _, d := range decls {
+		declared[d.GetName()] = d
+	}
 	for _, name := range names {
 		// A name the server already serves is not "brought" — the
 		// dictionary entry exists and says more than the manifest can.
 		if _, system := s.kinds[name]; system {
 			continue
 		}
+		bring := kindflow.BringCmd{
+			PipelineId: pipelineId,
+			// The chassis command belongs to every record.
+			Commands: []kindflow.Command{{Name: string(entity.SetLabelsCommandName)}},
+		}
+		// The SDK's full description, when the library gave one.
+		if d := declared[name]; d != nil {
+			bring.Description = d.GetDescription()
+			bring.Dimensions = d.GetDimensions()
+			if d.GetSpecSchema() != nil {
+				if raw, err := protojson.Marshal(d.GetSpecSchema()); err == nil {
+					bring.SpecSchema = raw
+				}
+			}
+			for _, c := range d.GetCommands() {
+				kc := kindflow.Command{Name: c.GetName()}
+				if c.GetPayloadSchema() != nil {
+					if raw, err := protojson.Marshal(c.GetPayloadSchema()); err == nil {
+						kc.PayloadSchema = raw
+					}
+				}
+				bring.Commands = append(bring.Commands, kc)
+			}
+		}
 		rid := entity.ResourceID(name)
 		if _, err := entries.CreateOrAttach(ctx, rid, kindflow.Spec{Origin: kindflow.OriginBrought}); err != nil {
 			return fmt.Errorf("kind %s: %w", name, err)
 		}
-		if _, err := entclient.Exec(ctx, entries, rid, kindflow.BringCmd{
-			PipelineId: pipelineId,
-			// The chassis command belongs to every record; the kind's
-			// OWN commands arrive when the SDK exports them.
-			Commands: []kindflow.Command{{Name: string(entity.SetLabelsCommandName)}},
-		}); err != nil {
+		if _, err := entclient.Exec(ctx, entries, rid, bring); err != nil {
 			return fmt.Errorf("kind %s: %w", name, err)
 		}
 	}

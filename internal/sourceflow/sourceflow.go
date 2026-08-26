@@ -283,6 +283,13 @@ func (c WriteCmd) Validate() error {
 type RevertCmd struct {
 	// Generation names which past state to restore.
 	Generation uint64 `json:"generation"`
+	// IndexLocation restores a generation OLDER than the state's
+	// bounded history: every write's index is named in the record's own
+	// history (the events carry the WriteCmd payload), and the indexes
+	// themselves are immutable — so naming one is enough to go back.
+	IndexLocation string `json:"indexLocation,omitempty"`
+	TreeDigest    string `json:"treeDigest,omitempty"`
+	Files         int    `json:"files,omitempty"`
 }
 
 // Name is the command's wire identity.
@@ -367,7 +374,12 @@ func NewManaged() *entdefine.Definition[ManagedSpec, ManagedState] {
 				return advance(ctx, st, g.IndexLocation, g.TreeDigest, g.Files), nil
 			}
 		}
-		err := fmt.Errorf("generation %d is not in the last %d of this source", cmd.Generation, historyKept)
+		if cmd.IndexLocation != "" {
+			// Older than the bounded history: the caller read the
+			// index's name from the record's events.
+			return advance(ctx, st, cmd.IndexLocation, cmd.TreeDigest, cmd.Files), nil
+		}
+		err := fmt.Errorf("generation %d is not in the last %d; older ones: read the write event in `events` and pass its indexLocation", cmd.Generation, historyKept)
 		return ManagedRes{}, temporal.NewNonRetryableApplicationError(err.Error(), "NoSuchGeneration", err)
 	})
 	return def

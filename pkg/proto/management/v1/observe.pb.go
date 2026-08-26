@@ -339,6 +339,10 @@ type LogsRequest struct {
 	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
 	SinceUnixNano int64                  `protobuf:"varint,3,opt,name=since_unix_nano,json=sinceUnixNano,proto3" json:"since_unix_nano,omitempty"`
+	// Query is the RAW view: a LogsQL query in the backend's own
+	// language, over the whole store (admin only; ref and follow are
+	// ignored). A resource's logs are the same store filtered.
+	Query         string `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -392,6 +396,13 @@ func (x *LogsRequest) GetSinceUnixNano() int64 {
 		return x.SinceUnixNano
 	}
 	return 0
+}
+
+func (x *LogsRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
 }
 
 type LogRecord struct {
@@ -554,7 +565,10 @@ type MetricsRequest struct {
 	StartUnixNano int64                  `protobuf:"varint,2,opt,name=start_unix_nano,json=startUnixNano,proto3" json:"start_unix_nano,omitempty"`
 	EndUnixNano   int64                  `protobuf:"varint,3,opt,name=end_unix_nano,json=endUnixNano,proto3" json:"end_unix_nano,omitempty"`
 	// Follow keeps the stream open: live points arrive as standard OTLP.
-	Follow        bool `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
+	Follow bool `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
+	// Query is the RAW view: a PromQL range query over the whole store
+	// (admin only; ref and follow are ignored).
+	Query         string `protobuf:"bytes,5,opt,name=query,proto3" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -615,6 +629,13 @@ func (x *MetricsRequest) GetFollow() bool {
 		return x.Follow
 	}
 	return false
+}
+
+func (x *MetricsRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
 }
 
 type MetricsChunk struct {
@@ -723,7 +744,10 @@ type TraceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ref   string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	// Follow keeps the stream open: live spans arrive as standard OTLP.
-	Follow        bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	Follow bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	// Query is the RAW view: Jaeger search parameters as a query string
+	// ("service=x&tags=..."), over the whole store (admin only).
+	Query         string `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +794,13 @@ func (x *TraceRequest) GetFollow() bool {
 		return x.Follow
 	}
 	return false
+}
+
+func (x *TraceRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
 }
 
 type TraceChunk struct {
@@ -901,11 +932,12 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"\x05input\x18\t \x01(\fR\x05input\x12\x16\n" +
 	"\x06result\x18\n" +
 	" \x01(\fR\x06result\x12\x10\n" +
-	"\x03raw\x18\v \x01(\fR\x03raw\"_\n" +
+	"\x03raw\x18\v \x01(\fR\x03raw\"u\n" +
 	"\vLogsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12&\n" +
-	"\x0fsince_unix_nano\x18\x03 \x01(\x03R\rsinceUnixNano\"\xf3\x01\n" +
+	"\x0fsince_unix_nano\x18\x03 \x01(\x03R\rsinceUnixNano\x12\x14\n" +
+	"\x05query\x18\x04 \x01(\tR\x05query\"\xf3\x01\n" +
 	"\tLogRecord\x12$\n" +
 	"\x0etime_unix_nano\x18\x01 \x01(\x03R\ftimeUnixNano\x12\x1a\n" +
 	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x12\n" +
@@ -919,20 +951,22 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"\bLogChunk\x12;\n" +
 	"\x06record\x18\x01 \x01(\v2!.graphene.management.v1.LogRecordH\x00R\x06record\x12\x1a\n" +
 	"\adropped\x18\x02 \x01(\x03H\x00R\adroppedB\a\n" +
-	"\x05chunk\"\x86\x01\n" +
+	"\x05chunk\"\x9c\x01\n" +
 	"\x0eMetricsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12&\n" +
 	"\x0fstart_unix_nano\x18\x02 \x01(\x03R\rstartUnixNano\x12\"\n" +
 	"\rend_unix_nano\x18\x03 \x01(\x03R\vendUnixNano\x12\x16\n" +
-	"\x06follow\x18\x04 \x01(\bR\x06follow\"g\n" +
+	"\x06follow\x18\x04 \x01(\bR\x06follow\x12\x14\n" +
+	"\x05query\x18\x05 \x01(\tR\x05query\"g\n" +
 	"\fMetricsChunk\x12\x1c\n" +
 	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +
 	"\x04otlp\x18\x02 \x01(\fH\x00R\x04otlp\x12\x1a\n" +
 	"\adropped\x18\x03 \x01(\x03H\x00R\adroppedB\a\n" +
-	"\x05chunk\"8\n" +
+	"\x05chunk\"N\n" +
 	"\fTraceRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
-	"\x06follow\x18\x02 \x01(\bR\x06follow\"e\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x14\n" +
+	"\x05query\x18\x03 \x01(\tR\x05query\"e\n" +
 	"\n" +
 	"TraceChunk\x12\x1c\n" +
 	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +

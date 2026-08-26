@@ -81,6 +81,10 @@ message LogsRequest {
   string ref = 1;
   bool follow = 2;
   int64 since_unix_nano = 3;
+  // Query is the RAW view: a LogsQL query in the backend's own
+  // language, over the whole store (admin only; ref and follow are
+  // ignored). A resource's logs are the same store filtered.
+  string query = 4;
 }
 
 message LogRecord {
@@ -107,6 +111,9 @@ message MetricsRequest {
   int64 end_unix_nano = 3;
   // Follow keeps the stream open: live points arrive as standard OTLP.
   bool follow = 4;
+  // Query is the RAW view: a PromQL range query over the whole store
+  // (admin only; ref and follow are ignored).
+  string query = 5;
 }
 
 message MetricsChunk {
@@ -125,6 +132,9 @@ message TraceRequest {
   string ref = 1;
   // Follow keeps the stream open: live spans arrive as standard OTLP.
   bool follow = 2;
+  // Query is the RAW view: Jaeger search parameters as a query string
+  // ("service=x&tags=..."), over the whole store (admin only).
+  string query = 3;
 }
 
 message TraceChunk {

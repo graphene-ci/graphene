@@ -285,7 +285,7 @@ func (s *Worker) reconcileTriggersAct(ctx context.Context, req pipelineflow.Reco
 	if err := protojson.Unmarshal(req.Manifest, &m); err != nil {
 		return fmt.Errorf("manifest: %w", err)
 	}
-	if err := s.reconcileKindRecords(ctx, req.PipelineId, m.GetKinds()); err != nil {
+	if err := s.reconcileKindRecords(ctx, req.PipelineId, m.GetKinds(), m.GetKindDecls()); err != nil {
 		return err
 	}
 	return s.reconcileTriggers(ctx, req.PipelineId, m.GetTriggers())
@@ -439,7 +439,7 @@ func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw jso
 	if err != nil {
 		return err
 	}
-	if err := s.reconcileKindRecords(ctx, pipelineId, m.GetKinds()); err != nil {
+	if err := s.reconcileKindRecords(ctx, pipelineId, m.GetKinds(), m.GetKindDecls()); err != nil {
 		return err
 	}
 	return s.reconcileTriggers(ctx, pipelineId, m.GetTriggers())
@@ -455,8 +455,14 @@ func validateTriggers(m *manifestpb.Manifest) error {
 		}
 	}
 	for _, t := range m.GetTriggers() {
-		if t.GetKind() == "webhook" && !hasEvent {
-			return fmt.Errorf("webhook trigger %q: the params type needs an `event json.RawMessage` field for the request body", t.GetName())
+		if (t.GetKind() == "webhook" || t.GetKind() == "pipeline") && !hasEvent {
+			return fmt.Errorf("%s trigger %q: the params type needs an `event json.RawMessage` field for the payload", t.GetKind(), t.GetName())
+		}
+		if t.GetKind() == "pipeline" {
+			upstream, _, _ := strings.Cut(t.GetSpec(), ":")
+			if upstream == m.GetPipelineId() {
+				return fmt.Errorf("trigger %q: a pipeline cannot be its own upstream", t.GetName())
+			}
 		}
 	}
 	return nil
@@ -786,6 +792,7 @@ func (s *Worker) publishCapability(ctx context.Context, agentId id.AgentId, capa
 // attachAgent recognizes an EXISTING agent: no record — an error, never
 // a creation. It waits until the agent is ready AND the needs are met.
 func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wire.NeedSpec) (pipeline.AgentState, error) {
+	ctx = obs.WithEntity(ctx, "agent/"+string(agentId))
 	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(agentId)
 	for {
@@ -814,6 +821,7 @@ func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wi
 
 // attachArtifact recognizes an EXISTING artifact.
 func (s *Worker) attachArtifact(ctx context.Context, artifactId id.ArtifactId) (pipeline.ArtifactState, error) {
+	ctx = obs.WithEntity(ctx, "artifact/"+string(artifactId))
 	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(artifactId)
 	for {
@@ -895,6 +903,7 @@ func labelsMatch(want, have map[string]string) bool {
 // workflow (the run doing ToStand) is stamped as the transfer's
 // origin: the stand will not tear the holding down from under it.
 func (s *Worker) transferResource(ctx context.Context, req wire.TransferResourceRequest) error {
+	ctx = obs.WithEntity(ctx, string(req.Resource))
 	if req.From == "" {
 		req.From = activity.GetInfo(ctx).WorkflowExecution.ID
 	}
@@ -1038,6 +1047,8 @@ func interruptFromContext(ctx context.Context) <-chan any {
 // declareAgent creates (or attaches to) the machine entity and blocks
 // until it is ready, heartbeating while it converges.
 func (s *Worker) declareAgent(ctx context.Context, agentId id.AgentId, spec pipeline.AgentSpec) (pipeline.AgentState, error) {
+	// Called FROM a run, ABOUT an agent: the subject is the agent.
+	ctx = obs.WithEntity(ctx, "agent/"+string(agentId))
 	machines := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(agentId)
 	labels, err := recordLabels(ctx, spec.Labels)
@@ -1076,6 +1087,7 @@ func (s *Worker) declareAgent(ctx context.Context, agentId id.AgentId, spec pipe
 
 // declareArtifact creates the artifact entity and waits for verification.
 func (s *Worker) declareArtifact(ctx context.Context, artifactId id.ArtifactId, spec pipeline.ArtifactSpec) (pipeline.ArtifactState, error) {
+	ctx = obs.WithEntity(ctx, "artifact/"+string(artifactId))
 	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(artifactId)
 	labels, err := recordLabels(ctx, spec.Labels)
@@ -1299,13 +1311,62 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 // EXCEPT where entities still live on the executor's queue (a
 // stand-held docker resource keeps its machine executor alive; the
 // reaper collects it when the last record dies).
-func (s *Worker) runCleanup(ctx context.Context, runId id.RunId) error {
-	if err := s.deleteResource(ctx, ref.RunOwner(runId)); err != nil {
+func (s *Worker) runCleanup(ctx context.Context, req wire.RunCleanupRequest) error {
+	if err := s.deleteResource(ctx, ref.RunOwner(req.RunId)); err != nil {
 		return err
 	}
-	return s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, runId, func(agentId id.AgentId) bool {
-		return s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, runId))
-	})
+	if err := s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, req.RunId, func(agentId id.AgentId) bool {
+		return s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, req.RunId))
+	}); err != nil {
+		return err
+	}
+	// The CROSS-PIPELINE edge: a finished run is what an Upstream
+	// trigger waits for. The pipeline this run executed is the
+	// activity's workflow type; firing must not fail the cleanup —
+	// a downstream that cannot start is its own record's problem.
+	upstream := activity.GetInfo(ctx).WorkflowType.Name
+	s.fireDownstream(ctx, upstream, string(req.RunId), req.Outcome)
+	return nil
+}
+
+// fireDownstream lands a firing on every pipeline whose Upstream
+// trigger names this one with a matching outcome.
+func (s *Worker) fireDownstream(ctx context.Context, upstream, runId, outcome string) {
+	ids, err := s.listKind(ctx, string(triggerflow.Kind))
+	if err != nil {
+		s.deps.Log.Warn("downstream scan failed", xlog.Err(err))
+		return
+	}
+	triggers := entclient.Bind(s.triggerDef, s.deps.Client, wire.ServerQueue)
+	for _, tid := range ids {
+		desc, err := triggers.Describe(ctx, entity.ResourceID(tid))
+		if err != nil || desc.Spec.Kind != "pipeline" {
+			continue
+		}
+		wantPipeline, wantOutcome, _ := strings.Cut(desc.Spec.Spec, ":")
+		if wantPipeline != upstream {
+			continue
+		}
+		if wantOutcome != "any" && wantOutcome != outcome {
+			continue
+		}
+		event, _ := json.Marshal(map[string]string{
+			"upstreamPipeline": upstream, "upstreamRun": runId, "outcome": outcome,
+		})
+		if err := s.triggerFire(ctx, triggerflow.FireRequest{
+			PipelineId: desc.Spec.PipelineId,
+			Trigger:    "pipeline:" + desc.Spec.Name,
+			Params:     desc.Spec.Params,
+			Event:      event,
+		}); err != nil {
+			s.deps.Log.Warn("downstream firing failed",
+				xlog.String("upstream", upstream), xlog.String("downstream", desc.Spec.PipelineId), xlog.Err(err))
+		} else {
+			s.deps.Log.Info("downstream fired",
+				xlog.String("upstream", upstream), xlog.String("downstream", desc.Spec.PipelineId),
+				xlog.String("outcome", outcome))
+		}
+	}
 }
 
 // ReapExecutors collects machine executors whose run is over AND whose

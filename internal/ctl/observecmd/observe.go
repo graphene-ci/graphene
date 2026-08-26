@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -37,9 +38,15 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The RAW view: one argument in the backend's own language
+			// ("gctl metrics 'rate(...)'"), over the whole store. A
+			// record target never contains these characters.
+			if len(args) == 1 && strings.ContainsAny(args[0], "{}()|=* ") {
+				return RunQuery(cmd.Context(), f, dim, args[0])
+			}
 			ref, rest, err := cmdutil.TargetRef(args)
 			if err != nil || len(rest) != 0 {
-				return fmt.Errorf("usage: %s <kind> <id>", dim)
+				return fmt.Errorf("usage: %s <kind> <id>, or %s '<backend query>'", dim, dim)
 			}
 			return Run(cmd.Context(), f, dim, ref, follow)
 		},
@@ -229,4 +236,52 @@ func renderLiveSpans(raw []byte) {
 			}
 		}
 	}
+}
+
+// RunQuery executes one raw backend query through the door.
+func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string) error {
+	d, err := f.Dial()
+	if err != nil {
+		return err
+	}
+	switch dim {
+	case "logs":
+		stream, err := d.Observe.Logs(ctx, connect.NewRequest(&managementv1.LogsRequest{Query: query}))
+		if err != nil {
+			return err
+		}
+		for stream.Receive() {
+			if rec := stream.Msg().GetRecord(); rec != nil {
+				fmt.Fprintf(cmdutil.Out, "%s  %s\n", cmdutil.Stamp(rec.GetTimeUnixNano()), rec.GetBody())
+			}
+		}
+		return stream.Err()
+	case "metrics":
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Query: query}))
+		if err != nil {
+			return err
+		}
+		for stream.Receive() {
+			if snap := stream.Msg().GetSnapshot(); snap != nil {
+				if err := renderMetrics(f, snap); err != nil {
+					return err
+				}
+			}
+		}
+		return stream.Err()
+	case "trace":
+		stream, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Query: query}))
+		if err != nil {
+			return err
+		}
+		for stream.Receive() {
+			if snap := stream.Msg().GetSnapshot(); snap != nil {
+				if err := renderTrace(f, snap); err != nil {
+					return err
+				}
+			}
+		}
+		return stream.Err()
+	}
+	return fmt.Errorf("%s has no raw query form", dim)
 }

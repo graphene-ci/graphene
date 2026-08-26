@@ -16,7 +16,7 @@ require (
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260818165125-50089d78689f
 	github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee
-	github.com/graphene-ci/pipeline v0.0.0-20260826114507-ee5a2600b6cc
+	github.com/graphene-ci/pipeline v0.0.0-20260826125506-88df493ccdd0
 	github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0
@@ -27,6 +27,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.47.0
+	go.temporal.io/sdk/contrib/opentelemetry v0.8.1
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
@@ -104,7 +105,6 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.21.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.temporal.io/sdk/contrib/opentelemetry v0.8.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect

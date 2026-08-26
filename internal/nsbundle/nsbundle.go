@@ -247,6 +247,9 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 	// Machine executors live while their records do; this collects them
 	// when the last record dies after the run is gone.
 	go w.ReapExecutors(ctx, m.deps.ReapEvery)
+	// Orphan bytes: a terminated record runs no finalizer; the janitor
+	// answers for what deletion could not.
+	go w.RunJanitor(ctx)
 	log.Info("namespace bundle started")
 	return b, nil
 }
