@@ -17,6 +17,16 @@ import (
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
+// kindCompletion offers the kinds the installation knows.
+func kindCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return f.LiveKinds(), cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 // declaration is what a file declares: one record.
 type declaration struct {
 	Kind   string            `yaml:"kind" json:"kind"`
@@ -36,8 +46,21 @@ func NewApply(f *cmdutil.Factory) *cobra.Command {
 		Long: "Declare a record. Either name the kind and id with --spec,\n" +
 			"or point at a YAML/JSON file holding kind, id and spec.\n" +
 			"`graphenectl kinds` lists what this installation can declare.",
-		Args: cobra.MaximumNArgs(2),
+		Args:              cobra.MaximumNArgs(2),
+		ValidArgsFunction: kindCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A kind and an id, no spec, a human on the other end: walk
+			// the KIND's own schema. Which fields it has is the
+			// installation's answer, not this client's.
+			if len(args) == 2 && file == "" && specJSON == "" && cmdutil.StdinIsTerminal() {
+				if schema := cmdutil.ParseSchema(f.SpecSchema(args[0])); schema != nil {
+					raw, perr := cmdutil.PromptSchema(os.Stdin, args[0]+" spec", schema)
+					if perr != nil {
+						return perr
+					}
+					specJSON = string(raw)
+				}
+			}
 			decls, err := declarations(args, file, specJSON, labels)
 			if err != nil {
 				return err

@@ -11,50 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
-	"github.com/graphene-ci/graphene/internal/ctl/runcmd"
-	"github.com/graphene-ci/graphene/internal/ctl/sourcecmd"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
-
-// NewPipeline builds the `pipeline` tree.
-func NewPipeline(f *cmdutil.Factory) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "pipeline",
-		Short: "The project: its source, its working tree, its active version",
-	}
-	show := &cobra.Command{
-		Use:   "show <pipeline-id>",
-		Short: "The current worker image, the manifest and its digest",
-		Args:  cobra.ExactArgs(1),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-			if len(args) == 0 {
-				return f.LiveIds("pipeline"), cobra.ShellCompDirectiveNoFileComp
-			}
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cc, err := f.Resolve()
-			if err != nil {
-				return err
-			}
-			resp, err := runcmd.GetPipelineRecord(cmd.Context(), cc, args[0])
-			if err != nil {
-				return err
-			}
-			if done, err := f.Emit(resp); done || err != nil {
-				return err
-			}
-			fmt.Fprintf(cmdutil.Out, "pipeline %s\nimage    %s\ndigest   %s\n", args[0], resp.GetImage(), resp.GetDigest())
-			if len(resp.GetManifest()) > 0 {
-				cmdutil.PrintJSONBlock("manifest", resp.GetManifest())
-			}
-			return nil
-		},
-	}
-	cmd.AddCommand(show)
-	sourcecmd.Attach(f, cmd)
-	return cmd
-}
 
 // NewSecret builds the `secret` tree.
 func NewSecret(f *cmdutil.Factory) *cobra.Command {

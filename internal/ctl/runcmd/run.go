@@ -80,7 +80,7 @@ interactive form walks the schema field by field.`,
 			}
 			if len(paramsJSON) == 0 && recErr == nil && cmdutil.StdinIsTerminal() {
 				if schema := paramsSchemaOf(rec.GetManifest()); schema != nil {
-					paramsJSON, err = promptParams(os.Stdin, schema)
+					paramsJSON, err = cmdutil.PromptSchema(os.Stdin, "params", schema)
 					if err != nil {
 						return err
 					}

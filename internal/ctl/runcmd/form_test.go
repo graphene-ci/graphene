@@ -2,6 +2,7 @@ package runcmd
 
 import (
 	"encoding/json"
+	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
 	"strings"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestPromptParams(t *testing.T) {
 	// The empty first answer must re-ask the required field; the empty
 	// answer on the optional one skips it; JSON compounds parse.
 	in := strings.NewReader("\nsrv-1\n1h\n{\"a\":1}\n")
-	raw, err := promptParams(in, formSchema(t))
+	raw, err := cmdutil.PromptSchema(in, "params", formSchema(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,7 @@ func TestPromptParams(t *testing.T) {
 
 func TestPromptParamsSkipsOptional(t *testing.T) {
 	in := strings.NewReader("srv-1\n\n\n")
-	raw, err := promptParams(in, formSchema(t))
+	raw, err := cmdutil.PromptSchema(in, "params", formSchema(t))
 	if err != nil {
 		t.Fatal(err)
 	}
