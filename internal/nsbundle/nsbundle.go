@@ -88,6 +88,20 @@ type Manager struct {
 
 	mu      sync.Mutex
 	bundles map[string]*Bundle
+	// declared answers whether a namespace still has its record. Nil
+	// until the default bundle exists — the installation's own
+	// bootstrap predates the records.
+	declared func(ctx context.Context, name string) (bool, error)
+}
+
+// SetDeclaredCheck wires the question "does this namespace still have
+// a record?". A namespace whose record is gone stops being served: the
+// record IS the namespace's existence, so an ordinary call must not
+// resurrect it.
+func (m *Manager) SetDeclaredCheck(fn func(ctx context.Context, name string) (bool, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.declared = fn
 }
 
 // New builds the manager; ctx bounds every bundle's goroutines.
@@ -104,6 +118,18 @@ func (m *Manager) Get(namespace string) (*Bundle, error) {
 	defer m.mu.Unlock()
 	if b, ok := m.bundles[namespace]; ok {
 		return b, nil
+	}
+	// Starting a bundle is how a namespace comes back after a server
+	// restart — so it must answer to the records, or a retired
+	// namespace would return on the next call that names it.
+	if namespace != "default" && m.declared != nil {
+		ok, err := m.declared(m.ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("namespace %s is not declared", namespace)
+		}
 	}
 	b, err := m.build(namespace)
 	if err != nil {

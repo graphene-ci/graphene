@@ -187,3 +187,17 @@ func (s *Worker) DeclareNamespace(ctx context.Context, name string, spec nsflow.
 	_, err := namespaces.CreateOrAttach(ctx, entity.ResourceID(name), spec)
 	return err
 }
+
+// NamespaceDeclared answers whether a namespace still has its record —
+// what the bundle manager asks before serving one.
+func (s *Worker) NamespaceDeclared(ctx context.Context, name string) (bool, error) {
+	namespaces := entclient.Bind(s.namespaceDef, s.deps.Client, wire.ServerQueue)
+	desc, err := namespaces.Describe(ctx, entity.ResourceID(name))
+	if err != nil {
+		// A record that never existed and one whose worker is briefly
+		// unreachable look alike here; refusing is the safe half, and
+		// the caller retries.
+		return false, nil
+	}
+	return desc.Phase != entity.PhaseDeleted && desc.Phase != entity.PhaseDeleting, nil
+}
