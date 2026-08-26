@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,124 +68,90 @@ func JSONInput(flagName, inline, file string) ([]byte, error) {
 // --- Live lookups for shell completion: best effort, a short timeout,
 // silent on failure — completion must never nag. ---
 
-// LiveKinds asks the INSTALLATION what it can declare and command.
-// The list is never spelled out here: a client that carries its own
-// idea of the kinds is wrong the moment a kind is added, and it hides
-// a kind that exists but has no records yet. The pipelines' own kinds
-// are added on top — those come from user code, so only the records
-// know them.
+// LiveKinds asks the DICTIONARY: kind records cover everything the
+// installation serves — the system's own kinds and the ones pipelines
+// bring — so one cheap listing answers, and nothing is spelled out or
+// guessed here.
 func (f *Factory) LiveKinds() []string {
-	seen := map[string]bool{}
 	d, cctx, cancel := f.completionDoor()
 	if d == nil {
 		return nil
 	}
 	defer cancel()
-	if resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{})); err == nil {
-		for _, k := range resp.Msg.GetKinds() {
-			seen[k.GetName()] = true
-		}
+	resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
+		Query: "kind=kind",
+	}))
+	if err != nil {
+		return nil
 	}
-	if resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
-		Selector: &managementv1.Selector{},
-	})); err == nil {
-		for _, r := range resp.Msg.GetResources() {
-			if r.GetKind() != "" {
-				seen[r.GetKind()] = true
-			}
-			if r.GetKind() == "pipeline" {
-				var st struct {
-					Manifest struct {
-						Kinds []string `json:"kinds"`
-					} `json:"manifest"`
-				}
-				if json.Unmarshal(r.GetState(), &st) == nil {
-					for _, k := range st.Manifest.Kinds {
-						seen[k] = true
-					}
-				}
-			}
+	var kinds []string
+	for _, r := range resp.Msg.GetResources() {
+		if _, name, ok := strings.Cut(r.GetRef(), "/"); ok {
+			kinds = append(kinds, name)
 		}
-	}
-	kinds := make([]string, 0, len(seen))
-	for k := range seen {
-		kinds = append(kinds, k)
 	}
 	sort.Strings(kinds)
 	return kinds
 }
 
-// LiveCommands asks what THIS kind can be told to do. Like the kinds
-// themselves, the answer belongs to the installation: a command added
-// to a record shows up in the client without the client changing.
+// KindEntry is a dictionary entry as the client reads it.
+type KindEntry struct {
+	Origin      string          `json:"origin"`
+	Declarable  bool            `json:"declarable"`
+	Description string          `json:"description"`
+	SpecSchema  json.RawMessage `json:"specSchema"`
+	Commands    []struct {
+		Name          string          `json:"name"`
+		PayloadSchema json.RawMessage `json:"payloadSchema"`
+	} `json:"commands"`
+	Dimensions []string `json:"dimensions"`
+	BroughtBy  []string `json:"broughtBy"`
+	Records    int      `json:"records"`
+}
+
+// KindEntryOf reads one dictionary entry over an ORDINARY dial: a form
+// that cannot learn its fields must say so, not silently skip itself.
+func (f *Factory) KindEntryOf(ctx context.Context, kind string) (*KindEntry, error) {
+	d, err := f.Dial()
+	if err != nil {
+		return nil, err
+	}
+	got, err := d.Resources.Get(ctx, connect.NewRequest(&managementv1.GetRequest{
+		Ref: "kind/" + kind,
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("kind %q is not in this installation's dictionary: %w", kind, err)
+	}
+	var e KindEntry
+	if err := json.Unmarshal(got.Msg.GetResource().GetState(), &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// LiveCommands is the completion half: silent, best effort.
 func (f *Factory) LiveCommands(kind string) []string {
 	d, cctx, cancel := f.completionDoor()
 	if d == nil {
 		return nil
 	}
 	defer cancel()
-	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
+	got, err := d.Resources.Get(cctx, connect.NewRequest(&managementv1.GetRequest{
+		Ref: "kind/" + kind,
+	}))
 	if err != nil {
 		return nil
 	}
-	for _, k := range resp.Msg.GetKinds() {
-		if k.GetName() != kind {
-			continue
-		}
-		out := make([]string, 0, len(k.GetCommands()))
-		for _, c := range k.GetCommands() {
-			out = append(out, c.GetName())
-		}
-		sort.Strings(out)
-		return out
-	}
-	return nil
-}
-
-// SpecSchema is the declaration type of one kind, as the installation
-// describes it.
-func (f *Factory) SpecSchema(kind string) []byte {
-	d, cctx, cancel := f.completionDoor()
-	if d == nil {
+	var e KindEntry
+	if json.Unmarshal(got.Msg.GetResource().GetState(), &e) != nil {
 		return nil
 	}
-	defer cancel()
-	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
-	if err != nil {
-		return nil
+	out := make([]string, 0, len(e.Commands))
+	for _, c := range e.Commands {
+		out = append(out, c.Name)
 	}
-	for _, k := range resp.Msg.GetKinds() {
-		if k.GetName() == kind {
-			return k.GetSpecSchema()
-		}
-	}
-	return nil
-}
-
-// CommandSchema is the payload type of one command, as the
-// installation describes it — what an interactive prompt walks and
-// what a caller reads to know the fields.
-func (f *Factory) CommandSchema(kind, command string) []byte {
-	d, cctx, cancel := f.completionDoor()
-	if d == nil {
-		return nil
-	}
-	defer cancel()
-	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
-	if err != nil {
-		return nil
-	}
-	for _, k := range resp.Msg.GetKinds() {
-		if k.GetName() != kind {
-			continue
-		}
-		for _, c := range k.GetCommands() {
-			if c.GetName() == command {
-				return c.GetPayloadSchema()
-			}
-		}
-	}
-	return nil
+	sort.Strings(out)
+	return out
 }
 
 // LiveIds lists the ids of one kind.

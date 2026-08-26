@@ -34,6 +34,10 @@ func Id(pipelineId, revisionId string) entity.ResourceID {
 // revision.
 type Spec struct {
 	PipelineId string `json:"pipelineId"`
+	// SourceRef names the SOURCE record this was built from
+	// ("gitsource/main"); empty when a tree was uploaded for this build
+	// alone and no source record exists.
+	SourceRef string `json:"sourceRef,omitempty"`
 	// SourceLocation names the uploaded tree (tar.gz) in the blob store.
 	SourceLocation string `json:"sourceLocation"`
 	// SourceDigest pins the tree's content.
@@ -41,6 +45,9 @@ type Spec struct {
 	// Runtime names the toolchain image that builds it; empty takes the
 	// installation's default.
 	Runtime string `json:"runtime,omitempty"`
+	// Commit is the Git commit behind the tree, when the source was a
+	// checkout — what shipped, in the repository's own terms.
+	Commit string `json:"commit,omitempty"`
 }
 
 // State is what materialization produced.

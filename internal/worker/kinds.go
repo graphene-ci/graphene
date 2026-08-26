@@ -12,12 +12,15 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/gopherex/schemapb/go/schemapb"
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 
 	"github.com/graphene-ci/graphene/internal/authz"
+	"github.com/graphene-ci/graphene/internal/kindflow"
+	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
@@ -32,6 +35,28 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
+
+// Dimension is one of the five ways an entity is observed.
+type Dimension string
+
+// The five dimensions of any entity.
+const (
+	DimensionState   Dimension = "state"
+	DimensionEvents  Dimension = "events"
+	DimensionLogs    Dimension = "logs"
+	DimensionMetrics Dimension = "metrics"
+	DimensionTraces  Dimension = "traces"
+)
+
+// AllDimensions is what a system record answers — all five: the server
+// emits logs, metrics and spans under every record's own reference.
+var AllDimensions = []Dimension{
+	DimensionState, DimensionEvents, DimensionLogs, DimensionMetrics, DimensionTraces,
+}
+
+// RecordDimensions is what a record answers with no telemetry of its
+// own: the two it IS, by being a workflow with a history.
+var RecordDimensions = []Dimension{DimensionState, DimensionEvents}
 
 // KindInfo describes one kind to whoever asks: what its spec looks
 // like and which commands it answers. The schemas come from the Go
@@ -49,6 +74,13 @@ type KindInfo struct {
 	Commands []CommandInfo `json:"commands"`
 	// Description is one line for a human.
 	Description string `json:"description"`
+	// Dimensions this kind answers. Every RECORD answers state and
+	// events by construction — it is a workflow with a describe query
+	// and a history. Logs, metrics and traces are answered when
+	// something emits under the entity's reference: for system records
+	// the server's own interceptor does, which is why they are listed
+	// here rather than left to a console's guess.
+	Dimensions []Dimension `json:"dimensions"`
 }
 
 // CommandInfo is one command of a kind.
@@ -99,7 +131,37 @@ func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessag
 			return "", fmt.Errorf("spec does not fit kind %q: %w", kind, err)
 		}
 	}
+	// System markers go on at the ONE place records are declared, so
+	// completeness does not depend on who declares them.
+	labels = syslabels.Merge(labels, s.marksFor(kind, spec))
 	return entclient.ApplyRaw(ctx, s.deps.Client, entity.KindName(kind), entity.ResourceID(id), wire.ServerQueue, spec, labels)
+}
+
+// marksFor derives a record's system markers from what it declares.
+// The ownership tree already answers ancestry; these carry the CROSS
+// references a tree has no edge for — which pipeline a source serves,
+// where a copy came from, which source a revision was built from.
+func (s *Worker) marksFor(kind string, spec json.RawMessage) map[string]string {
+	var decl struct {
+		PipelineId   string `json:"pipelineId"`
+		From         string `json:"from"`
+		SourceRef    string `json:"sourceRef"`
+		SourceDigest string `json:"sourceDigest"`
+		Commit       string `json:"commit"`
+	}
+	if len(spec) > 0 {
+		_ = json.Unmarshal(spec, &decl)
+	}
+	marks := map[string]string{
+		syslabels.Pipeline: decl.PipelineId,
+		syslabels.Origin:   decl.From,
+		syslabels.Source:   decl.SourceRef,
+		syslabels.Commit:   decl.Commit,
+	}
+	if decl.SourceDigest != "" {
+		marks[syslabels.SourceDigest] = strings.TrimPrefix(decl.SourceDigest, "sha256:")[:min(16, len(strings.TrimPrefix(decl.SourceDigest, "sha256:")))]
+	}
+	return marks
 }
 
 func (s *Worker) kindNames() string {
@@ -125,7 +187,13 @@ func buildKinds() map[string]*kindEntry {
 	reg := map[string]*kindEntry{}
 	add := func(name, description string, declarable bool, specType reflect.Type, commands ...commandDef) {
 		e := &kindEntry{
-			info:     KindInfo{Name: name, Declarable: declarable, Description: description},
+			info: KindInfo{
+				Name: name, Declarable: declarable, Description: description,
+				// Every system record is observable end to end: the
+				// server emits its logs, metrics and spans under the
+				// record's own reference.
+				Dimensions: AllDimensions,
+			},
 			specType: specType,
 		}
 		if specType != nil {
@@ -213,6 +281,13 @@ func buildKinds() map[string]*kindEntry {
 		cmd("revoke-token", reflect.TypeFor[rbacflow.RevokeTokenCmd]()))
 
 	add("run", "the execution of a pipeline — fired, not declared", false, nil)
+
+	// The dictionary contains itself: kind records are managed by the
+	// server and the manifests, never declared by hand.
+	add("kind", "a dictionary entry: what a kind is and what it answers", false,
+		reflect.TypeFor[kindflow.Spec](),
+		cmd("declare", reflect.TypeFor[kindflow.DeclareCmd]()),
+		cmd("bring", reflect.TypeFor[kindflow.BringCmd]()))
 
 	// Every kind serves the built-in label patch.
 	for _, e := range reg {

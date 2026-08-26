@@ -39,6 +39,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/obs"
 	"github.com/graphene-ci/pipeline/pkg/ref"
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
@@ -180,15 +181,31 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	}
 	// The run carries its labels in the same EntityLabels attribute
 	// resources use — one label language across the system. The system
-	// adds WHAT started the run after user labels are validated.
-	withTrigger := make(map[string]string, len(labels)+1)
+	// markers go on after the user's labels are validated: the tree
+	// says a run belongs to a pipeline, and these say WHICH version of
+	// the code it executes and WHAT started it.
+	marked := make(map[string]string, len(labels)+5)
 	for k, v := range labels {
-		withTrigger[k] = v
+		marked[k] = v
 	}
-	if trigger != "" {
-		withTrigger[syslabels.Trigger] = trigger
+	marks := map[string]string{
+		syslabels.Pipeline: pipelineName,
+		syslabels.Trigger:  trigger,
+		syslabels.Image:    image,
 	}
-	opts.TypedSearchAttributes = runAttributes(pipelineName, withTrigger)
+	// The revision (and through it the source) is what a person means
+	// by "which code ran" — it is not an edge of any tree.
+	if st, err := b.Worker.GetPipeline(ctx, pipelineName); err == nil {
+		marks[syslabels.Revision] = st.RevisionId
+		if st.RevisionId != "" {
+			if _, rspec, _, rerr := b.Worker.DescribeRevision(ctx, pipelineName, st.RevisionId); rerr == nil {
+				marks[syslabels.Source] = rspec.SourceRef
+				marks[syslabels.SourceDigest] = shortDigest(rspec.SourceDigest)
+			}
+		}
+	}
+	marked = syslabels.Merge(marked, marks)
+	opts.TypedSearchAttributes = runAttributes(pipelineName, marked)
 	var args []any
 	if len(params) > 0 {
 		args = append(args, json.RawMessage(params))
@@ -202,6 +219,12 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 			return "", "", status.Error(codes.Internal, err.Error())
 		}
 	}
+	rctx := obs.WithEntity(ctx, "run/"+string(runId))
+	obs.Info(rctx, "run started",
+		obs.Str("pipeline", pipelineName), obs.Str("trigger", trigger),
+		obs.Str("revision", marks[syslabels.Revision]))
+	obs.Count(rctx, MetricRunStarted, 1,
+		obs.Str("pipeline", pipelineName), obs.Str("trigger", trigger))
 	log.Info("run started",
 		xlog.String("namespace", b.Namespace),
 		xlog.Any("run", runId),
@@ -578,6 +601,9 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	// The note goes first: after the cascade there is no history left
 	// to write it into.
 	m.audit(ctx, b, req.GetRef(), authz.VerbDelete)
+	dctx := obs.WithEntity(ctx, req.GetRef())
+	obs.Info(dctx, "record deleting")
+	obs.Count(dctx, MetricRecordDeleted, 1, obs.Str("kind", string(authz.KindOf(req.GetRef()))))
 	// Deleting a RUN means cancelling it: the run tears its own
 	// resources down on the way out (guaranteed teardown), so cascading
 	// them from here would race its own cleanup.
@@ -626,6 +652,9 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	m.audit(ctx, b, req.GetRef(), authz.VerbInvoke)
+	octx := obs.WithEntity(ctx, req.GetRef())
+	obs.Info(octx, "command sent", obs.Str("command", req.GetCommand()))
+	obs.Count(octx, MetricCommand, 1, obs.Str("command", req.GetCommand()))
 	return connect.NewResponse(&managementv1.InvokeResponse{Result: out}), nil
 }
 
@@ -766,6 +795,28 @@ func runAttributes(pipelineId string, labels map[string]string) temporal.SearchA
 		entdefine.SearchAttrKind.ValueSet("run"),
 		wire.SearchAttrOwner.ValueSet("pipeline/"+pipelineId),
 	)
+}
+
+// Metric names of the door's own contour.
+const (
+	// MetricRecordApplied counts declarations by kind.
+	MetricRecordApplied = "graphene.door.apply"
+	// MetricCommand counts commands sent to records.
+	MetricCommand = "graphene.door.invoke"
+	// MetricRunStarted counts runs started, by what started them.
+	MetricRunStarted = "graphene.door.run.start"
+	// MetricRecordDeleted counts deletions by kind.
+	MetricRecordDeleted = "graphene.door.delete"
+)
+
+// shortDigest renders a content digest the way a label should read:
+// unprefixed and bounded, because a label is a filter, not a field.
+func shortDigest(digest string) string {
+	d := strings.TrimPrefix(digest, "sha256:")
+	if len(d) > 16 {
+		return d[:16]
+	}
+	return d
 }
 
 // describeOut mirrors temporal-entity's DescribeOut with raw halves.

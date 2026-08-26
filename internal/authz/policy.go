@@ -75,6 +75,10 @@ const (
 	KindRole           Kind = "role"
 	KindRoleBinding    Kind = "rolebinding"
 	KindServiceAccount Kind = "serviceaccount"
+	// KindKind is the dictionary itself: kind records. Written only by
+	// the server and the manifests; read by everyone who can read at
+	// all — discovery is what the dictionary is FOR.
+	KindKind Kind = "kind"
 	// KindResource covers every OTHER record — the library and user
 	// kinds a pipeline declares.
 	KindResource Kind = "resource"
@@ -87,7 +91,7 @@ var AllKinds = []Kind{
 	KindAgent, KindArtifact, KindNamespace, KindPipeline, KindResource,
 	KindRevision, KindRole, KindRoleBinding, KindRun, KindSecret,
 	KindServiceAccount, KindStand, KindTrigger, KindVar,
-	KindGitSource, KindManagedSource,
+	KindGitSource, KindManagedSource, KindKind,
 }
 
 // KindOf maps a record reference ("k8s.../vm-1", "pipeline/x") to the
@@ -198,7 +202,7 @@ var (
 	RoleDeveloper = Rules{
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbBuild, VerbRun, VerbActivate, VerbInvoke, VerbTransfer, VerbDelete},
-			Kinds: []Kind{KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource, KindGitSource, KindManagedSource},
+			Kinds: []Kind{KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource, KindGitSource, KindManagedSource, KindKind},
 		},
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch},
@@ -227,7 +231,7 @@ var (
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbDelete, VerbTransfer, VerbInvoke},
 			Kinds: []Kind{KindResource, KindArtifact, KindAgent, KindStand},
 		},
-		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision, KindGitSource, KindManagedSource}},
+		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision, KindGitSource, KindManagedSource, KindKind}},
 	}
 )
 

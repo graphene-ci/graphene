@@ -53,7 +53,11 @@ func NewApply(f *cmdutil.Factory) *cobra.Command {
 			// the KIND's own schema. Which fields it has is the
 			// installation's answer, not this client's.
 			if len(args) == 2 && file == "" && specJSON == "" && cmdutil.StdinIsTerminal() {
-				if schema := cmdutil.ParseSchema(f.SpecSchema(args[0])); schema != nil {
+				entry, err := f.KindEntryOf(cmd.Context(), args[0])
+				if err != nil {
+					return err
+				}
+				if schema := cmdutil.ParseSchema(entry.SpecSchema); schema != nil {
 					raw, perr := cmdutil.PromptSchema(os.Stdin, args[0]+" spec", schema)
 					if perr != nil {
 						return perr
@@ -130,38 +134,38 @@ func declarations(args []string, file, specJSON string, labels map[string]string
 	return []declaration{decl}, nil
 }
 
-// NewKinds builds `kinds`: what this installation can declare and ask.
+// NewKinds builds `kinds` — a FORMATTER over the dictionary records:
+// the same data `get kind` and `get kind/<name>` read, laid out as the
+// table a human wants. Nothing here is its own channel.
 func NewKinds(f *cmdutil.Factory) *cobra.Command {
 	var verbose bool
 	cmd := &cobra.Command{
 		Use:   "kinds",
-		Short: "What this installation can declare and command",
+		Short: "The dictionary: what this installation can declare and command",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
+			names := f.LiveKinds()
+			if len(names) == 0 {
+				return fmt.Errorf("the dictionary answered nothing — is the server reachable?")
 			}
-			resp, err := d.Resources.Kinds(cmd.Context(), connect.NewRequest(&managementv1.KindsRequest{}))
-			if err != nil {
-				return err
-			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
-			}
-			fmt.Fprintf(cmdutil.Out, "KIND\tAPPLY\tCOMMANDS\n")
-			for _, k := range resp.Msg.GetKinds() {
+			fmt.Fprintf(cmdutil.Out, "KIND\tORIGIN\tAPPLY\tRECORDS\tCOMMANDS\n")
+			for _, name := range names {
+				e, err := f.KindEntryOf(cmd.Context(), name)
+				if err != nil {
+					fmt.Fprintf(cmdutil.Out, "%s\t?\t\t\t(%v)\n", name, err)
+					continue
+				}
 				declarable := ""
-				if k.GetDeclarable() {
+				if e.Declarable {
 					declarable = "*"
 				}
-				names := make([]string, 0, len(k.GetCommands()))
-				for _, c := range k.GetCommands() {
-					names = append(names, c.GetName())
+				cmds := make([]string, 0, len(e.Commands))
+				for _, c := range e.Commands {
+					cmds = append(cmds, c.Name)
 				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\n", k.GetName(), declarable, strings.Join(names, ", "))
-				if verbose {
-					fmt.Fprintf(cmdutil.Out, "  %s\n", k.GetDescription())
+				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%d\t%s\n", name, e.Origin, declarable, e.Records, strings.Join(cmds, ", "))
+				if verbose && e.Description != "" {
+					fmt.Fprintf(cmdutil.Out, "  %s\n", e.Description)
 				}
 			}
 			return nil

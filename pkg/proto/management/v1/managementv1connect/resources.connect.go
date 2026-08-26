@@ -56,8 +56,6 @@ const (
 	ResourcesAPIInvokeProcedure = "/graphene.management.v1.ResourcesAPI/Invoke"
 	// ResourcesAPIApplyProcedure is the fully-qualified name of the ResourcesAPI's Apply RPC.
 	ResourcesAPIApplyProcedure = "/graphene.management.v1.ResourcesAPI/Apply"
-	// ResourcesAPIKindsProcedure is the fully-qualified name of the ResourcesAPI's Kinds RPC.
-	ResourcesAPIKindsProcedure = "/graphene.management.v1.ResourcesAPI/Kinds"
 )
 
 // ResourcesAPIClient is a client for the graphene.management.v1.ResourcesAPI service.
@@ -90,11 +88,6 @@ type ResourcesAPIClient interface {
 	// Apply declares a record of ANY kind: the one door creation goes
 	// through, so a new kind never needs an API of its own.
 	Apply(context.Context, *connect.Request[v1.ApplyRequest]) (*connect.Response[v1.ApplyResponse], error)
-	// Kinds answers what this installation can declare and command, with
-	// the schema of every spec and payload — what a CLI validates
-	// against and a UI builds forms from, instead of hard-coding a
-	// vocabulary it should be discovering.
-	Kinds(context.Context, *connect.Request[v1.KindsRequest]) (*connect.Response[v1.KindsResponse], error)
 }
 
 // NewResourcesAPIClient constructs a client for the graphene.management.v1.ResourcesAPI service. By
@@ -162,12 +155,6 @@ func NewResourcesAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(resourcesAPIMethods.ByName("Apply")),
 			connect.WithClientOptions(opts...),
 		),
-		kinds: connect.NewClient[v1.KindsRequest, v1.KindsResponse](
-			httpClient,
-			baseURL+ResourcesAPIKindsProcedure,
-			connect.WithSchema(resourcesAPIMethods.ByName("Kinds")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -182,7 +169,6 @@ type resourcesAPIClient struct {
 	transfer   *connect.Client[v1.TransferRequest, v1.TransferResponse]
 	invoke     *connect.Client[v1.InvokeRequest, v1.InvokeResponse]
 	apply      *connect.Client[v1.ApplyRequest, v1.ApplyResponse]
-	kinds      *connect.Client[v1.KindsRequest, v1.KindsResponse]
 }
 
 // List calls graphene.management.v1.ResourcesAPI.List.
@@ -230,11 +216,6 @@ func (c *resourcesAPIClient) Apply(ctx context.Context, req *connect.Request[v1.
 	return c.apply.CallUnary(ctx, req)
 }
 
-// Kinds calls graphene.management.v1.ResourcesAPI.Kinds.
-func (c *resourcesAPIClient) Kinds(ctx context.Context, req *connect.Request[v1.KindsRequest]) (*connect.Response[v1.KindsResponse], error) {
-	return c.kinds.CallUnary(ctx, req)
-}
-
 // ResourcesAPIHandler is an implementation of the graphene.management.v1.ResourcesAPI service.
 type ResourcesAPIHandler interface {
 	// List returns the resources matching the selector — a snapshot.
@@ -265,11 +246,6 @@ type ResourcesAPIHandler interface {
 	// Apply declares a record of ANY kind: the one door creation goes
 	// through, so a new kind never needs an API of its own.
 	Apply(context.Context, *connect.Request[v1.ApplyRequest]) (*connect.Response[v1.ApplyResponse], error)
-	// Kinds answers what this installation can declare and command, with
-	// the schema of every spec and payload — what a CLI validates
-	// against and a UI builds forms from, instead of hard-coding a
-	// vocabulary it should be discovering.
-	Kinds(context.Context, *connect.Request[v1.KindsRequest]) (*connect.Response[v1.KindsResponse], error)
 }
 
 // NewResourcesAPIHandler builds an HTTP handler from the service implementation. It returns the
@@ -333,12 +309,6 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(resourcesAPIMethods.ByName("Apply")),
 		connect.WithHandlerOptions(opts...),
 	)
-	resourcesAPIKindsHandler := connect.NewUnaryHandler(
-		ResourcesAPIKindsProcedure,
-		svc.Kinds,
-		connect.WithSchema(resourcesAPIMethods.ByName("Kinds")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/graphene.management.v1.ResourcesAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ResourcesAPIListProcedure:
@@ -359,8 +329,6 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 			resourcesAPIInvokeHandler.ServeHTTP(w, r)
 		case ResourcesAPIApplyProcedure:
 			resourcesAPIApplyHandler.ServeHTTP(w, r)
-		case ResourcesAPIKindsProcedure:
-			resourcesAPIKindsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -404,8 +372,4 @@ func (UnimplementedResourcesAPIHandler) Invoke(context.Context, *connect.Request
 
 func (UnimplementedResourcesAPIHandler) Apply(context.Context, *connect.Request[v1.ApplyRequest]) (*connect.Response[v1.ApplyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.Apply is not implemented"))
-}
-
-func (UnimplementedResourcesAPIHandler) Kinds(context.Context, *connect.Request[v1.KindsRequest]) (*connect.Response[v1.KindsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.Kinds is not implemented"))
 }

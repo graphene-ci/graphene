@@ -25,6 +25,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 
@@ -32,8 +33,11 @@ import (
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
+	"github.com/graphene-ci/graphene/internal/kindflow"
+	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsflow"
+	"github.com/graphene-ci/graphene/internal/obsx"
 	"github.com/graphene-ci/graphene/internal/ops"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
@@ -103,6 +107,7 @@ type Worker struct {
 	namespaceDef *entdefine.Definition[nsflow.Spec, nsflow.State]
 	gitSourceDef *entdefine.Definition[sourceflow.GitSpec, sourceflow.GitState]
 	managedDef   *entdefine.Definition[sourceflow.ManagedSpec, sourceflow.ManagedState]
+	kindDef      *entdefine.Definition[kindflow.Spec, kindflow.State]
 
 	// varCache holds variable values for a moment — one submit resolves
 	// several names, and each is a record read.
@@ -135,7 +140,12 @@ func (s *Worker) SetRunStarter(fn RunStarter) { s.startRun = fn }
 
 // New builds and registers everything; Run starts polling.
 func New(deps Deps) (*Worker, error) {
-	w := worker.New(deps.Client, wire.ServerQueue, worker.Options{})
+	// Every activity of every system record is observable through ONE
+	// interceptor: dimensions 3, 4 and 5 must not depend on somebody
+	// remembering to instrument the next activity.
+	w := worker.New(deps.Client, wire.ServerQueue, worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{&obsx.Interceptor{}},
+	})
 	standTick := deps.StandTick
 	if standTick == 0 {
 		standTick = 30 * time.Second
@@ -157,6 +167,7 @@ func New(deps Deps) (*Worker, error) {
 		namespaceDef: nsflow.New(),
 		gitSourceDef: sourceflow.NewGit(),
 		managedDef:   sourceflow.NewManaged(),
+		kindDef:      kindflow.New(),
 		kinds:        buildKinds(),
 		varCache:     newValueCache(3 * time.Second),
 		secretWriter: deps.SecretWriter,
@@ -170,6 +181,7 @@ func New(deps Deps) (*Worker, error) {
 		s.varDef.Register(w), s.secretDef.Register(w),
 		s.namespaceDef.Register(w),
 		s.gitSourceDef.Register(w), s.managedDef.Register(w),
+		s.kindDef.Register(w),
 	); err != nil {
 		return nil, err
 	}
@@ -207,6 +219,9 @@ func New(deps Deps) (*Worker, error) {
 	// out file by file.
 	w.RegisterActivityWithOptions(s.fetchGitSource, activity.RegisterOptions{Name: sourceflow.FetchActivity})
 	w.RegisterActivityWithOptions(s.adoptManagedSource, activity.RegisterOptions{Name: sourceflow.AdoptActivity})
+	// The dictionary polices itself through these two.
+	w.RegisterActivityWithOptions(s.auditKind, activity.RegisterOptions{Name: kindflow.AuditActivity})
+	w.RegisterActivityWithOptions(s.retireKind, activity.RegisterOptions{Name: kindflow.RetireActivity})
 	// Deleting a record takes its bytes with it.
 	w.RegisterActivityWithOptions(s.sweepSource, activity.RegisterOptions{Name: sourceflow.SweepActivity})
 	w.RegisterActivityWithOptions(s.sweepRevision, activity.RegisterOptions{Name: revisionflow.SweepActivity})
@@ -253,13 +268,16 @@ func (s *Worker) resolveRevision(ctx context.Context, req pipelineflow.ResolveRe
 	return pipelineflow.Activation{Image: st.Image, Manifest: raw, Concurrency: m.GetConcurrency()}, nil
 }
 
-// reconcileTriggersAct is reconcileTriggers as the pipeline record
-// reaches it: triggers are records of their own, so making them match
-// is a side effect, not a decision.
+// reconcileTriggersAct lands a manifest's declarations as records:
+// its triggers, and its kinds into the dictionary — both are records
+// of their own, so making them match is a side effect, not a decision.
 func (s *Worker) reconcileTriggersAct(ctx context.Context, req pipelineflow.ReconcileReq) error {
 	var m manifestpb.Manifest
 	if err := protojson.Unmarshal(req.Manifest, &m); err != nil {
 		return fmt.Errorf("manifest: %w", err)
+	}
+	if err := s.reconcileKindRecords(ctx, req.PipelineId, m.GetKinds()); err != nil {
+		return err
 	}
 	return s.reconcileTriggers(ctx, req.PipelineId, m.GetTriggers())
 }
@@ -412,6 +430,9 @@ func (s *Worker) publishManifest(ctx context.Context, pipelineId string, raw jso
 	if err != nil {
 		return err
 	}
+	if err := s.reconcileKindRecords(ctx, pipelineId, m.GetKinds()); err != nil {
+		return err
+	}
 	return s.reconcileTriggers(ctx, pipelineId, m.GetTriggers())
 }
 
@@ -481,7 +502,8 @@ func (s *Worker) reconcileTriggers(ctx context.Context, pipelineId string, decla
 		if existing[rid] {
 			continue
 		}
-		if _, err := triggers.CreateOrAttach(ctx, rid, spec); err != nil {
+		if _, err := triggers.CreateOrAttach(ctx, rid, spec,
+			entclient.WithLabels(map[string]string{syslabels.Pipeline: pipelineId})); err != nil {
 			return fmt.Errorf("trigger %s: %w", rid, err)
 		}
 	}
@@ -553,7 +575,12 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 // or finished build instead of starting a second one.
 func (s *Worker) DeclareRevision(ctx context.Context, pipelineId, revisionId string, spec revisionflow.Spec) error {
 	revisions := entclient.Bind(s.revisionDef, s.deps.Client, wire.ServerQueue)
-	_, err := revisions.CreateOrAttach(ctx, revisionflow.Id(pipelineId, revisionId), spec)
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	_, err = revisions.CreateOrAttach(ctx, revisionflow.Id(pipelineId, revisionId), spec,
+		entclient.WithLabels(s.marksFor(string(revisionflow.Kind), raw)))
 	return err
 }
 
@@ -836,8 +863,12 @@ func recordLabels(ctx context.Context, user map[string]string) (map[string]strin
 		out[k] = v
 	}
 	if activity.IsActivity(ctx) {
-		wfId := activity.GetInfo(ctx).WorkflowExecution.ID
-		out[wire.LabelRun] = strings.TrimPrefix(wfId, "run/")
+		info := activity.GetInfo(ctx)
+		out[wire.LabelRun] = strings.TrimPrefix(info.WorkflowExecution.ID, "run/")
+		// A run's workflow TYPE is its pipeline: a resource created by
+		// a run belongs to that project, and asking "what did this
+		// project leave behind" must not require walking two records.
+		out = syslabels.Merge(out, map[string]string{syslabels.Pipeline: info.WorkflowType.Name})
 	}
 	return out, nil
 }
@@ -889,6 +920,15 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		return err
 	}
 	if toStand {
+		// The resource remembers WHERE it is parked. The owner edge
+		// already says it, but an owner changes again on release and
+		// the marker is what a listing filters by — "what is standing
+		// on this stand" must be one query, not a tree walk.
+		if err := entclient.SetLabelsRaw(ctx, s.deps.Client, string(req.Resource),
+			map[string]string{syslabels.Stand: standId}); err != nil {
+			s.deps.Log.Warn("stand marker not set",
+				xlog.String("resource", string(req.Resource)), xlog.Err(err))
+		}
 		// The stand LIVES the handover: its own timer enforces the
 		// keep, its history records it.
 		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
@@ -896,7 +936,8 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		// what stands beside it is its child.
 		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
 			standflow.Spec{PipelineId: standId},
-			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From})
+			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From},
+			entclient.WithLabels(map[string]string{syslabels.Pipeline: standId}))
 		return err
 	}
 	return nil

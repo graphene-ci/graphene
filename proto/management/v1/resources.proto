@@ -42,11 +42,6 @@ service ResourcesAPI {
   // Apply declares a record of ANY kind: the one door creation goes
   // through, so a new kind never needs an API of its own.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
-  // Kinds answers what this installation can declare and command, with
-  // the schema of every spec and payload — what a CLI validates
-  // against and a UI builds forms from, instead of hard-coding a
-  // vocabulary it should be discovering.
-  rpc Kinds(KindsRequest) returns (KindsResponse);
 }
 
 // Selector picks resources: every set field must match.
@@ -195,25 +190,4 @@ message ApplyRequest {
 message ApplyResponse {
   // Ref is the record's address ("workspace/delivery").
   string ref = 1;
-}
-
-message KindsRequest {}
-
-message KindsResponse {
-  message Command {
-    string name = 1;
-    // PayloadSchema is a schemapb schema as protojson; empty when the
-    // command takes nothing.
-    bytes payload_schema = 2;
-  }
-  message Kind {
-    string name = 1;
-    // Declarable says whether Apply may create this kind directly.
-    bool declarable = 2;
-    // SpecSchema is a schemapb schema as protojson.
-    bytes spec_schema = 3;
-    repeated Command commands = 4;
-    string description = 5;
-  }
-  repeated Kind kinds = 1;
 }

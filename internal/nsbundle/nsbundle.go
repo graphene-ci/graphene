@@ -234,6 +234,14 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 			log.Error("namespace worker died", xlog.Err(err))
 		}
 	}()
+	// The namespace's dictionary: every kind the server serves gets its
+	// record. Async — the worker must be polling before the entries'
+	// workflows can run.
+	go func() {
+		if err := w.DeclareSystemKinds(ctx); err != nil && ctx.Err() == nil {
+			log.Error("kind dictionary bootstrap failed", xlog.Err(err))
+		}
+	}()
 	// Stand TTLs are the stands' OWN timers now — no sweeper loop.
 	go runner.Tick(ctx, m.deps.ReapEvery)
 	// Machine executors live while their records do; this collects them
