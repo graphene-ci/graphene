@@ -68,7 +68,6 @@ type Door struct {
 	Resources  managementv1connect.ResourcesAPIClient
 	Observe    managementv1connect.ObserveAPIClient
 	Secrets    managementv1connect.SecretsAPIClient
-	Vars       managementv1connect.VarsAPIClient
 	Revisions  managementv1connect.RevisionsAPIClient
 	Workspaces managementv1connect.WorkspacesAPIClient
 	Rbac       managementv1connect.RbacAPIClient
@@ -101,7 +100,6 @@ func DialContext(cc cliconfig.Context) (*Door, error) {
 		Resources:  managementv1connect.NewResourcesAPIClient(client, base, auth),
 		Observe:    managementv1connect.NewObserveAPIClient(client, base, auth),
 		Secrets:    managementv1connect.NewSecretsAPIClient(client, base, auth),
-		Vars:       managementv1connect.NewVarsAPIClient(client, base, auth),
 		Revisions:  managementv1connect.NewRevisionsAPIClient(client, base, auth),
 		Workspaces: managementv1connect.NewWorkspacesAPIClient(client, base, auth),
 		Rbac:       managementv1connect.NewRbacAPIClient(client, base, auth),

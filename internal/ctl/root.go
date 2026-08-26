@@ -73,7 +73,7 @@ binary itself, over the same connection contexts.`,
 		lifecyclecmd.NewInvoke(f),
 	)
 	add("runs", runcmd.New(f))
-	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), misccmd.NewVar(f), revisioncmd.New(f), workspacecmd.New(f),
+	add("installation", misccmd.NewPipeline(f), misccmd.NewSecret(f), revisioncmd.New(f), workspacecmd.New(f),
 		rbaccmd.NewRole(f), rbaccmd.NewBinding(f), rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f), misccmd.NewNs(f))
 
 	initCmd := &cobra.Command{

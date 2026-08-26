@@ -22,6 +22,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	"github.com/graphene-ci/graphene/internal/standflow"
 	"github.com/graphene-ci/graphene/internal/triggerflow"
+	"github.com/graphene-ci/graphene/internal/valueflow"
 	"github.com/graphene-ci/graphene/internal/workspaceflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
@@ -147,6 +148,15 @@ func buildKinds() map[string]*kindEntry {
 		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
 		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
 		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))
+
+	add("var", "visible configuration a pipeline's params may reference", true,
+		reflect.TypeFor[valueflow.VarSpec](),
+		cmd("set", reflect.TypeFor[valueflow.SetVarCmd]()))
+
+	// A secret's VALUE never rides a command — `secret set` is its one
+	// channel — so the record declares only that the name exists.
+	add("secret", "a name whose value lives sealed beside it", true,
+		reflect.TypeFor[valueflow.SecretSpec]())
 
 	add("revision", "one immutable build of a source tree", true,
 		reflect.TypeFor[revisionflow.Spec]())

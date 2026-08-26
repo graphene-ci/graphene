@@ -39,7 +39,6 @@ type Deps struct {
 	TemporalLogger   log.Logger
 	Registry         *agents.Registry
 	Secrets          *secrets.Namespaced
-	Vars             *secrets.Namespaced
 	// Materializer builds source revisions; nil disables the
 	// source-first contour.
 	Materializer *materialize.Materializer
@@ -149,6 +148,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		Materializer: m.deps.Materializer,
 		Blobs:        m.deps.Blobs,
 		Secrets:      m.deps.Secrets.In(namespace),
+		SecretWriter: m.deps.Secrets,
 		Log:          log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {
@@ -158,10 +158,13 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
 		m.deps.LogSink, log.With(xlog.String("component", "managed")))
 
+	// Variables ARE records now: the door reads them the way it reads
+	// everything else, through the namespace's own worker.
 	b := &Bundle{
 		Namespace: namespace, Client: c, Worker: w, Runner: runner,
 		MintRunToken: m.deps.MintRunToken,
-		Secrets:      m.deps.Secrets.In(namespace), Vars: m.deps.Vars.In(namespace),
+		Secrets:      m.deps.Secrets.In(namespace),
+		Vars:         w.VarStore(),
 	}
 	if m.deps.MakeRunStarter != nil {
 		// Trigger-driven starts go through the same door logic as the

@@ -19,22 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SecretsAPI_SetSecret_FullMethodName    = "/graphene.management.v1.SecretsAPI/SetSecret"
-	SecretsAPI_DeleteSecret_FullMethodName = "/graphene.management.v1.SecretsAPI/DeleteSecret"
-	SecretsAPI_ListSecrets_FullMethodName  = "/graphene.management.v1.SecretsAPI/ListSecrets"
+	SecretsAPI_SetSecret_FullMethodName = "/graphene.management.v1.SecretsAPI/SetSecret"
 )
 
 // SecretsAPIClient is the client API for SecretsAPI service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SecretsAPI administers the namespace's secret set. VALUES go in and
-// never come out through this plane: workers resolve them at the point
-// of use through the worker plane; the management plane sees names.
+// SecretsAPI is the one channel a secret VALUE travels: in, once, and
+// never back. Everything else about a secret — that the name exists,
+// who owns it, when it was last rotated, deleting it — is the ordinary
+// record of kind "secret", read and written through ResourcesAPI. The
+// value cannot ride a record's command: a command payload becomes a
+// history event, and a history is forever.
 type SecretsAPIClient interface {
 	SetSecret(ctx context.Context, in *SetSecretRequest, opts ...grpc.CallOption) (*SetSecretResponse, error)
-	DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*DeleteSecretResponse, error)
-	ListSecrets(ctx context.Context, in *ListSecretsRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error)
 }
 
 type secretsAPIClient struct {
@@ -55,37 +54,18 @@ func (c *secretsAPIClient) SetSecret(ctx context.Context, in *SetSecretRequest, 
 	return out, nil
 }
 
-func (c *secretsAPIClient) DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*DeleteSecretResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteSecretResponse)
-	err := c.cc.Invoke(ctx, SecretsAPI_DeleteSecret_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *secretsAPIClient) ListSecrets(ctx context.Context, in *ListSecretsRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListSecretsResponse)
-	err := c.cc.Invoke(ctx, SecretsAPI_ListSecrets_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // SecretsAPIServer is the server API for SecretsAPI service.
 // All implementations must embed UnimplementedSecretsAPIServer
 // for forward compatibility.
 //
-// SecretsAPI administers the namespace's secret set. VALUES go in and
-// never come out through this plane: workers resolve them at the point
-// of use through the worker plane; the management plane sees names.
+// SecretsAPI is the one channel a secret VALUE travels: in, once, and
+// never back. Everything else about a secret — that the name exists,
+// who owns it, when it was last rotated, deleting it — is the ordinary
+// record of kind "secret", read and written through ResourcesAPI. The
+// value cannot ride a record's command: a command payload becomes a
+// history event, and a history is forever.
 type SecretsAPIServer interface {
 	SetSecret(context.Context, *SetSecretRequest) (*SetSecretResponse, error)
-	DeleteSecret(context.Context, *DeleteSecretRequest) (*DeleteSecretResponse, error)
-	ListSecrets(context.Context, *ListSecretsRequest) (*ListSecretsResponse, error)
 	mustEmbedUnimplementedSecretsAPIServer()
 }
 
@@ -98,12 +78,6 @@ type UnimplementedSecretsAPIServer struct{}
 
 func (UnimplementedSecretsAPIServer) SetSecret(context.Context, *SetSecretRequest) (*SetSecretResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetSecret not implemented")
-}
-func (UnimplementedSecretsAPIServer) DeleteSecret(context.Context, *DeleteSecretRequest) (*DeleteSecretResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteSecret not implemented")
-}
-func (UnimplementedSecretsAPIServer) ListSecrets(context.Context, *ListSecretsRequest) (*ListSecretsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListSecrets not implemented")
 }
 func (UnimplementedSecretsAPIServer) mustEmbedUnimplementedSecretsAPIServer() {}
 func (UnimplementedSecretsAPIServer) testEmbeddedByValue()                    {}
@@ -144,42 +118,6 @@ func _SecretsAPI_SetSecret_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SecretsAPI_DeleteSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteSecretRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SecretsAPIServer).DeleteSecret(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SecretsAPI_DeleteSecret_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SecretsAPIServer).DeleteSecret(ctx, req.(*DeleteSecretRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SecretsAPI_ListSecrets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListSecretsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SecretsAPIServer).ListSecrets(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SecretsAPI_ListSecrets_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SecretsAPIServer).ListSecrets(ctx, req.(*ListSecretsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // SecretsAPI_ServiceDesc is the grpc.ServiceDesc for SecretsAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,14 +128,6 @@ var SecretsAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetSecret",
 			Handler:    _SecretsAPI_SetSecret_Handler,
-		},
-		{
-			MethodName: "DeleteSecret",
-			Handler:    _SecretsAPI_DeleteSecret_Handler,
-		},
-		{
-			MethodName: "ListSecrets",
-			Handler:    _SecretsAPI_ListSecrets_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

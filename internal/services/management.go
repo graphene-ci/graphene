@@ -51,7 +51,6 @@ type Management struct {
 	// Base is a namespace-agnostic client for cluster admin calls.
 	Base    client.Client
 	Secrets *secrets.Namespaced
-	Vars    *secrets.Namespaced
 	// Materializer serves the source-first contour; nil disables it.
 	Materializer *materialize.Materializer
 	// Blobs reads revision manifests.
@@ -683,91 +682,26 @@ func (m *Management) ListNamespaces(ctx context.Context, _ *connect.Request[mana
 
 // --- SecretsAPI (management) ---
 
-// SetSecret stores a value; it never comes back through this plane.
+// SetSecret writes a VALUE into the sealed store and records the
+// rotation on the secret's record. The value stops here; everything
+// readable about the name lives in the record.
 func (m *Management) SetSecret(ctx context.Context, creq *connect.Request[managementv1.SetSecretRequest]) (*connect.Response[managementv1.SetSecretResponse], error) {
 	req := creq.Msg
 	b, err := m.allow(ctx, authz.VerbCreate, authz.KindSecret)
 	if err != nil {
 		return nil, err
 	}
-	namespace := b.Namespace
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "name is required")
 	}
-	m.Secrets.Set(namespace, req.GetName(), req.GetValue())
-	return connect.NewResponse(&managementv1.SetSecretResponse{}), nil
-}
-
-// DeleteSecret forgets a name.
-func (m *Management) DeleteSecret(ctx context.Context, creq *connect.Request[managementv1.DeleteSecretRequest]) (*connect.Response[managementv1.DeleteSecretResponse], error) {
-	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbDelete, authz.KindSecret)
+	if err := b.Worker.SetSecretValue(ctx, req.GetName(), req.GetValue()); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	_, _, st, err := b.Worker.DescribeSecret(ctx, req.GetName())
 	if err != nil {
-		return nil, err
+		return connect.NewResponse(&managementv1.SetSecretResponse{}), nil
 	}
-	namespace := b.Namespace
-	m.Secrets.Delete(namespace, req.GetName())
-	return connect.NewResponse(&managementv1.DeleteSecretResponse{}), nil
-}
-
-// ListSecrets lists names — never values.
-func (m *Management) ListSecrets(ctx context.Context, _ *connect.Request[managementv1.ListSecretsRequest]) (*connect.Response[managementv1.ListSecretsResponse], error) {
-	b, err := m.allow(ctx, authz.VerbList, authz.KindSecret)
-	if err != nil {
-		return nil, err
-	}
-	namespace := b.Namespace
-	return connect.NewResponse(&managementv1.ListSecretsResponse{Names: m.Secrets.List(namespace)}), nil
-}
-
-// --- VarsAPI (management) ---
-
-// SetVar stores a variable — the visible sibling of a secret.
-func (m *Management) SetVar(ctx context.Context, creq *connect.Request[managementv1.SetVarRequest]) (*connect.Response[managementv1.SetVarResponse], error) {
-	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbCreate, authz.KindVar)
-	if err != nil {
-		return nil, err
-	}
-	namespace := b.Namespace
-	if req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "name is required")
-	}
-	m.Vars.Set(namespace, req.GetName(), req.GetValue())
-	return connect.NewResponse(&managementv1.SetVarResponse{}), nil
-}
-
-// DeleteVar forgets a name.
-func (m *Management) DeleteVar(ctx context.Context, creq *connect.Request[managementv1.DeleteVarRequest]) (*connect.Response[managementv1.DeleteVarResponse], error) {
-	req := creq.Msg
-	b, err := m.allow(ctx, authz.VerbDelete, authz.KindVar)
-	if err != nil {
-		return nil, err
-	}
-	namespace := b.Namespace
-	m.Vars.Delete(namespace, req.GetName())
-	return connect.NewResponse(&managementv1.DeleteVarResponse{}), nil
-}
-
-// ListVars returns names AND values — that is the plane's difference
-// from secrets.
-func (m *Management) ListVars(ctx context.Context, _ *connect.Request[managementv1.ListVarsRequest]) (*connect.Response[managementv1.ListVarsResponse], error) {
-	b, err := m.allow(ctx, authz.VerbList, authz.KindVar)
-	if err != nil {
-		return nil, err
-	}
-	namespace := b.Namespace
-	items := m.Vars.Items(namespace)
-	names := make([]string, 0, len(items))
-	for name := range items {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := make([]*managementv1.ListVarsResponse_Var, 0, len(names))
-	for _, name := range names {
-		out = append(out, &managementv1.ListVarsResponse_Var{Name: name, Value: items[name]})
-	}
-	return connect.NewResponse(&managementv1.ListVarsResponse{Vars: out}), nil
+	return connect.NewResponse(&managementv1.SetSecretResponse{Version: int32(st.Version)}), nil
 }
 
 // --- helpers ---

@@ -35,17 +35,11 @@ const (
 const (
 	// SecretsAPISetSecretProcedure is the fully-qualified name of the SecretsAPI's SetSecret RPC.
 	SecretsAPISetSecretProcedure = "/graphene.management.v1.SecretsAPI/SetSecret"
-	// SecretsAPIDeleteSecretProcedure is the fully-qualified name of the SecretsAPI's DeleteSecret RPC.
-	SecretsAPIDeleteSecretProcedure = "/graphene.management.v1.SecretsAPI/DeleteSecret"
-	// SecretsAPIListSecretsProcedure is the fully-qualified name of the SecretsAPI's ListSecrets RPC.
-	SecretsAPIListSecretsProcedure = "/graphene.management.v1.SecretsAPI/ListSecrets"
 )
 
 // SecretsAPIClient is a client for the graphene.management.v1.SecretsAPI service.
 type SecretsAPIClient interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
-	DeleteSecret(context.Context, *connect.Request[v1.DeleteSecretRequest]) (*connect.Response[v1.DeleteSecretResponse], error)
-	ListSecrets(context.Context, *connect.Request[v1.ListSecretsRequest]) (*connect.Response[v1.ListSecretsResponse], error)
 }
 
 // NewSecretsAPIClient constructs a client for the graphene.management.v1.SecretsAPI service. By
@@ -65,26 +59,12 @@ func NewSecretsAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(secretsAPIMethods.ByName("SetSecret")),
 			connect.WithClientOptions(opts...),
 		),
-		deleteSecret: connect.NewClient[v1.DeleteSecretRequest, v1.DeleteSecretResponse](
-			httpClient,
-			baseURL+SecretsAPIDeleteSecretProcedure,
-			connect.WithSchema(secretsAPIMethods.ByName("DeleteSecret")),
-			connect.WithClientOptions(opts...),
-		),
-		listSecrets: connect.NewClient[v1.ListSecretsRequest, v1.ListSecretsResponse](
-			httpClient,
-			baseURL+SecretsAPIListSecretsProcedure,
-			connect.WithSchema(secretsAPIMethods.ByName("ListSecrets")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // secretsAPIClient implements SecretsAPIClient.
 type secretsAPIClient struct {
-	setSecret    *connect.Client[v1.SetSecretRequest, v1.SetSecretResponse]
-	deleteSecret *connect.Client[v1.DeleteSecretRequest, v1.DeleteSecretResponse]
-	listSecrets  *connect.Client[v1.ListSecretsRequest, v1.ListSecretsResponse]
+	setSecret *connect.Client[v1.SetSecretRequest, v1.SetSecretResponse]
 }
 
 // SetSecret calls graphene.management.v1.SecretsAPI.SetSecret.
@@ -92,21 +72,9 @@ func (c *secretsAPIClient) SetSecret(ctx context.Context, req *connect.Request[v
 	return c.setSecret.CallUnary(ctx, req)
 }
 
-// DeleteSecret calls graphene.management.v1.SecretsAPI.DeleteSecret.
-func (c *secretsAPIClient) DeleteSecret(ctx context.Context, req *connect.Request[v1.DeleteSecretRequest]) (*connect.Response[v1.DeleteSecretResponse], error) {
-	return c.deleteSecret.CallUnary(ctx, req)
-}
-
-// ListSecrets calls graphene.management.v1.SecretsAPI.ListSecrets.
-func (c *secretsAPIClient) ListSecrets(ctx context.Context, req *connect.Request[v1.ListSecretsRequest]) (*connect.Response[v1.ListSecretsResponse], error) {
-	return c.listSecrets.CallUnary(ctx, req)
-}
-
 // SecretsAPIHandler is an implementation of the graphene.management.v1.SecretsAPI service.
 type SecretsAPIHandler interface {
 	SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error)
-	DeleteSecret(context.Context, *connect.Request[v1.DeleteSecretRequest]) (*connect.Response[v1.DeleteSecretResponse], error)
-	ListSecrets(context.Context, *connect.Request[v1.ListSecretsRequest]) (*connect.Response[v1.ListSecretsResponse], error)
 }
 
 // NewSecretsAPIHandler builds an HTTP handler from the service implementation. It returns the path
@@ -122,26 +90,10 @@ func NewSecretsAPIHandler(svc SecretsAPIHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(secretsAPIMethods.ByName("SetSecret")),
 		connect.WithHandlerOptions(opts...),
 	)
-	secretsAPIDeleteSecretHandler := connect.NewUnaryHandler(
-		SecretsAPIDeleteSecretProcedure,
-		svc.DeleteSecret,
-		connect.WithSchema(secretsAPIMethods.ByName("DeleteSecret")),
-		connect.WithHandlerOptions(opts...),
-	)
-	secretsAPIListSecretsHandler := connect.NewUnaryHandler(
-		SecretsAPIListSecretsProcedure,
-		svc.ListSecrets,
-		connect.WithSchema(secretsAPIMethods.ByName("ListSecrets")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/graphene.management.v1.SecretsAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SecretsAPISetSecretProcedure:
 			secretsAPISetSecretHandler.ServeHTTP(w, r)
-		case SecretsAPIDeleteSecretProcedure:
-			secretsAPIDeleteSecretHandler.ServeHTTP(w, r)
-		case SecretsAPIListSecretsProcedure:
-			secretsAPIListSecretsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -153,12 +105,4 @@ type UnimplementedSecretsAPIHandler struct{}
 
 func (UnimplementedSecretsAPIHandler) SetSecret(context.Context, *connect.Request[v1.SetSecretRequest]) (*connect.Response[v1.SetSecretResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SecretsAPI.SetSecret is not implemented"))
-}
-
-func (UnimplementedSecretsAPIHandler) DeleteSecret(context.Context, *connect.Request[v1.DeleteSecretRequest]) (*connect.Response[v1.DeleteSecretResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SecretsAPI.DeleteSecret is not implemented"))
-}
-
-func (UnimplementedSecretsAPIHandler) ListSecrets(context.Context, *connect.Request[v1.ListSecretsRequest]) (*connect.Response[v1.ListSecretsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SecretsAPI.ListSecrets is not implemented"))
 }
