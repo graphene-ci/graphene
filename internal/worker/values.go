@@ -188,6 +188,16 @@ func (s *Worker) DeclareNamespace(ctx context.Context, name string, spec nsflow.
 	return err
 }
 
+// NamespaceKnown answers whether a namespace record EXISTS at all —
+// in any phase, deleted included. Adoption asks this: a namespace the
+// installation once declared and then retired must not come back on
+// the next restart.
+func (s *Worker) NamespaceKnown(ctx context.Context, name string) bool {
+	namespaces := entclient.Bind(s.namespaceDef, s.deps.Client, wire.ServerQueue)
+	_, err := namespaces.Describe(ctx, entity.ResourceID(name))
+	return err == nil
+}
+
 // NamespaceDeclared answers whether a namespace still has its record —
 // what the bundle manager asks before serving one.
 func (s *Worker) NamespaceDeclared(ctx context.Context, name string) (bool, error) {
