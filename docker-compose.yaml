@@ -106,8 +106,7 @@ services:
   # answers a STANDARD query surface: PromQL, LogsQL, the Jaeger API.
   victoriametrics:
     image: victoriametrics/victoria-metrics:latest
-    command: ["-retentionPeriod=90d"]
-    command: ["--storageDataPath=/storage"]
+    command: ["--storageDataPath=/storage", "-retentionPeriod=90d"]
     volumes:
       - vm-data:/storage
     ports:
@@ -116,8 +115,7 @@ services:
 
   victorialogs:
     image: victoriametrics/victoria-logs:latest
-    command: ["-retentionPeriod=30d"]
-    command: ["--storageDataPath=/storage"]
+    command: ["--storageDataPath=/storage", "-retentionPeriod=30d"]
     volumes:
       - vl-data:/storage
     ports:
@@ -126,8 +124,7 @@ services:
 
   victoriatraces:
     image: victoriametrics/victoria-traces:latest
-    command: ["-retentionPeriod=14d"]
-    command: ["--storageDataPath=/storage"]
+    command: ["--storageDataPath=/storage", "-retentionPeriod=14d"]
     volumes:
       - vt-data:/storage
     ports:
