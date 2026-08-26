@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// An edit must never escape the workspace, and a tree must survive a
+// An edit must never escape the pipeline, and a tree must survive a
 // pack/unpack round trip byte for byte.
 func TestCleanPath(t *testing.T) {
 	for _, p := range []string{"", ".", "/", "/etc/passwd", "../secrets", "a/../../b"} {

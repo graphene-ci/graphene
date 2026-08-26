@@ -57,7 +57,6 @@ type Kind string
 // KindResource — a role grants them as one group, because their names
 // are the user's own vocabulary, not ours.
 const (
-	KindWorkspace      Kind = "workspace"
 	KindPipeline       Kind = "pipeline"
 	KindRevision       Kind = "revision"
 	KindRun            Kind = "run"
@@ -82,7 +81,7 @@ const (
 var AllKinds = []Kind{
 	KindAgent, KindArtifact, KindNamespace, KindPipeline, KindResource,
 	KindRevision, KindRole, KindRoleBinding, KindRun, KindSecret,
-	KindServiceAccount, KindStand, KindTrigger, KindVar, KindWorkspace,
+	KindServiceAccount, KindStand, KindTrigger, KindVar,
 }
 
 // KindOf maps a record reference ("k8s.../vm-1", "pipeline/x") to the
@@ -193,7 +192,7 @@ var (
 	RoleDeveloper = Rules{
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbBuild, VerbRun, VerbActivate, VerbInvoke, VerbTransfer, VerbDelete},
-			Kinds: []Kind{KindWorkspace, KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource},
+			Kinds: []Kind{KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource},
 		},
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch},
@@ -222,7 +221,7 @@ var (
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbDelete, VerbTransfer, VerbInvoke},
 			Kinds: []Kind{KindResource, KindArtifact, KindAgent, KindStand},
 		},
-		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision, KindWorkspace}},
+		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision}},
 	}
 )
 

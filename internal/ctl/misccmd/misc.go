@@ -12,6 +12,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
 	"github.com/graphene-ci/graphene/internal/ctl/runcmd"
+	"github.com/graphene-ci/graphene/internal/ctl/sourcecmd"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -19,7 +20,7 @@ import (
 func NewPipeline(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipeline",
-		Short: "The pipeline record: show",
+		Short: "The project: its source, its working tree, its active version",
 	}
 	show := &cobra.Command{
 		Use:   "show <pipeline-id>",
@@ -51,6 +52,7 @@ func NewPipeline(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmd.AddCommand(show)
+	sourcecmd.Attach(f, cmd)
 	return cmd
 }
 

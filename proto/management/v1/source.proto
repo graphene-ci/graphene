@@ -4,28 +4,25 @@ package graphene.management.v1;
 
 option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
 
-// WorkspacesAPI administers WORKSPACES: a project's working area and
-// the root of its life. A workspace has one source — a Git checkout or
-// an uploaded tree — a runtime, a working tree kept on the server, and
-// at most one pipeline. Listing, reading and deleting go through the
-// ordinary ResourcesAPI: a workspace is a record like any other.
-// A workspace is a RECORD: declared with Apply, changed with Invoke,
-// read with Get. What stays here is what a command cannot carry —
-// bytes, and questions about the installation rather than a record.
-service WorkspacesAPI {
+// SourceAPI is the pipeline's SOURCE side: the bytes of a project's
+// working tree. The pipeline itself is an ordinary record — declared
+// with Apply, changed with Invoke, read with Get — so what stays here
+// is only what a command cannot carry: bytes, and questions about the
+// installation rather than about a record.
+service SourceAPI {
   // UploadSource stores a source tree and returns its reference. Bytes
   // do not travel in commands: a command's payload becomes an event in
   // the record's history, and a source tree would bury it.
   rpc UploadSource(UploadSourceRequest) returns (UploadSourceResponse);
-  // DownloadSource hands back the workspace's current working tree.
+  // DownloadSource hands back the pipeline's current working tree.
   rpc DownloadSource(DownloadSourceRequest) returns (stream DownloadSourceChunk);
   // ListRuntimes answers "which languages can I write a pipeline in
   // on THIS installation".
   rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
 
   // The working tree is EDITABLE: Studio reads and writes files
-  // straight into the workspace, and every write is durable — that is
-  // the whole point of the tree living on the server.
+  // straight into the pipeline's tree, and every write is durable —
+  // that is the whole point of the tree living on the server.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
   rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
@@ -33,7 +30,7 @@ service WorkspacesAPI {
 }
 
 message UploadSourceRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
   // The tree as tar.gz.
   bytes source = 2;
 }
@@ -46,7 +43,7 @@ message UploadSourceResponse {
 }
 
 message DownloadSourceRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
 }
 
 message DownloadSourceChunk {
@@ -66,7 +63,7 @@ message ListRuntimesResponse {
 }
 
 message ListFilesRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
 }
 
 message ListFilesResponse {
@@ -79,7 +76,7 @@ message ListFilesResponse {
 }
 
 message ReadFileRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
   string path = 2;
 }
 
@@ -88,7 +85,7 @@ message ReadFileResponse {
 }
 
 message WriteFileRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
   string path = 2;
   bytes content = 3;
 }
@@ -99,6 +96,6 @@ message WriteFileResponse {
 }
 
 message DeleteFileRequest {
-  string workspace_id = 1;
+  string pipeline_id = 1;
   string path = 2;
 }

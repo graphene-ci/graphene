@@ -63,15 +63,15 @@ func (f *Factory) Resolve() (cliconfig.Context, error) {
 // Door is one resolved connection: the connect clients over the single
 // port, authenticated by the context's token.
 type Door struct {
-	CC         cliconfig.Context
-	Runs       managementv1connect.RunsAPIClient
-	Resources  managementv1connect.ResourcesAPIClient
-	Observe    managementv1connect.ObserveAPIClient
-	Secrets    managementv1connect.SecretsAPIClient
-	Revisions  managementv1connect.RevisionsAPIClient
-	Workspaces managementv1connect.WorkspacesAPIClient
-	Rbac       managementv1connect.RbacAPIClient
-	Ns         managementv1connect.NamespacesAPIClient
+	CC        cliconfig.Context
+	Runs      managementv1connect.RunsAPIClient
+	Resources managementv1connect.ResourcesAPIClient
+	Observe   managementv1connect.ObserveAPIClient
+	Secrets   managementv1connect.SecretsAPIClient
+	Revisions managementv1connect.RevisionsAPIClient
+	Source    managementv1connect.SourceAPIClient
+	Rbac      managementv1connect.RbacAPIClient
+	Ns        managementv1connect.NamespacesAPIClient
 }
 
 // Dial resolves and connects.
@@ -95,15 +95,15 @@ func DialContext(cc cliconfig.Context) (*Door, error) {
 	base := scheme + "://" + cc.Server
 	auth := connect.WithInterceptors(authInterceptor{cc: cc})
 	return &Door{
-		CC:         cc,
-		Runs:       managementv1connect.NewRunsAPIClient(client, base, auth),
-		Resources:  managementv1connect.NewResourcesAPIClient(client, base, auth),
-		Observe:    managementv1connect.NewObserveAPIClient(client, base, auth),
-		Secrets:    managementv1connect.NewSecretsAPIClient(client, base, auth),
-		Revisions:  managementv1connect.NewRevisionsAPIClient(client, base, auth),
-		Workspaces: managementv1connect.NewWorkspacesAPIClient(client, base, auth),
-		Rbac:       managementv1connect.NewRbacAPIClient(client, base, auth),
-		Ns:         managementv1connect.NewNamespacesAPIClient(client, base, auth),
+		CC:        cc,
+		Runs:      managementv1connect.NewRunsAPIClient(client, base, auth),
+		Resources: managementv1connect.NewResourcesAPIClient(client, base, auth),
+		Observe:   managementv1connect.NewObserveAPIClient(client, base, auth),
+		Secrets:   managementv1connect.NewSecretsAPIClient(client, base, auth),
+		Revisions: managementv1connect.NewRevisionsAPIClient(client, base, auth),
+		Source:    managementv1connect.NewSourceAPIClient(client, base, auth),
+		Rbac:      managementv1connect.NewRbacAPIClient(client, base, auth),
+		Ns:        managementv1connect.NewNamespacesAPIClient(client, base, auth),
 	}, nil
 }
 

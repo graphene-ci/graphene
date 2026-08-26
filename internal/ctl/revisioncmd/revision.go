@@ -32,24 +32,16 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Source revisions: materialize, list, run, activate",
 	}
 
-	var srcPath, workspaceId string
+	var srcPath string
 	mat := &cobra.Command{
 		Use:   "materialize <pipeline>",
 		Short: "Build a source tree into a revision on the server",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pipelineId := ""
-			if len(args) > 0 {
-				pipelineId = args[0]
-			}
-			// A workspace builds ITS OWN tree: nothing is uploaded.
-			if workspaceId != "" {
-				return materializeStream(cmd, f, &managementv1.MaterializeRequest{
-					PipelineId: pipelineId, WorkspaceId: workspaceId,
-				})
-			}
-			if pipelineId == "" {
-				return fmt.Errorf("name a pipeline, or build a workspace with --workspace")
+			// With no --source the PIPELINE's own working tree is built:
+			// nothing is uploaded, the tree already lives on the server.
+			if !cmd.Flags().Changed("source") {
+				return materializeStream(cmd, f, &managementv1.MaterializeRequest{PipelineId: args[0]})
 			}
 			src, err := PackSource(srcPath)
 			if err != nil {
@@ -57,12 +49,11 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			}
 			fmt.Fprintf(os.Stderr, "uploading %s (%d KB)\n", srcPath, len(src)/1024)
 			return materializeStream(cmd, f, &managementv1.MaterializeRequest{
-				PipelineId: pipelineId, Source: src,
+				PipelineId: args[0], Source: src,
 			})
 		},
 	}
-	mat.Flags().StringVarP(&srcPath, "source", "f", ".", "source directory or .tgz file")
-	mat.Flags().StringVarP(&workspaceId, "workspace", "w", "", "build THIS workspace's current tree")
+	mat.Flags().StringVarP(&srcPath, "source", "f", ".", "upload THIS directory instead of the pipeline's own tree")
 
 	list := &cobra.Command{
 		Use:   "list <pipeline>",
@@ -142,7 +133,6 @@ func New(f *cmdutil.Factory) *cobra.Command {
 	run.Flags().StringVarP(&params, "params", "p", "", "params as raw JSON")
 	run.Flags().StringVar(&runId, "run-id", "", "run id (default: generated draft id)")
 
-	var activateWorkspace string
 	activate := &cobra.Command{
 		Use:   "activate <pipeline> <revision>",
 		Short: "Make one revision the version automatic starts use",
@@ -157,7 +147,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			// nothing more: what that revision built is the record's to
 			// read, not the client's to carry.
 			payload, err := json.Marshal(map[string]any{
-				"revisionId": args[1], "workspaceId": activateWorkspace,
+				"revisionId": args[1],
 			})
 			if err != nil {
 				return err
@@ -171,8 +161,6 @@ func New(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-
-	activate.Flags().StringVarP(&activateWorkspace, "workspace", "w", "", "record that THIS workspace publishes the pipeline")
 
 	cmd.AddCommand(mat, list, run, activate)
 	return cmd

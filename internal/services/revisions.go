@@ -48,40 +48,17 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		return err
 	}
 	pipelineId := req.GetPipelineId()
+	if pipelineId == "" {
+		return status.Error(codes.InvalidArgument, "pipeline_id is required")
+	}
 	sourceLocation, digest, runtimeName := "", "", ""
-	workspaceId := req.GetWorkspaceId()
 
 	switch {
-	case workspaceId != "":
-		// Building a WORKSPACE: its own working tree is the source and
-		// the pipeline is the one it publishes. Nothing is uploaded
-		// here — the tree already lives on the server.
-		_, spec, st, err := b.Worker.DescribeWorkspace(ctx, workspaceId)
-		if err != nil {
-			return status.Errorf(codes.NotFound, "workspace %s: %v", workspaceId, err)
-		}
-		if st.TreeLocation == "" {
-			return status.Errorf(codes.FailedPrecondition, "workspace %s has no working tree yet", workspaceId)
-		}
-		if pipelineId == "" {
-			pipelineId = st.PipelineRef
-			if pipelineId == "" {
-				pipelineId = spec.PipelineId
-			}
-		}
-		if pipelineId == "" {
-			return status.Error(codes.InvalidArgument, "workspace publishes no pipeline yet: name one with pipeline_id")
-		}
-		sourceLocation = st.TreeLocation
-		digest = strings.TrimPrefix(st.TreeDigest, "sha256:")
-		// The project's language is the workspace's, not the build's.
-		runtimeName = spec.Runtime
 	case len(req.GetSource()) > 0:
+		// A tree uploaded for THIS build — a developer's machine, or a
+		// client that keeps the source itself.
 		if len(req.GetSource()) > maxSourceBytes {
 			return status.Errorf(codes.InvalidArgument, "source must be a tar.gz up to %d bytes", maxSourceBytes)
-		}
-		if pipelineId == "" {
-			return status.Error(codes.InvalidArgument, "pipeline_id is required")
 		}
 		sum := sha256.Sum256(req.GetSource())
 		digest = hex.EncodeToString(sum[:])
@@ -90,7 +67,19 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 			return status.Errorf(codes.Internal, "store source: %v", err)
 		}
 	default:
-		return status.Error(codes.InvalidArgument, "materialize needs a workspace_id or a source tree")
+		// Building the PIPELINE's own working tree: nothing is uploaded
+		// here, the tree already lives on the server.
+		_, spec, st, err := b.Worker.DescribePipelineFull(ctx, pipelineId)
+		if err != nil {
+			return status.Errorf(codes.NotFound, "pipeline %s: %v", pipelineId, err)
+		}
+		if st.TreeLocation == "" {
+			return status.Errorf(codes.FailedPrecondition, "pipeline %s has no working tree yet: declare a source or upload one", pipelineId)
+		}
+		sourceLocation = st.TreeLocation
+		digest = strings.TrimPrefix(st.TreeDigest, "sha256:")
+		// The project's language is the pipeline's, not the build's.
+		runtimeName = spec.Runtime
 	}
 
 	// The revision id IS the source digest: the same tree declares the
