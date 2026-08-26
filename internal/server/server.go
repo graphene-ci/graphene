@@ -189,7 +189,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 			}
 			return token
 		},
-		UserDataFor: userDataBuilder(cfg),
+		UserDataFor: userDataBuilder(cfg, minter),
 		SweepEvery:  time.Duration(cfg.SweepSeconds) * time.Second,
 		ReapEvery:   time.Duration(cfg.ReapSeconds) * time.Second,
 		LogSink:     otlp.ForwardLogs,
@@ -463,7 +463,7 @@ func runTokenFor(cfg config.Config, namespace string) string {
 // script for both paths — a fresh VM's user-data and the ssh install —
 // because two scripts would drift. The install token is the agent token
 // from the config.
-func userDataBuilder(cfg config.Config) func(string, id.AgentId) (string, error) {
+func userDataBuilder(cfg config.Config, minter *auth.Minter) func(string, id.AgentId) (string, error) {
 	return func(namespace string, agentId id.AgentId) (string, error) {
 		token := ""
 		for _, t := range cfg.Tokens {
@@ -472,8 +472,21 @@ func userDataBuilder(cfg config.Config) func(string, id.AgentId) (string, error)
 				break
 			}
 		}
+		if token == "" && minter != nil {
+			// A dynamically named agent has no configured token — and
+			// used to retry forever. The server MINTS one instead:
+			// scoped to exactly this agent record (the same scope a
+			// configured token has), accepted by the same door. The TTL
+			// bounds a lost script, not the agent — a connected agent's
+			// session outlives it.
+			minted, err := minter.Mint(authz.Subject{Kind: authz.SubjectServiceAccount, Name: "agent/" + string(agentId)},
+				namespace, "agent", 30*24*time.Hour)
+			if err == nil {
+				token = minted
+			}
+		}
 		if token == "" {
-			return "", fmt.Errorf("no agent token configured for agent %q", agentId)
+			return "", fmt.Errorf("no agent token for %q and no signing key to mint one", agentId)
 		}
 		// The script converges: safe to run twice (ssh install after a
 		// user-data boot, a re-run after a failure).

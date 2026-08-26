@@ -22,15 +22,25 @@ type Selector struct {
 	// Attribute/Value is the ref's correlation pair.
 	Attribute string
 	Value     string
+	// AltAttribute names the SECOND axis of the same question, ORed
+	// with the first; empty means one axis is enough.
+	AltAttribute string
+	AltValue     string
 }
 
 // SelectorFor maps an entity ref to its correlation attribute.
 func SelectorFor(namespace, ref string) Selector {
 	s := Selector{Namespace: namespace, Attribute: "graphene.entity", Value: ref}
+	// A run's and an agent's OWN signals carry the context attributes
+	// (the emitter's identity); the operational signals ABOUT the same
+	// record carry the subject attribute. One question, two axes — the
+	// selector names both and the drivers OR them.
 	if id, ok := strings.CutPrefix(ref, "run/"); ok {
 		s.Attribute, s.Value = "graphene.run", id
+		s.AltAttribute, s.AltValue = "graphene.entity", ref
 	} else if id, ok := strings.CutPrefix(ref, "agent/"); ok {
 		s.Attribute, s.Value = "graphene.agent", id
+		s.AltAttribute, s.AltValue = "graphene.entity", ref
 	}
 	return s
 }

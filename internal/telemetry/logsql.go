@@ -26,8 +26,11 @@ type LogsQL struct {
 // Query returns records matching the selector since the given time,
 // oldest first.
 func (l *LogsQL) Query(ctx context.Context, sel Selector, since time.Time, limit int) ([]LogRecord, error) {
-	query := fmt.Sprintf("%q:=%q AND %q:=%q",
-		"graphene.namespace", sel.Namespace, sel.Attribute, sel.Value)
+	match := fmt.Sprintf("%q:=%q", sel.Attribute, sel.Value)
+	if sel.AltAttribute != "" {
+		match = fmt.Sprintf("(%s OR %q:=%q)", match, sel.AltAttribute, sel.AltValue)
+	}
+	query := fmt.Sprintf("%q:=%q AND %s", "graphene.namespace", sel.Namespace, match)
 	if !since.IsZero() {
 		query += " AND _time:>" + since.UTC().Format(time.RFC3339Nano)
 	}

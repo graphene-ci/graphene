@@ -807,6 +807,9 @@ func (s *Worker) publishCapability(ctx context.Context, agentId id.AgentId, capa
 // a creation. It waits until the agent is ready AND the needs are met.
 func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wire.NeedSpec) (pipeline.AgentState, error) {
 	ctx = obs.WithEntity(ctx, "agent/"+string(agentId))
+	// An attach WAITS for a record it never creates; say so, or the
+	// wait reads as silence.
+	obs.Info(ctx, "attach: waiting for the agent record to exist and be ready")
 	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(agentId)
 	for {
@@ -836,6 +839,7 @@ func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wi
 // attachArtifact recognizes an EXISTING artifact.
 func (s *Worker) attachArtifact(ctx context.Context, artifactId id.ArtifactId) (pipeline.ArtifactState, error) {
 	ctx = obs.WithEntity(ctx, "artifact/"+string(artifactId))
+	obs.Info(ctx, "attach: waiting for the artifact record to exist")
 	artifacts := entclient.Bind(s.artifactDef, s.deps.Client, wire.ServerQueue)
 	rid := entity.ResourceID(artifactId)
 	for {
