@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/authz"
+	syslabels "github.com/graphene-ci/graphene/internal/labels"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -242,6 +243,7 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 	if err != nil {
 		return nil, err
 	}
+	_, rspec, _, _ := b.Worker.DescribeRevision(ctx, req.GetPipelineId(), req.GetRevisionId())
 	runId, err := id.ParseRunId(req.GetRunId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -259,11 +261,22 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 	if err := checkSecretRefs(manifest, params, b.Secrets); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// A draft run carries the SAME system markers an ordinary one
+	// does: which revision it executes is exactly the question a draft
+	// exists to answer.
+	marked := syslabels.Merge(copyLabels(req.GetLabels()), map[string]string{
+		syslabels.Pipeline:     req.GetPipelineId(),
+		syslabels.Revision:     req.GetRevisionId(),
+		syslabels.Source:       rspec.SourceRef,
+		syslabels.SourceDigest: shortDigest(rspec.SourceDigest),
+		syslabels.Image:        rev.Image,
+		syslabels.Trigger:      "draft",
+	})
 	opts := client.StartWorkflowOptions{
 		ID:                       "run/" + string(runId),
 		TaskQueue:                wire.RunQueue(runId),
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		TypedSearchAttributes:    runAttributes(req.GetPipelineId(), req.GetLabels()),
+		TypedSearchAttributes:    runAttributes(req.GetPipelineId(), marked),
 	}
 	var args []any
 	if len(params) > 0 {
@@ -302,4 +315,14 @@ func (m *Management) revisionOf(ctx context.Context, namespace, pipelineId, revi
 		return revisionflow.State{}, nil, status.Errorf(codes.Internal, "revision manifest: %v", err)
 	}
 	return st, manifest, nil
+}
+
+// copyLabels clones the user's labels so system markers never mutate a
+// request message.
+func copyLabels(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
