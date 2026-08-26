@@ -17,6 +17,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/rbacflow"
 	"github.com/graphene-ci/graphene/internal/revisionflow"
@@ -84,6 +85,9 @@ func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessag
 	if !entry.info.Declarable {
 		return "", fmt.Errorf("a %s is not declared directly: %s", kind, entry.info.Description)
 	}
+	if kind == string(nsflow.Kind) && s.deps.Namespace != "default" {
+		return "", fmt.Errorf("namespaces are declared in the default namespace only")
+	}
 	if len(spec) > 0 && entry.specType != nil {
 		probe := reflect.New(entry.specType).Interface()
 		dec := json.NewDecoder(bytes.NewReader(spec))
@@ -148,6 +152,11 @@ func buildKinds() map[string]*kindEntry {
 		cmd("fire", reflect.TypeFor[pipelineflow.FireCmd]()),
 		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
 		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))
+
+	// A namespace record lives in the DEFAULT namespace: a container
+	// cannot hold its own declaration.
+	add("namespace", "an isolation unit: its own records, queues and visibility", true,
+		reflect.TypeFor[nsflow.Spec]())
 
 	add("var", "visible configuration a pipeline's params may reference", true,
 		reflect.TypeFor[valueflow.VarSpec](),

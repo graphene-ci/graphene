@@ -41,6 +41,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/logging"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/graphene/internal/runtimes"
 	"github.com/graphene-ci/graphene/internal/secrets"
@@ -163,6 +164,26 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The namespace RECORDS live in the default namespace, and only its
+	// worker can register a namespace or stop serving one.
+	defaultBundle.Worker.SetNamespaceOps(
+		func(ctx context.Context, name string, retentionDays int32) error {
+			return bundles.CreateNamespace(ctx, temporalClient, name, retentionDays)
+		},
+		func(_ context.Context, name string) error { return bundles.Retire(name) },
+	)
+	// Every namespace the durable core already holds is ADOPTED: the
+	// installation predates this record, so the record catches up.
+	registered, err := bundles.ListNamespaces(ctx, temporalClient)
+	if err != nil {
+		return fmt.Errorf("list namespaces: %w", err)
+	}
+	for _, name := range registered {
+		if err := defaultBundle.Worker.DeclareNamespace(ctx, name, nsflow.Spec{}); err != nil {
+			return fmt.Errorf("namespace %s: %w", name, err)
+		}
+	}
+
 	// Variables are RECORDS: the configured ones are declared into the
 	// default namespace, the same way a person would declare them.
 	for name, value := range cfg.Vars {

@@ -14,6 +14,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 
+	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/wire"
@@ -156,4 +157,33 @@ func (s *Worker) DescribeSecret(ctx context.Context, name string) (entity.Phase,
 		return "", valueflow.SecretSpec{}, valueflow.SecretState{}, err
 	}
 	return out.Phase, out.Spec, out.State, nil
+}
+
+// --- the namespace record's side effects ---
+
+// ensureNamespace registers a namespace and starts serving it.
+func (s *Worker) ensureNamespace(ctx context.Context, req nsflow.EnsureReq) error {
+	if s.ensureNs == nil {
+		return fmt.Errorf("namespaces are declared in the default namespace only")
+	}
+	return s.ensureNs(ctx, req.Name, req.RetentionDays)
+}
+
+// retireNamespace stops serving a namespace whose record was deleted.
+// What it holds is left to age out under its own retention — deleting
+// a container must not silently destroy what a person put inside it.
+func (s *Worker) retireNamespace(ctx context.Context, req nsflow.RetireReq) error {
+	if s.retireNs == nil {
+		return nil
+	}
+	return s.retireNs(ctx, req.Name)
+}
+
+// DeclareNamespace writes one namespace record — how the installation
+// adopts a namespace that already exists (the default one) and how a
+// new one is made.
+func (s *Worker) DeclareNamespace(ctx context.Context, name string, spec nsflow.Spec) error {
+	namespaces := entclient.Bind(s.namespaceDef, s.deps.Client, wire.ServerQueue)
+	_, err := namespaces.CreateOrAttach(ctx, entity.ResourceID(name), spec)
+	return err
 }

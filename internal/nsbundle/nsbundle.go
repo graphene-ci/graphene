@@ -77,6 +77,8 @@ type Bundle struct {
 	// secret-typed params name existing secrets.
 	Secrets secrets.Store
 	Vars    secrets.Store
+	// stop ends this bundle's goroutines when the namespace is retired.
+	stop context.CancelFunc
 }
 
 // Manager builds and runs bundles.
@@ -111,6 +113,29 @@ func (m *Manager) Get(namespace string) (*Bundle, error) {
 	return b, nil
 }
 
+// Retire stops serving one namespace: its worker and runner end, its
+// connection closes. What the namespace HOLDS is untouched — it ages
+// out under its own retention, because deleting a container must not
+// silently destroy what a person put inside it.
+func (m *Manager) Retire(namespace string) error {
+	if namespace == "default" {
+		return fmt.Errorf("the default namespace cannot be retired")
+	}
+	m.mu.Lock()
+	b, ok := m.bundles[namespace]
+	delete(m.bundles, namespace)
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	if b.stop != nil {
+		b.stop()
+	}
+	b.Client.Close()
+	m.deps.Log.Info("namespace retired", xlog.String("namespace", namespace))
+	return nil
+}
+
 // List names the running bundles.
 func (m *Manager) List() []string {
 	m.mu.Lock()
@@ -124,12 +149,16 @@ func (m *Manager) List() []string {
 }
 
 func (m *Manager) build(namespace string) (*Bundle, error) {
+	// The bundle's own lifetime, under the server's: retiring one
+	// namespace must not touch the others.
+	ctx, stop := context.WithCancel(m.ctx)
 	c, err := client.Dial(client.Options{
 		HostPort:  m.deps.TemporalHostPort,
 		Namespace: namespace,
 		Logger:    m.deps.TemporalLogger,
 	})
 	if err != nil {
+		stop()
 		return nil, fmt.Errorf("namespace %s: %w", namespace, err)
 	}
 	log := m.deps.Log.With(xlog.String("namespace", namespace))
@@ -152,6 +181,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		Log:          log.With(xlog.String("component", "worker")),
 	})
 	if err != nil {
+		stop()
 		c.Close()
 		return nil, err
 	}
@@ -165,6 +195,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		MintRunToken: m.deps.MintRunToken,
 		Secrets:      m.deps.Secrets.In(namespace),
 		Vars:         w.VarStore(),
+		stop:         stop,
 	}
 	if m.deps.MakeRunStarter != nil {
 		// Trigger-driven starts go through the same door logic as the
@@ -172,15 +203,15 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		w.SetRunStarter(m.deps.MakeRunStarter(b))
 	}
 	go func() {
-		if err := w.Run(m.ctx); err != nil && m.ctx.Err() == nil {
+		if err := w.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Error("namespace worker died", xlog.Err(err))
 		}
 	}()
 	// Stand TTLs are the stands' OWN timers now — no sweeper loop.
-	go runner.Tick(m.ctx, m.deps.ReapEvery)
+	go runner.Tick(ctx, m.deps.ReapEvery)
 	// Machine executors live while their records do; this collects them
 	// when the last record dies after the run is gone.
-	go w.ReapExecutors(m.ctx, m.deps.ReapEvery)
+	go w.ReapExecutors(ctx, m.deps.ReapEvery)
 	log.Info("namespace bundle started")
 	return b, nil
 }
