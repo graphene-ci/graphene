@@ -50,6 +50,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/temporalproxy"
 	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/obs"
 	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
 )
 
@@ -103,6 +104,28 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Log:     log.With(xlog.String("component", "otlp")),
 	}
 	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
+
+	// The server observes its OWN records. It exports through its own
+	// door — the door IS the collector, so the signals of a system
+	// record travel the same path, carry the same attributes and land
+	// in the same backends as a run's. Without this, dimensions 3-5 of
+	// every system entity are empty by construction while looking like
+	// a feature that simply has no data yet.
+	if cfg.OtelLogs != "" || cfg.OtelTraces != "" {
+		shutdownObs, oerr := obs.Setup(ctx, obs.Config{
+			Endpoint:  loopbackDoor(cfg.Listen),
+			Token:     firstAdminToken(cfg),
+			Insecure:  true,
+			Namespace: "default",
+			Role:      "server",
+		})
+		if oerr != nil {
+			log.Warn("server telemetry not wired", xlog.Err(oerr))
+		} else {
+			stop.RegisterFnErr(shutdownObs)
+			log.Info("server telemetry wired", xlog.String("door", loopbackDoor(cfg.Listen)))
+		}
+	}
 
 	// The source-first contour: server-side builds on the same docker
 	// host the managed contour drives. Best effort — no docker, no
@@ -367,6 +390,27 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 }
 
 // buildBlobStore picks the configured byte store.
+// loopbackDoor renders the server's own door as a dial target: it
+// listens on ":7233" and reaches itself on "127.0.0.1:7233".
+func loopbackDoor(listen string) string {
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil || port == "" {
+		return listen
+	}
+	return net.JoinHostPort("127.0.0.1", port)
+}
+
+// firstAdminToken is the credential the server presents to itself; the
+// telemetry path is authenticated like every other.
+func firstAdminToken(cfg config.Config) string {
+	for _, t := range cfg.Tokens {
+		if t.Role == "admin" {
+			return t.Token
+		}
+	}
+	return ""
+}
+
 func buildBlobStore(ctx context.Context, cfg config.Config) (blob.Store, error) {
 	switch cfg.BlobBackend {
 	case "s3":

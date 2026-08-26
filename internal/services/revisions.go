@@ -53,6 +53,9 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		return status.Error(codes.InvalidArgument, "pipeline_id is required")
 	}
 	sourceLocation, digest, runtimeName := "", "", ""
+	// What the revision was built FROM, recorded so a run can be traced
+	// back to the code without walking anything.
+	builtFrom, commit := "", ""
 
 	switch {
 	case len(req.GetSource()) > 0:
@@ -88,6 +91,12 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		if runtimeName, err = b.Worker.SourceRuntime(ctx, sourceRef); err != nil {
 			return status.Error(codes.Internal, err.Error())
 		}
+		builtFrom = sourceRef
+		if id, ok := strings.CutPrefix(sourceRef, "gitsource/"); ok {
+			if _, _, st, gerr := b.Worker.DescribeGitSource(ctx, id); gerr == nil {
+				commit = st.Commit
+			}
+		}
 	}
 
 	// The revision id IS the source digest: the same tree declares the
@@ -107,9 +116,11 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 	go func() {
 		declared <- b.Worker.DeclareRevision(context.WithoutCancel(ctx), pipelineId, revisionId, revisionflow.Spec{
 			PipelineId:     pipelineId,
+			SourceRef:      builtFrom,
 			SourceLocation: sourceLocation,
 			SourceDigest:   "sha256:" + digest,
 			Runtime:        runtimeName,
+			Commit:         commit,
 		})
 	}()
 

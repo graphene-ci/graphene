@@ -210,10 +210,20 @@ for its fields.`,
 			// asks the registry what this command takes.
 			if len(payload) == 0 && cmdutil.StdinIsTerminal() {
 				kind, _, _ := strings.Cut(ref, "/")
-				if schema := cmdutil.ParseSchema(f.CommandSchema(kind, rest[0])); schema != nil {
-					if payload, err = cmdutil.PromptSchema(os.Stdin, rest[0], schema); err != nil {
-						return err
+				entry, err := f.KindEntryOf(cmd.Context(), kind)
+				if err != nil {
+					return err
+				}
+				for _, c := range entry.Commands {
+					if c.Name != rest[0] {
+						continue
 					}
+					if schema := cmdutil.ParseSchema(c.PayloadSchema); schema != nil {
+						if payload, err = cmdutil.PromptSchema(os.Stdin, rest[0], schema); err != nil {
+							return err
+						}
+					}
+					break
 				}
 			}
 			d, err := f.Dial()
