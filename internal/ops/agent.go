@@ -7,6 +7,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	"go.temporal.io/sdk/temporal"
 	"net"
 	"strings"
 	"time"
@@ -103,6 +104,15 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 	const run = `s=$(mktemp); cat > "$s"; ` +
 		`if [ "$(id -u)" -ne 0 ]; then exec sudo -n sh "$s"; else exec sh "$s"; fi`
 	if out, err := session.CombinedOutput("sh -c '" + run + "'"); err != nil {
+		// The machine already carries a DIFFERENT agent's identity:
+		// retrying would never change that, and overwriting it would
+		// silently re-badge a live agent. Fail loudly, once.
+		if strings.Contains(string(out), "GRAPHENE_ALREADY_BOUND") {
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("machine %s already runs another agent: %s", install.Address,
+					truncate(strings.TrimSpace(string(out)), 256)),
+				"MachineAlreadyBound", nil)
+		}
 		return fmt.Errorf("install script: %w: %s", err, truncate(string(out), 2048))
 	}
 	return nil

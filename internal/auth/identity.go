@@ -63,6 +63,28 @@ func (m *Minter) Mint(subject authz.Subject, namespace, role string, ttl time.Du
 }
 
 // Verify checks a minted token and returns who it speaks for.
+// ExpiryOf reports when a MINTED token expires; zero for anything
+// else (a static token has no expiry to rotate ahead of).
+func (m *Minter) ExpiryOf(token string) time.Time {
+	rest, ok := strings.CutPrefix(token, "gm1.")
+	if !ok || len(m.key) == 0 {
+		return time.Time{}
+	}
+	body, sig, ok := strings.Cut(rest, ".")
+	if !ok || !hmac.Equal([]byte(sig), []byte(m.sign(body))) {
+		return time.Time{}
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		return time.Time{}
+	}
+	var p minted
+	if json.Unmarshal(raw, &p) != nil {
+		return time.Time{}
+	}
+	return time.Unix(p.Exp, 0)
+}
+
 func (m *Minter) Verify(token string) (authz.Identity, string, bool) {
 	rest, ok := strings.CutPrefix(token, "gm1.")
 	if !ok || len(m.key) == 0 {

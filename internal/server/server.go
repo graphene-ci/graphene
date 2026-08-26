@@ -15,6 +15,7 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -74,6 +75,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	minter := auth.NewMinter(cfg.SigningKey)
 	authn := auth.New(cfg.Tokens).WithMinter(minter)
 	registry := agents.New(cfg.AgentHeartbeat, log.With(xlog.String("component", "agents")))
+	// A minted agent credential renews over the live session.
+	registry.SetMinter(minter)
 	var secretStore *secrets.Namespaced
 	if cfg.SecretsKey != "" {
 		secretStore, err = secrets.NewPersistent(cfg.SecretsStore, cfg.SecretsKey, cfg.Secrets)
@@ -490,8 +493,18 @@ func userDataBuilder(cfg config.Config, minter *auth.Minter) func(string, id.Age
 		}
 		// The script converges: safe to run twice (ssh install after a
 		// user-data boot, a re-run after a failure).
-		return fmt.Sprintf(`#!/bin/sh
+		script := fmt.Sprintf(`#!/bin/sh
 set -eu
+# ONE machine, ONE agent: this env file is the machine's identity, and
+# overwriting it would silently re-badge a live agent. A different id
+# already installed here is a loud, non-retryable refusal.
+if [ -f /etc/graphene-agent/env ]; then
+  existing=$(sed -n 's/^GRAPHENE_AGENT_ID=//p' /etc/graphene-agent/env)
+  if [ -n "$existing" ] && [ "$existing" != "%%AGENT_ID%%" ]; then
+    echo "GRAPHENE_ALREADY_BOUND agent=$existing" >&2
+    exit 78
+  fi
+fi
 mkdir -p /etc/graphene-agent
 cat > /etc/graphene-agent/env <<EOF
 GRAPHENE_AGENT_SERVER=%s
@@ -526,6 +539,12 @@ if ! command -v runc >/dev/null 2>&1; then
     dnf install -y -q runc >/dev/null 2>&1 || true
   elif command -v yum >/dev/null 2>&1; then
     yum install -y -q runc >/dev/null 2>&1 || true
+  elif command -v zypper >/dev/null 2>&1; then
+    zypper --non-interactive install runc >/dev/null 2>&1 || true
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm runc >/dev/null 2>&1 || true
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache runc >/dev/null 2>&1 || true
   fi
   command -v runc >/dev/null 2>&1 || echo "WARNING: runc is still missing — machine activities will not run" >&2
 fi
@@ -550,7 +569,8 @@ UNIT
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
-`, cfg.External, token, agentId, cfg.External, cfg.External, token), nil
+`, cfg.External, token, agentId, cfg.External, cfg.External, token)
+		return strings.ReplaceAll(script, "%AGENT_ID%", string(agentId)), nil
 	}
 }
 

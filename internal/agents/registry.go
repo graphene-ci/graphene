@@ -10,6 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gopherex/xlog"
+	"github.com/graphene-ci/graphene/internal/authz"
+	"google.golang.org/grpc/metadata"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +37,14 @@ type Registry struct {
 
 	mu     sync.Mutex
 	agents map[agentKey]*session
+
+	// minter renews a session's MINTED credential before it expires;
+	// nil leaves static tokens alone (they have no expiry to renew).
+	minter *auth.Minter
 }
+
+// SetMinter wires token rotation.
+func (r *Registry) SetMinter(m *auth.Minter) { r.minter = m }
 
 // agentKey isolates agents per namespace: the same agent id in two
 // namespaces is two different agents.
@@ -122,6 +132,10 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	}}); err != nil {
 		return err
 	}
+	// Rotation rides the live session: a minted credential is renewed
+	// well before its cliff, and the agent persists the replacement. A
+	// static token has no expiry — nothing is ever sent for it.
+	go r.rotateLoop(stream.Context(), s)
 
 	for {
 		msg, err := stream.Recv()
@@ -315,4 +329,61 @@ func digest(f *agentpb.Facts) string {
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// rotateBefore is how much remaining life triggers a renewal.
+const rotateBefore = 15 * 24 * time.Hour
+
+// mintTTL is the fresh credential's life.
+const mintTTL = 30 * 24 * time.Hour
+
+// rotateLoop renews the session's minted token when it nears expiry.
+func (r *Registry) rotateLoop(ctx context.Context, s *session) {
+	if r.minter == nil {
+		return
+	}
+	token := bearerFrom(ctx)
+	if token == "" {
+		return
+	}
+	exp := r.minter.ExpiryOf(token)
+	if exp.IsZero() {
+		return // static credential: no cliff to renew ahead of
+	}
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		if time.Until(exp) < rotateBefore {
+			fresh, err := r.minter.Mint(authz.Subject{Kind: authz.SubjectServiceAccount, Name: "agent/" + string(s.agentId)},
+				s.namespace, "agent", mintTTL)
+			if err == nil {
+				if err := s.send(&agentpb.SessionResponse{Body: &agentpb.SessionResponse_RotateToken{
+					RotateToken: &agentpb.RotateToken{Token: fresh},
+				}}); err == nil {
+					r.log.Info("agent token rotated", xlog.Any("agent", s.agentId))
+					return // the agent persisted a fresh one; this session is done rotating
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// bearerFrom digs the session's own credential out of the metadata —
+// the thing whose expiry decides whether to rotate.
+func bearerFrom(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	for _, v := range md.Get("authorization") {
+		if t, ok := strings.CutPrefix(v, "Bearer "); ok {
+			return t
+		}
+	}
+	return ""
 }
