@@ -22,6 +22,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -1142,9 +1143,23 @@ func (s *Worker) CascadeDelete(ctx context.Context, owner ref.OwnerRef) error {
 // close.
 func (s *Worker) DeleteOne(ctx context.Context, workflowId string) error {
 	if err := s.deps.Client.SignalWorkflow(ctx, workflowId, "", entity.DeleteSignalName, nil); err != nil {
+		// A record that is already gone IS deleted. Teardown has to be
+		// idempotent: a stand whose holding vanished some other way
+		// would otherwise retry forever and never finish deleting
+		// itself, taking the whole project's deletion with it.
+		if alreadyGone(err) {
+			return nil
+		}
 		return err
 	}
 	return awaitClosed(ctx, s.deps.Client, workflowId)
+}
+
+// alreadyGone reports whether an error means "there is nothing there
+// any more" — a finished or never-existing execution.
+func alreadyGone(err error) bool {
+	var notFound *serviceerror.NotFound
+	return errors.As(err, &notFound)
 }
 
 // deleteResource is the activity form of the cascade.
