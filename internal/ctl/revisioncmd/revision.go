@@ -6,7 +6,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -29,7 +28,7 @@ const maxFileBytes = 8 << 20
 func New(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "revision",
-		Short: "Source revisions: materialize, list, run, activate",
+		Short: "Source revisions: materialize a source, run one as a draft",
 	}
 
 	var srcPath, sourceRef string
@@ -61,55 +60,6 @@ a local directory instead, without declaring a source at all.`,
 	mat.Flags().StringVarP(&srcPath, "upload", "f", ".", "upload THIS directory instead of a declared source")
 	mat.Flags().StringVar(&sourceRef, "source", "", "which source to build (\"gitsource/main\"); default: the only one")
 
-	list := &cobra.Command{
-		Use:   "list <pipeline>",
-		Short: "List the pipeline's revisions",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			// Revisions are ordinary records: the listing is the generic
-			// one, narrowed to this pipeline's own. The only thing this
-			// wrapper adds is WHICH of them is active — and that is a
-			// property of the pipeline, read from the pipeline.
-			resp, err := d.Resources.List(cmd.Context(), connect.NewRequest(&managementv1.ListRequest{
-				Query: "kind=revision, owner=pipeline/" + args[0],
-			}))
-			if err != nil {
-				return err
-			}
-			if done, err := f.Emit(resp.Msg); done || err != nil {
-				return err
-			}
-			// Which one is active is a property of the PIPELINE — one
-			// read, not one per revision: a listing does not carry
-			// state, and asking for it per row is the N+1 this door
-			// was built to avoid.
-			activeId := ""
-			if got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{
-				Ref: "pipeline/" + args[0],
-			})); err == nil {
-				var st struct {
-					RevisionId string `json:"revisionId"`
-				}
-				_ = json.Unmarshal(got.Msg.GetResource().GetState(), &st)
-				activeId = st.RevisionId
-			}
-			fmt.Fprintf(cmdutil.Out, "REVISION\tACTIVE\tPHASE\n")
-			for _, r := range resp.Msg.GetResources() {
-				id := strings.TrimPrefix(r.GetRef(), "revision/"+args[0]+".")
-				active := ""
-				if id != "" && id == activeId {
-					active = "*"
-				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\n", id, active, r.GetPhase())
-			}
-			return nil
-		},
-	}
-
 	var params, runId string
 	run := &cobra.Command{
 		Use:   "run <pipeline> <revision>",
@@ -139,36 +89,7 @@ a local directory instead, without declaring a source at all.`,
 	run.Flags().StringVarP(&params, "params", "p", "", "params as raw JSON")
 	run.Flags().StringVar(&runId, "run-id", "", "run id (default: generated draft id)")
 
-	activate := &cobra.Command{
-		Use:   "activate <pipeline> <revision>",
-		Short: "Make one revision the version automatic starts use",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			// Activation is a decision about the PIPELINE, so it is the
-			// pipeline's own command — and it names the revision,
-			// nothing more: what that revision built is the record's to
-			// read, not the client's to carry.
-			payload, err := json.Marshal(map[string]any{
-				"revisionId": args[1],
-			})
-			if err != nil {
-				return err
-			}
-			if _, err := d.Resources.Invoke(cmd.Context(), connect.NewRequest(&managementv1.InvokeRequest{
-				Ref: "pipeline/" + args[0], Command: "activate", Payload: payload,
-			})); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "revision %s activated for %s\n", args[1], args[0])
-			return nil
-		},
-	}
-
-	cmd.AddCommand(mat, list, run, activate)
+	cmd.AddCommand(mat, run)
 	return cmd
 }
 

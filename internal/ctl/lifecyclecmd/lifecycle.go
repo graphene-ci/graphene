@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -23,6 +24,26 @@ func targetCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string)
 			return f.LiveKinds(), cobra.ShellCompDirectiveNoFileComp
 		case 1:
 			return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// commandCompletion completes the COMMAND of an invoke — from the
+// installation's registry, never from a list kept here.
+func commandCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		switch len(args) {
+		case 0:
+			return f.LiveKinds(), cobra.ShellCompDirectiveNoFileComp
+		case 1:
+			// Either "<kind> <id>" or "<kind>/<id> <command>".
+			if kind, _, ok := strings.Cut(args[0], "/"); ok {
+				return f.LiveCommands(kind), cobra.ShellCompDirectiveNoFileComp
+			}
+			return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+		case 2:
+			return f.LiveCommands(args[0]), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -167,10 +188,14 @@ its run; --keep bounds the stay — the stand's own timer collects it.`,
 func NewInvoke(f *cmdutil.Factory) *cobra.Command {
 	var data, dataFile string
 	cmd := &cobra.Command{
-		Use:               "invoke <kind> <id> <command>",
-		Short:             "Send one of the record's own commands",
+		Use:   "invoke <kind> <id> <command>",
+		Short: "Send one of the record's own commands",
+		Long: `Send a command to a record. Which commands a kind has, and what each
+one takes, is the INSTALLATION's answer — ` + "`graphenectl kinds`" + ` lists them,
+completion offers them, and on a terminal a command with no --data asks
+for its fields.`,
 		Args:              cobra.RangeArgs(2, 3),
-		ValidArgsFunction: targetCompletion(f),
+		ValidArgsFunction: commandCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref, rest, err := cmdutil.TargetRef(args)
 			if err != nil || len(rest) != 1 {
@@ -179,6 +204,17 @@ func NewInvoke(f *cmdutil.Factory) *cobra.Command {
 			payload, err := cmdutil.JSONInput("data", data, dataFile)
 			if err != nil {
 				return err
+			}
+			// No payload given, a human on the other end: walk the
+			// command's own schema. The client knows no fields — it
+			// asks the registry what this command takes.
+			if len(payload) == 0 && cmdutil.StdinIsTerminal() {
+				kind, _, _ := strings.Cut(ref, "/")
+				if schema := cmdutil.ParseSchema(f.CommandSchema(kind, rest[0])); schema != nil {
+					if payload, err = cmdutil.PromptSchema(os.Stdin, rest[0], schema); err != nil {
+						return err
+					}
+				}
 			}
 			d, err := f.Dial()
 			if err != nil {

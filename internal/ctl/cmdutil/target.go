@@ -67,35 +67,40 @@ func JSONInput(flagName, inline, file string) ([]byte, error) {
 // --- Live lookups for shell completion: best effort, a short timeout,
 // silent on failure — completion must never nag. ---
 
-// BuiltinKinds are offered even when the server is unreachable.
-var BuiltinKinds = []string{"agent", "artifact", "stand", "pipeline", "run"}
-
-// LiveKinds unions the built-in kinds, the kinds of live records, and
-// the kinds named by the pipelines' manifests — the discovery surface.
+// LiveKinds asks the INSTALLATION what it can declare and command.
+// The list is never spelled out here: a client that carries its own
+// idea of the kinds is wrong the moment a kind is added, and it hides
+// a kind that exists but has no records yet. The pipelines' own kinds
+// are added on top — those come from user code, so only the records
+// know them.
 func (f *Factory) LiveKinds() []string {
 	seen := map[string]bool{}
-	for _, k := range BuiltinKinds {
-		seen[k] = true
+	d, cctx, cancel := f.completionDoor()
+	if d == nil {
+		return nil
 	}
-	if d, cctx, cancel := f.completionDoor(); d != nil {
-		defer cancel()
-		if resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
-			Selector: &managementv1.Selector{},
-		})); err == nil {
-			for _, r := range resp.Msg.GetResources() {
-				if r.GetKind() != "" {
-					seen[r.GetKind()] = true
+	defer cancel()
+	if resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{})); err == nil {
+		for _, k := range resp.Msg.GetKinds() {
+			seen[k.GetName()] = true
+		}
+	}
+	if resp, err := d.Resources.List(cctx, connect.NewRequest(&managementv1.ListRequest{
+		Selector: &managementv1.Selector{},
+	})); err == nil {
+		for _, r := range resp.Msg.GetResources() {
+			if r.GetKind() != "" {
+				seen[r.GetKind()] = true
+			}
+			if r.GetKind() == "pipeline" {
+				var st struct {
+					Manifest struct {
+						Kinds []string `json:"kinds"`
+					} `json:"manifest"`
 				}
-				if r.GetKind() == "pipeline" {
-					var st struct {
-						Manifest struct {
-							Kinds []string `json:"kinds"`
-						} `json:"manifest"`
-					}
-					if json.Unmarshal(r.GetState(), &st) == nil {
-						for _, k := range st.Manifest.Kinds {
-							seen[k] = true
-						}
+				if json.Unmarshal(r.GetState(), &st) == nil {
+					for _, k := range st.Manifest.Kinds {
+						seen[k] = true
 					}
 				}
 			}
@@ -107,6 +112,79 @@ func (f *Factory) LiveKinds() []string {
 	}
 	sort.Strings(kinds)
 	return kinds
+}
+
+// LiveCommands asks what THIS kind can be told to do. Like the kinds
+// themselves, the answer belongs to the installation: a command added
+// to a record shows up in the client without the client changing.
+func (f *Factory) LiveCommands(kind string) []string {
+	d, cctx, cancel := f.completionDoor()
+	if d == nil {
+		return nil
+	}
+	defer cancel()
+	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
+	if err != nil {
+		return nil
+	}
+	for _, k := range resp.Msg.GetKinds() {
+		if k.GetName() != kind {
+			continue
+		}
+		out := make([]string, 0, len(k.GetCommands()))
+		for _, c := range k.GetCommands() {
+			out = append(out, c.GetName())
+		}
+		sort.Strings(out)
+		return out
+	}
+	return nil
+}
+
+// SpecSchema is the declaration type of one kind, as the installation
+// describes it.
+func (f *Factory) SpecSchema(kind string) []byte {
+	d, cctx, cancel := f.completionDoor()
+	if d == nil {
+		return nil
+	}
+	defer cancel()
+	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
+	if err != nil {
+		return nil
+	}
+	for _, k := range resp.Msg.GetKinds() {
+		if k.GetName() == kind {
+			return k.GetSpecSchema()
+		}
+	}
+	return nil
+}
+
+// CommandSchema is the payload type of one command, as the
+// installation describes it — what an interactive prompt walks and
+// what a caller reads to know the fields.
+func (f *Factory) CommandSchema(kind, command string) []byte {
+	d, cctx, cancel := f.completionDoor()
+	if d == nil {
+		return nil
+	}
+	defer cancel()
+	resp, err := d.Resources.Kinds(cctx, connect.NewRequest(&managementv1.KindsRequest{}))
+	if err != nil {
+		return nil
+	}
+	for _, k := range resp.Msg.GetKinds() {
+		if k.GetName() != kind {
+			continue
+		}
+		for _, c := range k.GetCommands() {
+			if c.GetName() == command {
+				return c.GetPayloadSchema()
+			}
+		}
+	}
+	return nil
 }
 
 // LiveIds lists the ids of one kind.
