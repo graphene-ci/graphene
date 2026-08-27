@@ -109,96 +109,6 @@ func (x *ServerInfoResponse) GetComponents() []*ServerInfoResponse_Component {
 	return nil
 }
 
-type WhoamiRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WhoamiRequest) Reset() {
-	*x = WhoamiRequest{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WhoamiRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WhoamiRequest) ProtoMessage() {}
-
-func (x *WhoamiRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WhoamiRequest.ProtoReflect.Descriptor instead.
-func (*WhoamiRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{2}
-}
-
-type WhoamiResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Role: admin | run | agent.
-	Role string `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
-	// Namespace the token is scoped to; "*" — every namespace.
-	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WhoamiResponse) Reset() {
-	*x = WhoamiResponse{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WhoamiResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WhoamiResponse) ProtoMessage() {}
-
-func (x *WhoamiResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WhoamiResponse.ProtoReflect.Descriptor instead.
-func (*WhoamiResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_namespaces_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *WhoamiResponse) GetRole() string {
-	if x != nil {
-		return x.Role
-	}
-	return ""
-}
-
-func (x *WhoamiResponse) GetNamespace() string {
-	if x != nil {
-		return x.Namespace
-	}
-	return ""
-}
-
 type ServerInfoResponse_Component struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -211,7 +121,7 @@ type ServerInfoResponse_Component struct {
 
 func (x *ServerInfoResponse_Component) Reset() {
 	*x = ServerInfoResponse_Component{}
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -223,7 +133,7 @@ func (x *ServerInfoResponse_Component) String() string {
 func (*ServerInfoResponse_Component) ProtoMessage() {}
 
 func (x *ServerInfoResponse_Component) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_namespaces_proto_msgTypes[4]
+	mi := &file_proto_management_v1_namespaces_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,13 +184,8 @@ const file_proto_management_v1_namespaces_proto_rawDesc = "" +
 	"\tComponent\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\x0f\n" +
-	"\rWhoamiRequest\"B\n" +
-	"\x0eWhoamiResponse\x12\x12\n" +
-	"\x04role\x18\x01 \x01(\tR\x04role\x12\x1c\n" +
-	"\tnamespace\x18\x02 \x01(\tR\tnamespace2\xcd\x01\n" +
-	"\rNamespacesAPI\x12W\n" +
-	"\x06Whoami\x12%.graphene.management.v1.WhoamiRequest\x1a&.graphene.management.v1.WhoamiResponse\x12c\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail2t\n" +
+	"\rNamespacesAPI\x12c\n" +
 	"\n" +
 	"ServerInfo\x12).graphene.management.v1.ServerInfoRequest\x1a*.graphene.management.v1.ServerInfoResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
@@ -296,22 +201,18 @@ func file_proto_management_v1_namespaces_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_namespaces_proto_rawDescData
 }
 
-var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_management_v1_namespaces_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_proto_management_v1_namespaces_proto_goTypes = []any{
 	(*ServerInfoRequest)(nil),            // 0: graphene.management.v1.ServerInfoRequest
 	(*ServerInfoResponse)(nil),           // 1: graphene.management.v1.ServerInfoResponse
-	(*WhoamiRequest)(nil),                // 2: graphene.management.v1.WhoamiRequest
-	(*WhoamiResponse)(nil),               // 3: graphene.management.v1.WhoamiResponse
-	(*ServerInfoResponse_Component)(nil), // 4: graphene.management.v1.ServerInfoResponse.Component
+	(*ServerInfoResponse_Component)(nil), // 2: graphene.management.v1.ServerInfoResponse.Component
 }
 var file_proto_management_v1_namespaces_proto_depIdxs = []int32{
-	4, // 0: graphene.management.v1.ServerInfoResponse.components:type_name -> graphene.management.v1.ServerInfoResponse.Component
-	2, // 1: graphene.management.v1.NamespacesAPI.Whoami:input_type -> graphene.management.v1.WhoamiRequest
-	0, // 2: graphene.management.v1.NamespacesAPI.ServerInfo:input_type -> graphene.management.v1.ServerInfoRequest
-	3, // 3: graphene.management.v1.NamespacesAPI.Whoami:output_type -> graphene.management.v1.WhoamiResponse
-	1, // 4: graphene.management.v1.NamespacesAPI.ServerInfo:output_type -> graphene.management.v1.ServerInfoResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	2, // 0: graphene.management.v1.ServerInfoResponse.components:type_name -> graphene.management.v1.ServerInfoResponse.Component
+	0, // 1: graphene.management.v1.NamespacesAPI.ServerInfo:input_type -> graphene.management.v1.ServerInfoRequest
+	1, // 2: graphene.management.v1.NamespacesAPI.ServerInfo:output_type -> graphene.management.v1.ServerInfoResponse
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -328,7 +229,7 @@ func file_proto_management_v1_namespaces_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_namespaces_proto_rawDesc), len(file_proto_management_v1_namespaces_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

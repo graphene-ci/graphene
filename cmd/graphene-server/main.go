@@ -41,8 +41,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	log.Info("starting", xlog.String("version", version))
 	err = server.Run(ctx, cfg, log)
+	// Read the interrupt BEFORE stop(): stop cancels ctx, so checking
+	// afterwards swallowed every startup error as a silent exit 0.
+	interrupted := ctx.Err() != nil
 	stop()
-	if err != nil && ctx.Err() == nil {
+	if err != nil && !interrupted {
 		log.Error("exit", xlog.Err(err))
 		os.Exit(1)
 	}

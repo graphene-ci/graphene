@@ -43,6 +43,32 @@ type Observe struct {
 	Log *xlog.Logger
 }
 
+// watch authorizes a dimension 3-5 read the same way every other door
+// verb is authorized — through the namespace's roles and bindings, so
+// a service account's token watches exactly what it may get. Answers
+// the namespace the telemetry selector scopes to.
+func (o *Observe) watch(ctx context.Context, ref string) (string, error) {
+	b, err := o.Management.allow(ctx, authz.VerbWatch, authz.KindOf(ref))
+	if err != nil {
+		return "", err
+	}
+	return b.Namespace, nil
+}
+
+// watchRaw gates the RAW query surface — the whole store in the
+// backend's own language, no subject filter. A static admin token
+// passes; any other principal must hold the narrowest admin-only
+// right the resolver knows (invoke on service accounts).
+func (o *Observe) watchRaw(ctx context.Context) error {
+	if _, err := scope(ctx, auth.RoleAdmin); err == nil {
+		return nil
+	}
+	if _, err := o.Management.allow(ctx, authz.VerbInvoke, authz.KindServiceAccount); err != nil {
+		return status.Error(codes.PermissionDenied, "the raw query surface is an administrator's")
+	}
+	return nil
+}
+
 // State returns dimension 1: execution status plus, for entity refs,
 // the full record.
 func (o *Observe) State(ctx context.Context, creq *connect.Request[managementv1.ObserveStateRequest]) (*connect.Response[managementv1.ObserveStateResponse], error) {
@@ -110,7 +136,7 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 	req := creq.Msg
 	// The raw view: the whole store, the backend's own language.
 	if req.GetQuery() != "" {
-		if _, err := scope(ctx, auth.RoleAdmin); err != nil {
+		if err := o.watchRaw(ctx); err != nil {
 			return asConnectError(err)
 		}
 		backend, ok := o.LogsBackend.(*telemetry.LogsQL)
@@ -128,7 +154,7 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 		}
 		return nil
 	}
-	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	namespace, err := o.watch(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}
@@ -205,7 +231,7 @@ func sendLog(stream *connect.ServerStream[managementv1.LogChunk], rec telemetry.
 func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv1.MetricsRequest], stream *connect.ServerStream[managementv1.MetricsChunk]) error {
 	req := creq.Msg
 	if req.GetQuery() != "" {
-		if _, err := scope(ctx, auth.RoleAdmin); err != nil {
+		if err := o.watchRaw(ctx); err != nil {
 			return asConnectError(err)
 		}
 		backend, ok := o.MetricsBackend.(*telemetry.PromQL)
@@ -226,7 +252,7 @@ func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv
 		}
 		return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: raw}})
 	}
-	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	namespace, err := o.watch(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}
@@ -271,7 +297,7 @@ func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv
 func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.TraceRequest], stream *connect.ServerStream[managementv1.TraceChunk]) error {
 	req := creq.Msg
 	if req.GetQuery() != "" {
-		if _, err := scope(ctx, auth.RoleAdmin); err != nil {
+		if err := o.watchRaw(ctx); err != nil {
 			return asConnectError(err)
 		}
 		backend, ok := o.TracesBackend.(*telemetry.Jaeger)
@@ -284,7 +310,7 @@ func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.
 		}
 		return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: raw}})
 	}
-	namespace, err := scope(ctx, auth.RoleAdmin, auth.RoleRun)
+	namespace, err := o.watch(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}

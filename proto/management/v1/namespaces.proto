@@ -11,12 +11,10 @@ option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;man
 // namespace becomes an organization's home.
 // A namespace is DECLARED like everything else: `apply namespace <name>`
 // in the default namespace, listed by `get namespace`. What remains
-// here is what is not a record — who the caller is, and what the
-// installation is.
+// here is what is not a record — what the installation is. Who the
+// caller is lives in ONE place: RbacAPI.WhoAmI, the login handshake
+// for every kind of principal.
 service NamespacesAPI {
-  // Whoami answers who the caller's token is: role and namespace scope.
-  // Any authenticated principal may ask — this is login's handshake.
-  rpc Whoami(WhoamiRequest) returns (WhoamiResponse);
   // ServerInfo reports the installation: version and component health —
   // the console's status line. Any authenticated principal may ask.
   rpc ServerInfo(ServerInfoRequest) returns (ServerInfoResponse);
@@ -33,14 +31,5 @@ message ServerInfoResponse {
     string detail = 3;
   }
   repeated Component components = 2;
-}
-
-message WhoamiRequest {}
-
-message WhoamiResponse {
-  // Role: admin | run | agent.
-  string role = 1;
-  // Namespace the token is scoped to; "*" — every namespace.
-  string namespace = 2;
 }
 

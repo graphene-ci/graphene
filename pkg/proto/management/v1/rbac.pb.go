@@ -188,7 +188,11 @@ type WhoAmIResponse struct {
 	Roles []string `protobuf:"bytes,4,rep,name=roles,proto3" json:"roles,omitempty"`
 	// Allowed lists "verb kind" pairs this caller may do — enough for a
 	// UI to hide what it must not offer.
-	Allowed       []string `protobuf:"bytes,5,rep,name=allowed,proto3" json:"allowed,omitempty"`
+	Allowed []string `protobuf:"bytes,5,rep,name=allowed,proto3" json:"allowed,omitempty"`
+	// ClusterWide says this caller's rights span every namespace — the
+	// signal a client needs to offer namespace switching (the
+	// x-graphene-namespace header on any call).
+	ClusterWide   bool `protobuf:"varint,6,opt,name=cluster_wide,json=clusterWide,proto3" json:"cluster_wide,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -258,6 +262,13 @@ func (x *WhoAmIResponse) GetAllowed() []string {
 	return nil
 }
 
+func (x *WhoAmIResponse) GetClusterWide() bool {
+	if x != nil {
+		return x.ClusterWide
+	}
+	return false
+}
+
 var File_proto_management_v1_rbac_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_rbac_proto_rawDesc = "" +
@@ -272,13 +283,14 @@ const file_proto_management_v1_rbac_proto_rawDesc = "" +
 	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
 	"ttlSeconds\x12\x18\n" +
 	"\acomment\x18\x03 \x01(\tR\acomment\"\x0f\n" +
-	"\rWhoAmIRequest\"\x90\x01\n" +
+	"\rWhoAmIRequest\"\xb3\x01\n" +
 	"\x0eWhoAmIResponse\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x16\n" +
 	"\x06groups\x18\x02 \x03(\tR\x06groups\x12\x1c\n" +
 	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12\x14\n" +
 	"\x05roles\x18\x04 \x03(\tR\x05roles\x12\x18\n" +
-	"\aallowed\x18\x05 \x03(\tR\aallowed2\xc7\x01\n" +
+	"\aallowed\x18\x05 \x03(\tR\aallowed\x12!\n" +
+	"\fcluster_wide\x18\x06 \x01(\bR\vclusterWide2\xc7\x01\n" +
 	"\aRbacAPI\x12c\n" +
 	"\n" +
 	"IssueToken\x12).graphene.management.v1.IssueTokenRequest\x1a*.graphene.management.v1.IssueTokenResponse\x12W\n" +

@@ -47,4 +47,8 @@ message WhoAmIResponse {
   // Allowed lists "verb kind" pairs this caller may do — enough for a
   // UI to hide what it must not offer.
   repeated string allowed = 5;
+  // ClusterWide says this caller's rights span every namespace — the
+  // signal a client needs to offer namespace switching (the
+  // x-graphene-namespace header on any call).
+  bool cluster_wide = 6;
 }

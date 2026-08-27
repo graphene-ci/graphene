@@ -657,25 +657,14 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 
 // --- NamespacesAPI: what is NOT a record ---
 
-// Whoami answers who the caller's token is — login's handshake. Any
-// authenticated principal may ask; no role gate.
-func (m *Management) Whoami(ctx context.Context, _ *connect.Request[managementv1.WhoamiRequest]) (*connect.Response[managementv1.WhoamiResponse], error) {
-	p, ok := auth.FromContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no principal")
-	}
-	return connect.NewResponse(&managementv1.WhoamiResponse{
-		Role:      string(p.Role),
-		Namespace: p.Namespace,
-	}), nil
-}
-
 // ServerInfo reports the installation for the console's status line:
 // build version and component health. Temporal is probed with the
-// cheapest possible call; the answer is a fact about NOW.
+// cheapest possible call; the answer is a fact about NOW. Any
+// authenticated caller may ask; who the caller IS is RbacAPI.WhoAmI's
+// one answer.
 func (m *Management) ServerInfo(ctx context.Context, _ *connect.Request[managementv1.ServerInfoRequest]) (*connect.Response[managementv1.ServerInfoResponse], error) {
-	if _, ok := auth.FromContext(ctx); !ok {
-		return nil, status.Error(codes.Unauthenticated, "no principal")
+	if _, err := callerNamespace(ctx); err != nil {
+		return nil, err
 	}
 	resp := &managementv1.ServerInfoResponse{Version: m.Version}
 	temporalOk, detail := true, ""

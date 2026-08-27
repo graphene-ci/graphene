@@ -101,10 +101,10 @@ keeps your --namespace pick).`,
 			if err != nil {
 				return fmt.Errorf("handshake with %s failed: %w", server, err)
 			}
-			role, scope := who.GetRole(), who.GetNamespace()
-			fmt.Fprintf(os.Stderr, "✓ role %s, namespace %s\n", role, scope)
+			scope := who.GetNamespace()
+			fmt.Fprintf(os.Stderr, "✓ %s, namespace %s\n", who.GetSubject(), scope)
 			if cc.Namespace == "" {
-				if scope != "*" {
+				if !who.GetClusterWide() && scope != "*" {
 					cc.Namespace = scope
 				} else if interactive {
 					if cc.Namespace, err = promptLine("namespace to work in", "default"); err != nil {
@@ -142,7 +142,7 @@ keeps your --namespace pick).`,
 			if err := cliconfig.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "logged in: context %s, role %s, namespace %s (current)\n", ctxName, role, cc.Namespace)
+			fmt.Fprintf(os.Stderr, "logged in: context %s, %s, namespace %s (current)\n", ctxName, who.GetSubject(), cc.Namespace)
 			return nil
 		},
 	}
