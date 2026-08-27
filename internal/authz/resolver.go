@@ -102,6 +102,23 @@ func (r *Resolver) snapshot(ctx context.Context, namespace string) (snapshot, er
 	return snap, nil
 }
 
+// ClusterWide reports whether the caller's rights span every
+// namespace: a binding on "*" names them. This is the one signal a
+// client needs to offer namespace switching; the switch itself is just
+// the header, and every call still authorizes in the target namespace.
+func (r *Resolver) ClusterWide(ctx context.Context, id Identity) bool {
+	snap, err := r.snapshot(ctx, id.Namespace)
+	if err != nil {
+		return false
+	}
+	for _, b := range snap.bindings {
+		if b.Namespace == "*" && b.Matches(id) {
+			return true
+		}
+	}
+	return false
+}
+
 // Forget drops a namespace's cached permissions — called when a role
 // or a binding changes, so a revocation does not wait out the TTL.
 func (r *Resolver) Forget(namespace string) {

@@ -65,13 +65,14 @@ func promptYes(label string) bool {
 	return false
 }
 
-// handshake dials the candidate context and asks Whoami.
-func handshake(cmd *cobra.Command, cc cliconfig.Context) (*managementv1.WhoamiResponse, error) {
+// handshake dials the candidate context and asks WhoAmI — the ONE
+// identity door every kind of principal answers through.
+func handshake(cmd *cobra.Command, cc cliconfig.Context) (*managementv1.WhoAmIResponse, error) {
 	d, err := cmdutil.DialContext(cc)
 	if err != nil {
 		return nil, err
 	}
-	who, err := d.Ns.Whoami(cmd.Context(), connect.NewRequest(&managementv1.WhoamiRequest{}))
+	who, err := d.Rbac.WhoAmI(cmd.Context(), connect.NewRequest(&managementv1.WhoAmIRequest{}))
 	if err != nil {
 		return nil, err
 	}

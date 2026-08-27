@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NamespacesAPI_Whoami_FullMethodName     = "/graphene.management.v1.NamespacesAPI/Whoami"
 	NamespacesAPI_ServerInfo_FullMethodName = "/graphene.management.v1.NamespacesAPI/ServerInfo"
 )
 
@@ -34,12 +33,10 @@ const (
 // namespace becomes an organization's home.
 // A namespace is DECLARED like everything else: `apply namespace <name>`
 // in the default namespace, listed by `get namespace`. What remains
-// here is what is not a record — who the caller is, and what the
-// installation is.
+// here is what is not a record — what the installation is. Who the
+// caller is lives in ONE place: RbacAPI.WhoAmI, the login handshake
+// for every kind of principal.
 type NamespacesAPIClient interface {
-	// Whoami answers who the caller's token is: role and namespace scope.
-	// Any authenticated principal may ask — this is login's handshake.
-	Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error)
 	// ServerInfo reports the installation: version and component health —
 	// the console's status line. Any authenticated principal may ask.
 	ServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error)
@@ -51,16 +48,6 @@ type namespacesAPIClient struct {
 
 func NewNamespacesAPIClient(cc grpc.ClientConnInterface) NamespacesAPIClient {
 	return &namespacesAPIClient{cc}
-}
-
-func (c *namespacesAPIClient) Whoami(ctx context.Context, in *WhoamiRequest, opts ...grpc.CallOption) (*WhoamiResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WhoamiResponse)
-	err := c.cc.Invoke(ctx, NamespacesAPI_Whoami_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *namespacesAPIClient) ServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error) {
@@ -84,12 +71,10 @@ func (c *namespacesAPIClient) ServerInfo(ctx context.Context, in *ServerInfoRequ
 // namespace becomes an organization's home.
 // A namespace is DECLARED like everything else: `apply namespace <name>`
 // in the default namespace, listed by `get namespace`. What remains
-// here is what is not a record — who the caller is, and what the
-// installation is.
+// here is what is not a record — what the installation is. Who the
+// caller is lives in ONE place: RbacAPI.WhoAmI, the login handshake
+// for every kind of principal.
 type NamespacesAPIServer interface {
-	// Whoami answers who the caller's token is: role and namespace scope.
-	// Any authenticated principal may ask — this is login's handshake.
-	Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error)
 	// ServerInfo reports the installation: version and component health —
 	// the console's status line. Any authenticated principal may ask.
 	ServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error)
@@ -103,9 +88,6 @@ type NamespacesAPIServer interface {
 // pointer dereference when methods are called.
 type UnimplementedNamespacesAPIServer struct{}
 
-func (UnimplementedNamespacesAPIServer) Whoami(context.Context, *WhoamiRequest) (*WhoamiResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Whoami not implemented")
-}
 func (UnimplementedNamespacesAPIServer) ServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ServerInfo not implemented")
 }
@@ -128,24 +110,6 @@ func RegisterNamespacesAPIServer(s grpc.ServiceRegistrar, srv NamespacesAPIServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&NamespacesAPI_ServiceDesc, srv)
-}
-
-func _NamespacesAPI_Whoami_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WhoamiRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NamespacesAPIServer).Whoami(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NamespacesAPI_Whoami_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NamespacesAPIServer).Whoami(ctx, req.(*WhoamiRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _NamespacesAPI_ServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -173,10 +137,6 @@ var NamespacesAPI_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "graphene.management.v1.NamespacesAPI",
 	HandlerType: (*NamespacesAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Whoami",
-			Handler:    _NamespacesAPI_Whoami_Handler,
-		},
 		{
 			MethodName: "ServerInfo",
 			Handler:    _NamespacesAPI_ServerInfo_Handler,

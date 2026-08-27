@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/graphene-ci/graphene/internal/auth"
@@ -99,9 +100,16 @@ func callerNamespace(ctx context.Context) (string, error) {
 	if p, ok := auth.FromContext(ctx); ok {
 		return namespaceFor(ctx, p)
 	}
-	if _, ok := auth.IdentityFrom(ctx); ok {
-		// An OIDC user or a minted token names its namespace itself.
-		id, _ := auth.IdentityFrom(ctx)
+	if id, ok := auth.IdentityFrom(ctx); ok {
+		// An OIDC user, a minted token or a service account names its
+		// own namespace — and may PICK another with the header: the
+		// switch is free because every call still authorizes against
+		// the target namespace's bindings.
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if hdr := md.Get(NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
+				return hdr[0], nil
+			}
+		}
 		if id.Namespace != "" {
 			return id.Namespace, nil
 		}

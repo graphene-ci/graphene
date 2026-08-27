@@ -81,6 +81,13 @@ func (m *Management) WhoAmI(ctx context.Context, _ *connect.Request[managementv1
 	if boundRole != "" {
 		out.Roles = []string{boundRole}
 	}
+	// The namespace-switching signal: a static installation-wide token,
+	// or a subject some "*" binding names.
+	if p, ok := auth.FromContext(ctx); ok && p.Namespace == "*" {
+		out.ClusterWide = true
+	} else if m.Authz != nil && m.Authz.ClusterWide(ctx, id) {
+		out.ClusterWide = true
+	}
 	// The allowed set is computed by asking the same question the doors
 	// ask — no second implementation to drift.
 	for _, verb := range authz.AllVerbs {
