@@ -155,6 +155,58 @@ const (
 	labelRun       = "graphene.io/run"
 )
 
+// Ensure is the resurrection half of the lifecycle: live records on a
+// run's queue with no serving container get their worker back. An
+// existing container is adopted — running gets its tail reattached,
+// stopped is started; a missing one is created the same way Start
+// creates it. Idempotent, cheap when the worker is already alive.
+func (r *Runner) Ensure(ctx context.Context, runId id.RunId, imageRef, runToken string) (revived bool, err error) {
+	if r.docker == nil {
+		return false, fmt.Errorf("managed runs need docker on the server host")
+	}
+	list, err := r.docker.ContainerList(ctx, container.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.Arg("label", labelNamespace+"="+r.namespace),
+			filters.Arg("label", labelRun+"="+string(runId)),
+		),
+	})
+	if err != nil {
+		return false, fmt.Errorf("ensure run container: %w", err)
+	}
+	for _, c := range list {
+		if c.State == "running" {
+			r.adopt(ctx, c.ID, runId)
+			return false, nil
+		}
+		if err := r.docker.ContainerStart(ctx, c.ID, container.StartOptions{}); err != nil {
+			return false, fmt.Errorf("restart run container: %w", err)
+		}
+		r.adopt(ctx, c.ID, runId)
+		r.log.Info("managed run container resurrected", xlog.Any("run", runId))
+		return true, nil
+	}
+	// No container at all — the create path is Start's.
+	r.mu.Lock()
+	delete(r.runs, runId) // stale memory must not short-circuit Start
+	r.mu.Unlock()
+	if err := r.Start(ctx, runId, imageRef, runToken); err != nil {
+		return false, err
+	}
+	r.log.Info("managed run container resurrected", xlog.Any("run", runId))
+	return true, nil
+}
+
+// adopt takes an already-existing container under management: tracked
+// for the reaper, its stdout tailed. startTail is a no-op for a
+// container already tailed.
+func (r *Runner) adopt(ctx context.Context, containerId string, runId id.RunId) {
+	r.mu.Lock()
+	r.runs[runId] = containerId
+	r.mu.Unlock()
+	r.startTail(context.WithoutCancel(ctx), containerId, runId)
+}
+
 // Reap stops the containers of runs that are OVER: the run workflow is
 // closed and nothing runs on the run's queue any more. Called on a
 // tick. The candidates come from the DAEMON by label, not from process

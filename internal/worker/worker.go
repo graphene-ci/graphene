@@ -19,6 +19,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -122,11 +123,24 @@ type Worker struct {
 	kinds map[string]*kindEntry
 
 	startRun RunStarter
+	// ensureHost brings a run-queue worker container up — the managed
+	// runner behind a hook, because the runner is built after this
+	// worker. Serves resurrection and the brought-kind apply host.
+	ensureHost HostEnsurer
 	// ensureNs and retireNs are the bundle manager's half of the
 	// namespace record; nil on a worker that is not the default one.
 	ensureNs func(ctx context.Context, name string, retentionDays int32) error
 	retireNs func(ctx context.Context, name string) error
 }
+
+// HostEnsurer makes sure the worker container of one run queue exists
+// and polls — minting the run's token on the way. revived reports
+// whether anything had to be brought back (an alive worker is a no-op).
+type HostEnsurer func(ctx context.Context, runId id.RunId, image string) (revived bool, err error)
+
+// SetHostEnsurer wires the managed runner's ensure path; called by the
+// bundle once the runner exists.
+func (s *Worker) SetHostEnsurer(fn HostEnsurer) { s.ensureHost = fn }
 
 // SetNamespaceOps wires what only the bundle manager can do: register
 // a namespace and stop serving one. The manager builds this worker, so
@@ -1288,23 +1302,8 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 	if req.Image == "" {
 		return errors.New("ensure container: the run has no worker image (" + wire.EnvImage + " was empty)")
 	}
-	env := map[string]string{
-		wire.EnvRole:      "machine",
-		wire.EnvAddress:   s.deps.External,
-		wire.EnvNamespace: s.deps.Namespace,
-		wire.EnvRunId:     string(req.RunId),
-		wire.EnvAgentId:   string(req.AgentId),
-		wire.EnvImage:     req.Image,
-		wire.EnvToken:     s.deps.RunToken,
-		// TODO(tls): drop once the door serves TLS.
-		wire.EnvInsecure: "1",
-	}
-	if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace, &agentpb.ContainerSpec{
-		AgentId: string(req.AgentId),
-		RunId:   string(req.RunId),
-		Image:   req.Image,
-		Env:     env,
-	}); err != nil {
+	if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
+		s.containerSpec(req.AgentId, req.RunId, req.Image)); err != nil {
 		return err
 	}
 	// "Ensured" means the worker inside the container POLLS, not that a
@@ -1321,6 +1320,28 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 			return ctx.Err()
 		case <-time.After(time.Second):
 		}
+	}
+}
+
+// containerSpec renders the (machine × run) executor container of this
+// namespace — ONE shape whether the run's own path ensures it or the
+// resurrection tick brings it back.
+func (s *Worker) containerSpec(agentId id.AgentId, runId id.RunId, image string) *agentpb.ContainerSpec {
+	return &agentpb.ContainerSpec{
+		AgentId: string(agentId),
+		RunId:   string(runId),
+		Image:   image,
+		Env: map[string]string{
+			wire.EnvRole:      "machine",
+			wire.EnvAddress:   s.deps.External,
+			wire.EnvNamespace: s.deps.Namespace,
+			wire.EnvRunId:     string(runId),
+			wire.EnvAgentId:   string(agentId),
+			wire.EnvImage:     image,
+			wire.EnvToken:     s.deps.RunToken,
+			// TODO(tls): drop once the door serves TLS.
+			wire.EnvInsecure: "1",
+		},
 	}
 }
 
@@ -1387,10 +1408,14 @@ func (s *Worker) fireDownstream(ctx context.Context, upstream, runId, outcome st
 	}
 }
 
-// ReapExecutors collects machine executors whose run is over AND whose
-// queue carries no live entities any more — the counterpart of "the
-// executor lives while its records do": when the stand's cascade kills
-// the last docker record, this tick stops the container.
+// ReapExecutors keeps the "executor lives while its records do"
+// invariant in BOTH directions. The reap half collects machine
+// executors whose run is over and whose queue carries no live entities;
+// the resurrection half brings a worker back for any queue that still
+// HAS live entities but nobody serving them — a container removed by
+// hand, a pruned daemon, a crashed host that came back. Without it
+// those records are orphans forever: reconcile dead, drift unhealed, a
+// stand's TTL delete hanging while the cloud resource burns money.
 func (s *Worker) ReapExecutors(ctx context.Context, every time.Duration) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
@@ -1415,7 +1440,163 @@ func (s *Worker) ReapExecutors(ctx context.Context, every time.Duration) {
 				}
 			}
 		}
+		s.resurrectExecutors(ctx)
 	}
+}
+
+// resurrectExecutors is the tick's second pass: every queue with live
+// entity records gets its worker ensured. Ensure paths are idempotent
+// and cheap when the worker is already alive, so this simply runs for
+// every live queue.
+func (s *Worker) resurrectExecutors(ctx context.Context) {
+	queues, err := s.liveEntityQueues(ctx)
+	if err != nil {
+		s.deps.Log.Warn("resurrection scan failed", xlog.Err(err))
+		return
+	}
+	served := s.deps.Registry.RunContainers(s.deps.Namespace)
+	for queue := range queues {
+		switch {
+		case strings.HasPrefix(queue, "run/"):
+			if s.ensureHost == nil {
+				continue
+			}
+			runId := id.RunId(strings.TrimPrefix(queue, "run/"))
+			image := s.imageForRunQueue(ctx, queue, runId)
+			if image == "" {
+				s.deps.Log.Warn("orphaned records with no recoverable image",
+					xlog.String("queue", queue))
+				continue
+			}
+			revived, err := s.ensureHost(ctx, runId, image)
+			if err != nil {
+				s.deps.Log.Warn("run worker resurrection failed",
+					xlog.Any("run", runId), xlog.Err(err))
+				continue
+			}
+			if revived {
+				rctx := obs.WithEntity(ctx, "run/"+string(runId))
+				obs.Warn(rctx, "run worker resurrected", obs.Str("queue", queue))
+				obs.Count(rctx, MetricResurrected, 1, obs.Str("contour", "run"))
+			}
+		case strings.HasPrefix(queue, "agent/"):
+			// agent/<agentId>/run/<runId>
+			rest := strings.TrimPrefix(queue, "agent/")
+			agentRaw, runRaw, ok := strings.Cut(rest, "/run/")
+			if !ok {
+				continue
+			}
+			agentId, runId := id.AgentId(agentRaw), id.RunId(runRaw)
+			alive := false
+			for _, r := range served[agentId] {
+				if r == runId {
+					alive = true
+					break
+				}
+			}
+			if alive {
+				continue
+			}
+			image := s.imageForRunQueue(ctx, queue, runId)
+			if image == "" {
+				s.deps.Log.Warn("orphaned records with no recoverable image",
+					xlog.String("queue", queue))
+				continue
+			}
+			// The same ensure the run's own path uses; an offline agent
+			// is an error here and a retry next tick — a PERMANENTLY
+			// dead machine is not resurrection's case but a burial.
+			if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
+				s.containerSpec(agentId, runId, image)); err != nil {
+				s.deps.Log.Warn("executor resurrection failed",
+					xlog.Any("agent", agentId), xlog.Any("run", runId), xlog.Err(err))
+				continue
+			}
+			rctx := obs.WithEntity(ctx, "run/"+string(runId))
+			obs.Warn(rctx, "executor resurrected",
+				obs.Str("agent", string(agentId)), obs.Str("queue", queue))
+			obs.Count(rctx, MetricResurrected, 1, obs.Str("contour", "machine"))
+		}
+	}
+}
+
+// MetricResurrected counts workers brought back for orphaned records.
+const MetricResurrected = "graphene.executor.resurrected"
+
+// liveEntityQueues lists the task queues that still serve live entity
+// records — visibility is the source, so the scan survives any loss of
+// process memory. The server's own queue is not a candidate.
+func (s *Worker) liveEntityQueues(ctx context.Context) (map[string]struct{}, error) {
+	queues := map[string]struct{}{}
+	var nextPage []byte
+	for {
+		resp, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+			Query:         "ExecutionStatus = 'Running' AND EntityKind IS NOT NULL",
+			NextPageToken: nextPage,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, info := range resp.GetExecutions() {
+			if q := info.GetTaskQueue(); q != "" && q != wire.ServerQueue {
+				queues[q] = struct{}{}
+			}
+		}
+		nextPage = resp.GetNextPageToken()
+		if len(nextPage) == 0 {
+			return queues, nil
+		}
+	}
+}
+
+// imageForRunQueue recovers the worker image of a run's queue: first
+// from the run workflow's own attributes (the graphene.io/image mark),
+// then — for queues with no run workflow (a brought-kind host) or a
+// run past retention — from the pipeline mark on the queue's records,
+// resolving the pipeline's ACTIVE image. The fallback may run a newer
+// code version than the records were born under; that is the accepted
+// price against leaving them orphaned forever (Р-Н23).
+func (s *Worker) imageForRunQueue(ctx context.Context, queue string, runId id.RunId) string {
+	if desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, "run/"+string(runId), ""); err == nil {
+		if img := labelFromAttributes(desc.GetWorkflowExecutionInfo().GetSearchAttributes().GetIndexedFields(), syslabels.Image); img != "" {
+			return img
+		}
+	}
+	resp, err := s.deps.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query:    fmt.Sprintf("TaskQueue = '%s' AND ExecutionStatus = 'Running' AND EntityKind IS NOT NULL", queue),
+		PageSize: 1,
+	})
+	if err != nil || len(resp.GetExecutions()) == 0 {
+		return ""
+	}
+	pipelineId := labelFromAttributes(resp.GetExecutions()[0].GetSearchAttributes().GetIndexedFields(), syslabels.Pipeline)
+	if pipelineId == "" {
+		return ""
+	}
+	st, err := s.GetPipeline(ctx, pipelineId)
+	if err != nil {
+		return ""
+	}
+	return st.Image
+}
+
+// labelFromAttributes digs one "k=v" label out of the EntityLabels
+// search attribute.
+func labelFromAttributes(fields map[string]*commonpb.Payload, key string) string {
+	payload, ok := fields[entdefine.SearchAttrLabels.GetName()]
+	if !ok {
+		return ""
+	}
+	var pairs []string
+	if err := converter.GetDefaultDataConverter().FromPayload(payload, &pairs); err != nil {
+		return ""
+	}
+	for _, p := range pairs {
+		if v, found := strings.CutPrefix(p, key+"="); found {
+			return v
+		}
+	}
+	return ""
 }
 
 // runOpen reports whether the run workflow is still running.

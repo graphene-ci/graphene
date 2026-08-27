@@ -229,6 +229,16 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		// management plane; the starter needs the whole bundle.
 		w.SetRunStarter(m.deps.MakeRunStarter(b))
 	}
+	// The ensure path behind resurrection and the brought-kind apply
+	// host: the managed runner brings the queue's worker container up,
+	// with a token minted for that run.
+	w.SetHostEnsurer(func(ctx context.Context, runId id.RunId, image string) (bool, error) {
+		token := ""
+		if m.deps.MintRunToken != nil {
+			token = m.deps.MintRunToken(namespace, string(runId))
+		}
+		return runner.Ensure(ctx, runId, image, token)
+	})
 	go func() {
 		if err := w.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Error("namespace worker died", xlog.Err(err))

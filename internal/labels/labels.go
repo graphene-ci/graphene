@@ -62,7 +62,16 @@ const (
 	// Origin is where a managed source was copied from
 	// ("gitsource/main"): provenance as a query, not just as spec.
 	Origin = Prefix + "origin"
+
+	// Declared marks HOW a record of a brought kind came to be. Absent
+	// on records a pipeline's own code declares; "external" on records
+	// declared through the generic apply door — the manifest does not
+	// describe those, so they must be tellable apart.
+	Declared = Prefix + "declared"
 )
+
+// DeclaredExternal is the Declared value of an apply-door record.
+const DeclaredExternal = "external"
 
 // TriggerManual is the doors' value for Trigger.
 const TriggerManual = "manual"

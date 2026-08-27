@@ -31,6 +31,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/valueflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
 	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
+	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/manifest"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
 	"github.com/graphene-ci/pipeline/pkg/wire"
@@ -113,7 +114,9 @@ func (s *Worker) Kinds() []KindInfo {
 func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessage, labels map[string]string) (string, error) {
 	entry, ok := s.kinds[kind]
 	if !ok {
-		return "", fmt.Errorf("unknown kind %q; this installation knows %s", kind, s.kindNames())
+		// Not the server's own vocabulary — but the dictionary may know
+		// it as a BROUGHT kind, and then the apply routes to its bringer.
+		return s.applyBrought(ctx, kind, id, spec, labels)
 	}
 	if !entry.info.Declarable {
 		return "", fmt.Errorf("a %s is not declared directly: %s", kind, entry.info.Description)
@@ -135,6 +138,65 @@ func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessag
 	// completeness does not depend on who declares them.
 	labels = syslabels.Merge(labels, s.marksFor(kind, spec))
 	return entclient.ApplyRaw(ctx, s.deps.Client, entity.KindName(kind), entity.ResourceID(id), wire.ServerQueue, spec, labels)
+}
+
+// applyBrought declares a record of a kind the server does NOT serve:
+// the dictionary routes it to the pipeline that brings the kind. The
+// record starts on the hosting queue of the bringer's active revision
+// (run/<pipeline>-ext-<revision>) — records of different revisions live
+// on different queues with their own code — and the managed runner
+// brings the host worker up; from then on it lives by the Р-Н9
+// invariant: reaped when empty, resurrected when orphaned.
+func (s *Worker) applyBrought(ctx context.Context, kind, name string, spec json.RawMessage, labels map[string]string) (string, error) {
+	unknown := fmt.Errorf("unknown kind %q; this installation knows %s", kind, s.kindNames())
+	entries := entclient.Bind(s.kindDef, s.deps.Client, wire.ServerQueue)
+	desc, err := entries.Describe(ctx, entity.ResourceID(kind))
+	if err != nil {
+		return "", unknown
+	}
+	if desc.State.Origin != kindflow.OriginBrought {
+		return "", unknown
+	}
+	switch len(desc.State.BroughtBy) {
+	case 0:
+		return "", fmt.Errorf("kind %q has no live bringer: no active pipeline brings its code, nothing could execute the record", kind)
+	case 1:
+	default:
+		return "", fmt.Errorf("kind %q is brought by several pipelines (%s); an unambiguous bringer is required",
+			kind, strings.Join(desc.State.BroughtBy, ", "))
+	}
+	pipelineId := desc.State.BroughtBy[0]
+	st, err := s.GetPipeline(ctx, pipelineId)
+	if err != nil {
+		return "", fmt.Errorf("kind %q bringer %s: %w", kind, pipelineId, err)
+	}
+	if st.Image == "" || st.RevisionId == "" {
+		return "", fmt.Errorf("kind %q bringer %s has no active revision image to host the record", kind, pipelineId)
+	}
+	hostRunId, err := id.ParseRunId(pipelineId + "-ext-" + st.RevisionId)
+	if err != nil {
+		return "", fmt.Errorf("hosting run id: %w", err)
+	}
+	// External records are tellable apart from code-declared ones: the
+	// manifest does not describe them, so the marks must.
+	labels = syslabels.Merge(labels, map[string]string{
+		syslabels.Pipeline: pipelineId,
+		syslabels.Revision: st.RevisionId,
+		syslabels.Declared: syslabels.DeclaredExternal,
+	})
+	ref, err := entclient.ApplyRaw(ctx, s.deps.Client, entity.KindName(kind), entity.ResourceID(name),
+		wire.RunQueue(hostRunId), spec, labels)
+	if err != nil {
+		return "", err
+	}
+	// The host comes up NOW, not on the next resurrection tick — the
+	// caller should see the record converge, not sit in creating.
+	if s.ensureHost != nil {
+		if _, err := s.ensureHost(ctx, hostRunId, st.Image); err != nil {
+			return ref, fmt.Errorf("record %s declared, but its host worker did not come up (the resurrection tick will retry): %w", ref, err)
+		}
+	}
+	return ref, nil
 }
 
 // marksFor derives a record's system markers from what it declares.
