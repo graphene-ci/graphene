@@ -35,6 +35,7 @@ func MountConnect(mux *http.ServeMux, m *Management, o *Observe, authn *auth.Aut
 	mount(managementv1connect.NewSourceAPIHandler(m, opts))
 	mount(managementv1connect.NewRbacAPIHandler(m, opts))
 	mount(managementv1connect.NewObserveAPIHandler(o, opts))
+	mount(managementv1connect.NewAgentsAPIHandler(m, opts))
 }
 
 // withCORS lets a browser UI hosted on another origin call the

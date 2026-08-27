@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package graphene.management.v1;
+
+option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
+
+// AgentsAPI is the operator's hand on a MACHINE: an interactive shell
+// on the box whose agent is connected, over the door — no ssh keys, no
+// direct reachability, the same token and audit as every other verb.
+//
+// A browser cannot hold a bidirectional stream, so the shell is a
+// half-duplex pair: Pty opens the session and streams its output;
+// PtyInput lands keystrokes, resizes and the explicit close as unary
+// calls addressed by the session id the first chunk announced. The
+// session is mortal by nature: it dies with the stream, the agent's
+// disconnect, or the shell's own exit — nothing reconnects.
+service AgentsAPI {
+  // Pty opens a shell on the machine and streams everything it says.
+  // The FIRST chunk is always Opened with the session id; the stream
+  // ends when the shell dies. Closing the stream closes the shell.
+  rpc Pty(PtyRequest) returns (stream PtyChunk);
+  // PtyInput writes into a live session: keystrokes, a resize, or the
+  // explicit close. One frame per call — input is bursty and small,
+  // and unary is what a browser can send.
+  rpc PtyInput(PtyInputRequest) returns (PtyInputResponse);
+}
+
+message PtyRequest {
+  // Agent is the machine's record id ("edge-1").
+  string agent = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+}
+
+message PtyChunk {
+  oneof body {
+    // Opened is the first chunk: the session id every PtyInput names.
+    Opened opened = 1;
+    // Data is raw shell output, escape sequences included.
+    bytes data = 2;
+    // Closed is the last chunk: how the shell ended.
+    Closed closed = 3;
+  }
+  message Opened {
+    string session_id = 1;
+  }
+  message Closed {
+    int32 exit_code = 1;
+    string message = 2;
+  }
+}
+
+message PtyInputRequest {
+  string session_id = 1;
+  oneof body {
+    // Data carries keystrokes, raw.
+    bytes data = 2;
+    Resize resize = 3;
+    // Close buries the shell explicitly.
+    bool close = 4;
+  }
+  message Resize {
+    uint32 cols = 1;
+    uint32 rows = 2;
+  }
+}
+
+message PtyInputResponse {}

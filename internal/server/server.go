@@ -301,6 +301,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Version:  cfg.Version,
 		Blobs:    blobStore,
 		Runtimes: runtimes.New(cfg.Runtimes),
+		// The machine-shell door reaches machines through the registry.
+		Agents: registry,
 		// Authorization reads the namespace's roles and bindings — the
 		// default namespace's worker is the store.
 		Authz:  authz.NewResolver(systemBundle.Worker),

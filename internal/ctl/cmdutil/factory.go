@@ -72,6 +72,7 @@ type Door struct {
 	Source    managementv1connect.SourceAPIClient
 	Rbac      managementv1connect.RbacAPIClient
 	Ns        managementv1connect.NamespacesAPIClient
+	Agents    managementv1connect.AgentsAPIClient
 }
 
 // Dial resolves and connects.
@@ -104,6 +105,7 @@ func DialContext(cc cliconfig.Context) (*Door, error) {
 		Source:    managementv1connect.NewSourceAPIClient(client, base, auth),
 		Rbac:      managementv1connect.NewRbacAPIClient(client, base, auth),
 		Ns:        managementv1connect.NewNamespacesAPIClient(client, base, auth),
+		Agents:    managementv1connect.NewAgentsAPIClient(client, base, auth),
 	}, nil
 }
 
