@@ -114,6 +114,12 @@ message Resource {
   // under "graphene.io/" are written by the system. Run rows carry the
   // synthetic "graphene.io/pipeline" label with the pipeline id.
   map<string, string> labels = 9;
+  // Protected marks a record the installation refuses to delete —
+  // today only namespace/graphene-system, which holds the records that
+  // say which namespaces exist. The SERVER is the one source of this
+  // truth: a UI renders the lock from here instead of mirroring the
+  // guard.
+  bool protected = 12;
   // StartedAt/FinishedAt come from visibility; FinishedAt is unset
   // while the workflow is open.
   google.protobuf.Timestamp started_at = 10;

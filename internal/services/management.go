@@ -590,11 +590,8 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	if err != nil {
 		return nil, err
 	}
-	// Only the SYSTEM namespace is not deletable: it holds the records
-	// that say which namespaces exist — including its own. "default" is
-	// a convention, deletable like any project namespace.
-	if req.GetRef() == string(nsflow.Kind)+"/"+nsflow.SystemNamespace {
-		return nil, status.Errorf(codes.FailedPrecondition, "the %s namespace cannot be deleted", nsflow.SystemNamespace)
+	if protectedRef(req.GetRef()) {
+		return nil, status.Errorf(codes.FailedPrecondition, "%s is protected and cannot be deleted", req.GetRef())
 	}
 	// The note goes first: after the cascade there is no history left
 	// to write it into.
@@ -807,6 +804,15 @@ const (
 	MetricRecordDeleted = "graphene.door.delete"
 )
 
+// protectedRef is the ONE source of "the installation refuses to
+// delete this": the Delete guard enforces it and every read stamps it
+// onto the Resource, so a UI renders the lock instead of mirroring the
+// rule. Today only the system namespace qualifies — it holds the
+// records that say which namespaces exist, including its own.
+func protectedRef(ref string) bool {
+	return ref == string(nsflow.Kind)+"/"+nsflow.SystemNamespace
+}
+
 // shortDigest renders a content digest the way a label should read:
 // unprefixed and bounded, because a label is a filter, not a field.
 func shortDigest(digest string) string {
@@ -859,6 +865,7 @@ func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowI
 		Labels:            out.Labels,
 		PendingCommands:   out.PendingCommands,
 		MarkedForDeletion: out.MarkedForDeletion,
+		Protected:         protectedRef(workflowId),
 	}, nil
 }
 
@@ -935,6 +942,7 @@ func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.R
 	res := &managementv1.Resource{
 		Ref:        workflowId,
 		Kind:       kind,
+		Protected:  protectedRef(workflowId),
 		StartedAt:  e.GetStartTime(),
 		FinishedAt: e.GetCloseTime(),
 	}
