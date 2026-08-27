@@ -396,6 +396,12 @@ type Resource struct {
 	// under "graphene.io/" are written by the system. Run rows carry the
 	// synthetic "graphene.io/pipeline" label with the pipeline id.
 	Labels map[string]string `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Protected marks a record the installation refuses to delete —
+	// today only namespace/graphene-system, which holds the records that
+	// say which namespaces exist. The SERVER is the one source of this
+	// truth: a UI renders the lock from here instead of mirroring the
+	// guard.
+	Protected bool `protobuf:"varint,12,opt,name=protected,proto3" json:"protected,omitempty"`
 	// StartedAt/FinishedAt come from visibility; FinishedAt is unset
 	// while the workflow is open.
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
@@ -495,6 +501,13 @@ func (x *Resource) GetLabels() map[string]string {
 		return x.Labels
 	}
 	return nil
+}
+
+func (x *Resource) GetProtected() bool {
+	if x != nil {
+		return x.Protected
+	}
+	return false
 }
 
 func (x *Resource) GetStartedAt() *timestamppb.Timestamp {
@@ -1289,7 +1302,7 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x06groups\x18\x02 \x03(\v2+.graphene.management.v1.CountResponse.GroupR\x06groups\x1a5\n" +
 	"\x05Group\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x03R\x05count\"\xda\x03\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\xf8\x03\n" +
 	"\bResource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -1299,7 +1312,8 @@ const file_proto_management_v1_resources_proto_rawDesc = "" +
 	"\x05state\x18\x06 \x01(\fR\x05state\x12)\n" +
 	"\x10pending_commands\x18\a \x01(\x05R\x0fpendingCommands\x12.\n" +
 	"\x13marked_for_deletion\x18\b \x01(\bR\x11markedForDeletion\x12D\n" +
-	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x129\n" +
+	"\x06labels\x18\t \x03(\v2,.graphene.management.v1.Resource.LabelsEntryR\x06labels\x12\x1c\n" +
+	"\tprotected\x18\f \x01(\bR\tprotected\x129\n" +
 	"\n" +
 	"started_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
