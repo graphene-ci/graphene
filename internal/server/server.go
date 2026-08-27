@@ -137,11 +137,15 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	// every system entity are empty by construction while looking like
 	// a feature that simply has no data yet.
 	if cfg.OtelLogs != "" || cfg.OtelTraces != "" {
+		// The server's own signals live where the server lives: the
+		// SYSTEM namespace. A record's activities still land in their
+		// OWN namespace — the obs point attribute from the activity
+		// context overrides this resource-level default.
 		shutdownObs, oerr := obs.Setup(ctx, obs.Config{
 			Endpoint:  loopbackDoor(cfg.Listen),
 			Token:     firstAdminToken(cfg),
 			Insecure:  true,
-			Namespace: "default",
+			Namespace: nsflow.SystemNamespace,
 			Role:      "server",
 		})
 		if oerr != nil {
@@ -204,19 +208,14 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		},
 		Log: log,
 	})
-	// Two namespaces exist on every installation: the SYSTEM one, which
-	// holds what describes the installation itself, and the default
-	// working one, which holds a first project.
-	for _, name := range []string{nsflow.SystemNamespace, "default"} {
-		if err := bundles.CreateNamespace(ctx, temporalClient, name, 0); err != nil {
-			return fmt.Errorf("%s namespace: %w", name, err)
-		}
+	// ONE namespace exists by construction: the SYSTEM one, where the
+	// installation itself lives. "default" is a convention, not a
+	// pillar: the first boot declares it as an ordinary record, and
+	// from then on it is deletable like any project namespace.
+	if err := bundles.CreateNamespace(ctx, temporalClient, nsflow.SystemNamespace, 0); err != nil {
+		return fmt.Errorf("%s namespace: %w", nsflow.SystemNamespace, err)
 	}
 	systemBundle, err := bundles.Get(nsflow.SystemNamespace)
-	if err != nil {
-		return err
-	}
-	defaultBundle, err := bundles.Get("default")
 	if err != nil {
 		return err
 	}
@@ -245,12 +244,43 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 			return fmt.Errorf("namespace %s: %w", name, err)
 		}
 	}
+	// The FIRST boot brings "default" to life the ordinary way — a
+	// namespace record whose Init registers it. A later boot after the
+	// operator deleted it leaves it deleted: known is known.
+	if !systemBundle.Worker.NamespaceKnown(ctx, "default") {
+		if err := systemBundle.Worker.DeclareNamespace(ctx, "default", nsflow.Spec{Description: "the first project's home"}); err != nil {
+			return fmt.Errorf("default namespace: %w", err)
+		}
+		// The record's Init registers the namespace asynchronously; the
+		// FIRST boot waits for it, because the first thing a fresh
+		// installation does is use default.
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			if ok, _ := systemBundle.Worker.NamespaceDeclared(ctx, "default"); ok {
+				if _, err := bundles.Get("default"); err == nil {
+					break
+				}
+			}
+			if time.Now().After(deadline) {
+				log.Warn("default namespace is still converging; continuing")
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 
 	// Variables are RECORDS: the configured ones are declared into the
-	// default namespace, the same way a person would declare them.
-	for name, value := range cfg.Vars {
-		if err := defaultBundle.Worker.DeclareVar(ctx, name, value); err != nil {
-			return fmt.Errorf("var %s: %w", name, err)
+	// default namespace, the same way a person would declare them. A
+	// deleted default namespace makes the seed moot, not fatal.
+	if len(cfg.Vars) > 0 {
+		if defaultBundle, derr := bundles.Get("default"); derr == nil {
+			for name, value := range cfg.Vars {
+				if err := defaultBundle.Worker.DeclareVar(ctx, name, value); err != nil {
+					return fmt.Errorf("var %s: %w", name, err)
+				}
+			}
+		} else {
+			log.Warn("config vars not seeded: the default namespace is not declared", xlog.Err(derr))
 		}
 	}
 
@@ -259,7 +289,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	// liveness/readiness outside.
 	health := probes.New(probes.Deps{
 		Temporal:         temporalClient,
-		Docker:           defaultBundle.Runner,
+		Docker:           systemBundle.Runner,
 		RegistryUpstream: cfg.RegistryUpstream,
 		Log:              log.With(xlog.String("component", "probes")),
 	})

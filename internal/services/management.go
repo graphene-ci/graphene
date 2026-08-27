@@ -590,13 +590,11 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	if err != nil {
 		return nil, err
 	}
-	// The installation's own namespaces are not deletable: the system
-	// one holds the records that say which namespaces exist, and the
-	// default one is where a first project lives.
-	for _, undeletable := range []string{nsflow.SystemNamespace, "default"} {
-		if req.GetRef() == string(nsflow.Kind)+"/"+undeletable {
-			return nil, status.Errorf(codes.FailedPrecondition, "the %s namespace cannot be deleted", undeletable)
-		}
+	// Only the SYSTEM namespace is not deletable: it holds the records
+	// that say which namespaces exist — including its own. "default" is
+	// a convention, deletable like any project namespace.
+	if req.GetRef() == string(nsflow.Kind)+"/"+nsflow.SystemNamespace {
+		return nil, status.Errorf(codes.FailedPrecondition, "the %s namespace cannot be deleted", nsflow.SystemNamespace)
 	}
 	// The note goes first: after the cascade there is no history left
 	// to write it into.

@@ -123,7 +123,7 @@ func (m *Manager) Get(namespace string) (*Bundle, error) {
 	// Starting a bundle is how a namespace comes back after a server
 	// restart — so it must answer to the records, or a retired
 	// namespace would return on the next call that names it.
-	if namespace != "default" && namespace != nsflow.SystemNamespace && m.declared != nil {
+	if namespace != nsflow.SystemNamespace && m.declared != nil {
 		ok, err := m.declared(m.ctx, namespace)
 		if err != nil {
 			return nil, err
@@ -145,7 +145,7 @@ func (m *Manager) Get(namespace string) (*Bundle, error) {
 // out under its own retention, because deleting a container must not
 // silently destroy what a person put inside it.
 func (m *Manager) Retire(namespace string) error {
-	if namespace == "default" || namespace == nsflow.SystemNamespace {
+	if namespace == nsflow.SystemNamespace {
 		return fmt.Errorf("the %s namespace cannot be retired", namespace)
 	}
 	m.mu.Lock()
