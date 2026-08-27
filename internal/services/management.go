@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
@@ -59,6 +60,9 @@ type Management struct {
 	Blobs blob.Store
 	// Runtimes is the installation's toolchain catalogue.
 	Runtimes *runtimes.Catalogue
+	// Agents is the live agent registry — the machine-shell door's way
+	// to the machines; nil on an installation serving none.
+	Agents *agents.Registry
 	// Authz decides what a caller may do; nil falls back to the
 	// built-in roles of the caller's own token.
 	Authz *authz.Resolver

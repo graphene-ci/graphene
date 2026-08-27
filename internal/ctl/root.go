@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/cli"
+	"github.com/graphene-ci/graphene/internal/ctl/agentcmd"
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
 	"github.com/graphene-ci/graphene/internal/ctl/ctxcmd"
 	"github.com/graphene-ci/graphene/internal/ctl/getcmd"
@@ -94,7 +95,7 @@ binary itself, over the same connection contexts.`,
 	)
 	add("runs", runcmd.New(f))
 	add("installation", misccmd.NewSecret(f), revisioncmd.New(f), sourcecmd.New(f),
-		rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f))
+		rbaccmd.NewAccount(f), rbaccmd.NewWhoAmI(f), agentcmd.New(f))
 
 	initCmd := &cobra.Command{
 		Use:   "init <name>",

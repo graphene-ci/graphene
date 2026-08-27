@@ -38,6 +38,11 @@ type Registry struct {
 	mu     sync.Mutex
 	agents map[agentKey]*session
 
+	// ptys are the live machine shells, by server-minted pty id — the
+	// bridge between a management stream and an agent session.
+	ptyMu sync.Mutex
+	ptys  map[string]*ptyPipe
+
 	// minter renews a session's MINTED credential before it expires;
 	// nil leaves static tokens alone (they have no expiry to renew).
 	minter *auth.Minter
@@ -123,6 +128,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 			delete(r.agents, key)
 		}
 		r.mu.Unlock()
+		r.dropSessionPtys(s)
 		r.log.Info("agent disconnected", xlog.Any("agent", agentId), xlog.String("namespace", key.namespace))
 	}()
 	r.log.Info("agent connected", xlog.Any("agent", agentId), xlog.String("version", hello.GetAgentVersion()))
@@ -157,6 +163,10 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 				xlog.String("message", body.ContainerReport.GetMessage()))
 		case *agentpb.SessionRequest_CommandResult:
 			s.deliver(body.CommandResult)
+		case *agentpb.SessionRequest_PtyOutput:
+			r.routePtyOutput(body.PtyOutput)
+		case *agentpb.SessionRequest_PtyClosed:
+			r.routePtyClosed(body.PtyClosed)
 		}
 	}
 }
