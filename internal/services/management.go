@@ -559,10 +559,11 @@ func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv
 
 func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef) ([]*managementv1.TreeNode, error) {
 	// An EMPTY owner asks for the forest's ROOTS: records nobody owns —
-	// agents, stands, pipelines. They carry no Owner attribute at all,
-	// so the root query is by absence, not by an empty value.
-	query := fmt.Sprintf("%s IS NULL AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
-		wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
+	// agents, stands, pipelines. Ownerless is spelled BOTH ways in
+	// visibility (an absent attribute or an empty value, depending on
+	// which path upserted it), so the root query covers both.
+	query := fmt.Sprintf("(%s IS NULL OR %s = '') AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
+		wire.SearchAttrOwner.GetName(), wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
 	if owner != "" {
 		query = fmt.Sprintf("%s = '%s' AND ExecutionStatus = 'Running'",
 			wire.SearchAttrOwner.GetName(), string(owner))
