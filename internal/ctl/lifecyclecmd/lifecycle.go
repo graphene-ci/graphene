@@ -52,16 +52,22 @@ func commandCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string
 // NewTree builds `tree`.
 func NewTree(f *cmdutil.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use:   "tree <owner-ref>",
-		Short: "The ownership tree under an owner",
+		Use:   "tree [owner-ref]",
+		Short: "The ownership tree under an owner; no owner — the forest's roots",
 		Long: `The ownership tree under one owner: the recursive walk cascade
-deletion uses, read-only — what dies with this owner.`,
-		Args:              cobra.RangeArgs(1, 2),
+deletion uses, read-only — what dies with this owner. With no owner,
+the roots of the forest: every record nobody owns, with its subtree.`,
+		Args:              cobra.RangeArgs(0, 2),
 		ValidArgsFunction: targetCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ref, rest, err := cmdutil.TargetRef(args)
-			if err != nil || len(rest) != 0 {
-				return fmt.Errorf("usage: tree <owner-ref>")
+			ref := ""
+			if len(args) > 0 {
+				var rest []string
+				var err error
+				ref, rest, err = cmdutil.TargetRef(args)
+				if err != nil || len(rest) != 0 {
+					return fmt.Errorf("usage: tree [owner-ref]")
+				}
 			}
 			d, err := f.Dial()
 			if err != nil {
