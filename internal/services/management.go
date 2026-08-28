@@ -558,11 +558,19 @@ func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv
 }
 
 func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef) ([]*managementv1.TreeNode, error) {
+	// An EMPTY owner asks for the forest's ROOTS: records nobody owns —
+	// agents, stands, pipelines. They carry no Owner attribute at all,
+	// so the root query is by absence, not by an empty value.
+	query := fmt.Sprintf("%s IS NULL AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
+		wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
+	if owner != "" {
+		query = fmt.Sprintf("%s = '%s' AND ExecutionStatus = 'Running'",
+			wire.SearchAttrOwner.GetName(), string(owner))
+	}
 	// Visibility carries everything a tree node shows; a describe per
 	// node would wake every record's worker.
 	page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Query: fmt.Sprintf("%s = '%s' AND ExecutionStatus = 'Running'",
-			wire.SearchAttrOwner.GetName(), string(owner)),
+		Query: query,
 	})
 	if err != nil {
 		return nil, err

@@ -195,7 +195,9 @@ func (r *Registry) StopContainer(ctx context.Context, namespace string, agentId 
 	})
 }
 
-// Status reports the agent's presence for the machine flow.
+// Status reports the agent's presence for the machine flow — with the
+// full inventory behind the digest, so the reconcile lands the facts
+// on the record and every reader gets them from the state.
 func (r *Registry) Status(namespace string, agentId id.AgentId) agentflow.AgentStatus {
 	r.mu.Lock()
 	s, ok := r.agents[agentKey{namespace: namespace, agentId: agentId}]
@@ -207,7 +209,31 @@ func (r *Registry) Status(namespace string, agentId id.AgentId) agentflow.AgentS
 		Connected:   true,
 		Addresses:   s.facts.GetAddresses(),
 		FactsDigest: s.factsDigest,
+		Facts:       machineFacts(s.facts),
 	}
+}
+
+// machineFacts translates the wire facts into the record's shape.
+func machineFacts(f *agentpb.Facts) *agentflow.MachineFacts {
+	if f == nil {
+		return nil
+	}
+	out := &agentflow.MachineFacts{
+		Hostname:         f.GetHostname(),
+		OS:               f.GetOs(),
+		Arch:             f.GetArch(),
+		Cpus:             int(f.GetCpus()),
+		MemoryBytes:      f.GetMemoryBytes(),
+		OSReleaseId:      f.GetOsReleaseId(),
+		OSReleaseLike:    f.GetOsReleaseLike(),
+		OSReleaseVersion: f.GetOsReleaseVersion(),
+	}
+	for _, iface := range f.GetInterfaces() {
+		out.Interfaces = append(out.Interfaces, agentflow.InterfaceAddrs{
+			Name: iface.GetName(), Addresses: iface.GetAddresses(),
+		})
+	}
+	return out
 }
 
 func (r *Registry) command(ctx context.Context, namespace string, agentId id.AgentId, build func(commandId string) *agentpb.SessionResponse) error {
