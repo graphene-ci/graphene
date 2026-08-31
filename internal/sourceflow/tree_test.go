@@ -60,46 +60,4 @@ func TestTreeRoundTrip(t *testing.T) {
 	}
 }
 
-// The index is the tree's identity: the same files must render the
-// same bytes whatever order they were written in, or every write would
-// look like a change.
-func TestIndexDeterministic(t *testing.T) {
-	a := Index{
-		"main.go": {Blob: "b1", Size: 3, Digest: "sha256:aa"},
-		"go.mod":  {Blob: "b2", Size: 4, Digest: "sha256:bb"},
-	}
-	b := Index{
-		"go.mod":  {Blob: "b2", Size: 4, Digest: "sha256:bb"},
-		"main.go": {Blob: "b1", Size: 3, Digest: "sha256:aa"},
-	}
-	da, raw, err := a.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, _, err := b.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if da != db {
-		t.Fatalf("same tree, different digests: %s vs %s", da, db)
-	}
-	back, err := ParseIndex(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(back) != 2 || back["main.go"].Blob != "b1" {
-		t.Fatalf("index did not survive the round trip: %#v", back)
-	}
-	// A changed file changes the tree's digest — that is what makes a
-	// revision of an edited tree a different revision.
-	a["main.go"] = Entry{Blob: "b3", Size: 5, Digest: "sha256:cc"}
-	dc, _, err := a.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dc == da {
-		t.Fatal("an edited file left the tree digest unchanged")
-	}
-}
-
 const maxTestFile = 1 << 20

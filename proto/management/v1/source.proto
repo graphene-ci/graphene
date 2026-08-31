@@ -5,10 +5,10 @@ package graphene.management.v1;
 option go_package = "github.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1";
 
 // SourceAPI is the BYTES side of a source. A source is an ordinary
-// record — gitsource or managedsource, declared with Apply, changed
-// with Invoke, read with Get — so what stays here is only what a
-// command cannot carry: file content, and questions about the
-// installation rather than about a record.
+// record — a gitsource, declared with Apply, synced with Invoke, read
+// with Get — so what stays here is only what a command cannot carry:
+// file content, and questions about the installation rather than about
+// a record.
 //
 // Every request names a source as "kind/id" ("gitsource/main"). Files
 // of a gitsource are readable and not writable: it is a checkout of a
@@ -24,18 +24,15 @@ service SourceAPI {
   // on THIS installation".
   rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
 
-  // The working tree is EDITABLE: Studio reads and writes files
-  // straight into the pipeline's tree, and every write is durable —
-  // that is the whole point of the tree living on the server.
+  // The tree is READ-ONLY: Studio lists and reads files of a checkout;
+  // a source follows its ref and is never written into.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
-  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
-  rpc DeleteFile(DeleteFileRequest) returns (WriteFileResponse);
 }
 
 message UploadSourceRequest {
   // Pipeline the uploaded tree is meant for; the upload area is per
-  // pipeline, and a managedsource adopts it by copy.
+  // pipeline, and a revision materialization builds from it.
   string pipeline_id = 1;
   // The tree as tar.gz.
   bytes source = 2;
@@ -88,20 +85,4 @@ message ReadFileRequest {
 
 message ReadFileResponse {
   bytes content = 1;
-}
-
-message WriteFileRequest {
-  string source = 1;
-  string path = 2;
-  bytes content = 3;
-}
-
-message WriteFileResponse {
-  string tree_digest = 1;
-  uint64 generation = 2;
-}
-
-message DeleteFileRequest {
-  string source = 1;
-  string path = 2;
 }

@@ -44,10 +44,6 @@ const (
 	SourceAPIListFilesProcedure = "/graphene.management.v1.SourceAPI/ListFiles"
 	// SourceAPIReadFileProcedure is the fully-qualified name of the SourceAPI's ReadFile RPC.
 	SourceAPIReadFileProcedure = "/graphene.management.v1.SourceAPI/ReadFile"
-	// SourceAPIWriteFileProcedure is the fully-qualified name of the SourceAPI's WriteFile RPC.
-	SourceAPIWriteFileProcedure = "/graphene.management.v1.SourceAPI/WriteFile"
-	// SourceAPIDeleteFileProcedure is the fully-qualified name of the SourceAPI's DeleteFile RPC.
-	SourceAPIDeleteFileProcedure = "/graphene.management.v1.SourceAPI/DeleteFile"
 )
 
 // SourceAPIClient is a client for the graphene.management.v1.SourceAPI service.
@@ -61,13 +57,10 @@ type SourceAPIClient interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
-	// The working tree is EDITABLE: Studio reads and writes files
-	// straight into the pipeline's tree, and every write is durable —
-	// that is the whole point of the tree living on the server.
+	// The tree is READ-ONLY: Studio lists and reads files of a checkout;
+	// a source follows its ref and is never written into.
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
-	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
-	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
 }
 
 // NewSourceAPIClient constructs a client for the graphene.management.v1.SourceAPI service. By
@@ -111,18 +104,6 @@ func NewSourceAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(sourceAPIMethods.ByName("ReadFile")),
 			connect.WithClientOptions(opts...),
 		),
-		writeFile: connect.NewClient[v1.WriteFileRequest, v1.WriteFileResponse](
-			httpClient,
-			baseURL+SourceAPIWriteFileProcedure,
-			connect.WithSchema(sourceAPIMethods.ByName("WriteFile")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteFile: connect.NewClient[v1.DeleteFileRequest, v1.WriteFileResponse](
-			httpClient,
-			baseURL+SourceAPIDeleteFileProcedure,
-			connect.WithSchema(sourceAPIMethods.ByName("DeleteFile")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -133,8 +114,6 @@ type sourceAPIClient struct {
 	listRuntimes   *connect.Client[v1.ListRuntimesRequest, v1.ListRuntimesResponse]
 	listFiles      *connect.Client[v1.ListFilesRequest, v1.ListFilesResponse]
 	readFile       *connect.Client[v1.ReadFileRequest, v1.ReadFileResponse]
-	writeFile      *connect.Client[v1.WriteFileRequest, v1.WriteFileResponse]
-	deleteFile     *connect.Client[v1.DeleteFileRequest, v1.WriteFileResponse]
 }
 
 // UploadSource calls graphene.management.v1.SourceAPI.UploadSource.
@@ -162,16 +141,6 @@ func (c *sourceAPIClient) ReadFile(ctx context.Context, req *connect.Request[v1.
 	return c.readFile.CallUnary(ctx, req)
 }
 
-// WriteFile calls graphene.management.v1.SourceAPI.WriteFile.
-func (c *sourceAPIClient) WriteFile(ctx context.Context, req *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
-	return c.writeFile.CallUnary(ctx, req)
-}
-
-// DeleteFile calls graphene.management.v1.SourceAPI.DeleteFile.
-func (c *sourceAPIClient) DeleteFile(ctx context.Context, req *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
-	return c.deleteFile.CallUnary(ctx, req)
-}
-
 // SourceAPIHandler is an implementation of the graphene.management.v1.SourceAPI service.
 type SourceAPIHandler interface {
 	// UploadSource stores a source tree and returns its reference. Bytes
@@ -183,13 +152,10 @@ type SourceAPIHandler interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *connect.Request[v1.ListRuntimesRequest]) (*connect.Response[v1.ListRuntimesResponse], error)
-	// The working tree is EDITABLE: Studio reads and writes files
-	// straight into the pipeline's tree, and every write is durable —
-	// that is the whole point of the tree living on the server.
+	// The tree is READ-ONLY: Studio lists and reads files of a checkout;
+	// a source follows its ref and is never written into.
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.ListFilesResponse], error)
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error)
-	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
-	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error)
 }
 
 // NewSourceAPIHandler builds an HTTP handler from the service implementation. It returns the path
@@ -229,18 +195,6 @@ func NewSourceAPIHandler(svc SourceAPIHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(sourceAPIMethods.ByName("ReadFile")),
 		connect.WithHandlerOptions(opts...),
 	)
-	sourceAPIWriteFileHandler := connect.NewUnaryHandler(
-		SourceAPIWriteFileProcedure,
-		svc.WriteFile,
-		connect.WithSchema(sourceAPIMethods.ByName("WriteFile")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sourceAPIDeleteFileHandler := connect.NewUnaryHandler(
-		SourceAPIDeleteFileProcedure,
-		svc.DeleteFile,
-		connect.WithSchema(sourceAPIMethods.ByName("DeleteFile")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/graphene.management.v1.SourceAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SourceAPIUploadSourceProcedure:
@@ -253,10 +207,6 @@ func NewSourceAPIHandler(svc SourceAPIHandler, opts ...connect.HandlerOption) (s
 			sourceAPIListFilesHandler.ServeHTTP(w, r)
 		case SourceAPIReadFileProcedure:
 			sourceAPIReadFileHandler.ServeHTTP(w, r)
-		case SourceAPIWriteFileProcedure:
-			sourceAPIWriteFileHandler.ServeHTTP(w, r)
-		case SourceAPIDeleteFileProcedure:
-			sourceAPIDeleteFileHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -284,12 +234,4 @@ func (UnimplementedSourceAPIHandler) ListFiles(context.Context, *connect.Request
 
 func (UnimplementedSourceAPIHandler) ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.ReadFileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SourceAPI.ReadFile is not implemented"))
-}
-
-func (UnimplementedSourceAPIHandler) WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SourceAPI.WriteFile is not implemented"))
-}
-
-func (UnimplementedSourceAPIHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[v1.WriteFileResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.SourceAPI.DeleteFile is not implemented"))
 }

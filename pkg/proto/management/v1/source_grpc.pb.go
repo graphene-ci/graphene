@@ -24,8 +24,6 @@ const (
 	SourceAPI_ListRuntimes_FullMethodName   = "/graphene.management.v1.SourceAPI/ListRuntimes"
 	SourceAPI_ListFiles_FullMethodName      = "/graphene.management.v1.SourceAPI/ListFiles"
 	SourceAPI_ReadFile_FullMethodName       = "/graphene.management.v1.SourceAPI/ReadFile"
-	SourceAPI_WriteFile_FullMethodName      = "/graphene.management.v1.SourceAPI/WriteFile"
-	SourceAPI_DeleteFile_FullMethodName     = "/graphene.management.v1.SourceAPI/DeleteFile"
 )
 
 // SourceAPIClient is the client API for SourceAPI service.
@@ -33,10 +31,10 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // SourceAPI is the BYTES side of a source. A source is an ordinary
-// record — gitsource or managedsource, declared with Apply, changed
-// with Invoke, read with Get — so what stays here is only what a
-// command cannot carry: file content, and questions about the
-// installation rather than about a record.
+// record — a gitsource, declared with Apply, synced with Invoke, read
+// with Get — so what stays here is only what a command cannot carry:
+// file content, and questions about the installation rather than about
+// a record.
 //
 // Every request names a source as "kind/id" ("gitsource/main"). Files
 // of a gitsource are readable and not writable: it is a checkout of a
@@ -51,13 +49,10 @@ type SourceAPIClient interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(ctx context.Context, in *ListRuntimesRequest, opts ...grpc.CallOption) (*ListRuntimesResponse, error)
-	// The working tree is EDITABLE: Studio reads and writes files
-	// straight into the pipeline's tree, and every write is durable —
-	// that is the whole point of the tree living on the server.
+	// The tree is READ-ONLY: Studio lists and reads files of a checkout;
+	// a source follows its ref and is never written into.
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error)
-	WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
-	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
 }
 
 type sourceAPIClient struct {
@@ -127,35 +122,15 @@ func (c *sourceAPIClient) ReadFile(ctx context.Context, in *ReadFileRequest, opt
 	return out, nil
 }
 
-func (c *sourceAPIClient) WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WriteFileResponse)
-	err := c.cc.Invoke(ctx, SourceAPI_WriteFile_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *sourceAPIClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WriteFileResponse)
-	err := c.cc.Invoke(ctx, SourceAPI_DeleteFile_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // SourceAPIServer is the server API for SourceAPI service.
 // All implementations must embed UnimplementedSourceAPIServer
 // for forward compatibility.
 //
 // SourceAPI is the BYTES side of a source. A source is an ordinary
-// record — gitsource or managedsource, declared with Apply, changed
-// with Invoke, read with Get — so what stays here is only what a
-// command cannot carry: file content, and questions about the
-// installation rather than about a record.
+// record — a gitsource, declared with Apply, synced with Invoke, read
+// with Get — so what stays here is only what a command cannot carry:
+// file content, and questions about the installation rather than about
+// a record.
 //
 // Every request names a source as "kind/id" ("gitsource/main"). Files
 // of a gitsource are readable and not writable: it is a checkout of a
@@ -170,13 +145,10 @@ type SourceAPIServer interface {
 	// ListRuntimes answers "which languages can I write a pipeline in
 	// on THIS installation".
 	ListRuntimes(context.Context, *ListRuntimesRequest) (*ListRuntimesResponse, error)
-	// The working tree is EDITABLE: Studio reads and writes files
-	// straight into the pipeline's tree, and every write is durable —
-	// that is the whole point of the tree living on the server.
+	// The tree is READ-ONLY: Studio lists and reads files of a checkout;
+	// a source follows its ref and is never written into.
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error)
-	WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error)
-	DeleteFile(context.Context, *DeleteFileRequest) (*WriteFileResponse, error)
 	mustEmbedUnimplementedSourceAPIServer()
 }
 
@@ -201,12 +173,6 @@ func (UnimplementedSourceAPIServer) ListFiles(context.Context, *ListFilesRequest
 }
 func (UnimplementedSourceAPIServer) ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadFile not implemented")
-}
-func (UnimplementedSourceAPIServer) WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method WriteFile not implemented")
-}
-func (UnimplementedSourceAPIServer) DeleteFile(context.Context, *DeleteFileRequest) (*WriteFileResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
 }
 func (UnimplementedSourceAPIServer) mustEmbedUnimplementedSourceAPIServer() {}
 func (UnimplementedSourceAPIServer) testEmbeddedByValue()                   {}
@@ -312,42 +278,6 @@ func _SourceAPI_ReadFile_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SourceAPI_WriteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WriteFileRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SourceAPIServer).WriteFile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SourceAPI_WriteFile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SourceAPIServer).WriteFile(ctx, req.(*WriteFileRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SourceAPI_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteFileRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SourceAPIServer).DeleteFile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SourceAPI_DeleteFile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SourceAPIServer).DeleteFile(ctx, req.(*DeleteFileRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // SourceAPI_ServiceDesc is the grpc.ServiceDesc for SourceAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -370,14 +300,6 @@ var SourceAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReadFile",
 			Handler:    _SourceAPI_ReadFile_Handler,
-		},
-		{
-			MethodName: "WriteFile",
-			Handler:    _SourceAPI_WriteFile_Handler,
-		},
-		{
-			MethodName: "DeleteFile",
-			Handler:    _SourceAPI_DeleteFile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -1,108 +1,18 @@
 package sourceflow
 
-// A managed tree is kept FILE BY FILE, not as one archive. Editing a
-// file used to mean downloading the whole tar.gz, unpacking it,
-// changing one entry, packing it again and uploading it back — work
-// proportional to the whole project on every autosave. Here a write
-// stores one blob and one index; the archive is built once, when a
-// revision is materialized.
+// Reading a checkout: a source's bytes live in one tar.gz, unpacked
+// into memory when a file is read or a revision is materialized.
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"path"
 	"sort"
 	"strings"
 )
-
-// Entry is one file of the tree.
-type Entry struct {
-	// Blob names the file's own object in the store.
-	Blob string `json:"blob"`
-	Size int64  `json:"size"`
-	// Digest pins the content, and is what makes a write cheap: an
-	// unchanged file keeps its blob.
-	Digest string `json:"digest"`
-}
-
-// Index is the whole tree: path -> entry. Sorted on the wire, so the
-// same files always render the same bytes and the same digest.
-type Index map[string]Entry
-
-// Digest is the tree's identity: the digest of the rendered index.
-func (ix Index) Digest() (string, []byte, error) {
-	raw, err := ix.Marshal()
-	if err != nil {
-		return "", nil, err
-	}
-	sum := sha256.Sum256(raw)
-	return "sha256:" + hex.EncodeToString(sum[:]), raw, nil
-}
-
-// Marshal renders the index deterministically.
-func (ix Index) Marshal() ([]byte, error) {
-	paths := make([]string, 0, len(ix))
-	for p := range ix {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for i, p := range paths {
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		key, err := json.Marshal(p)
-		if err != nil {
-			return nil, err
-		}
-		val, err := json.Marshal(ix[p])
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(key)
-		buf.WriteByte(':')
-		buf.Write(val)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-// ParseIndex reads an index blob.
-func ParseIndex(raw []byte) (Index, error) {
-	ix := Index{}
-	if len(raw) == 0 {
-		return ix, nil
-	}
-	if err := json.Unmarshal(raw, &ix); err != nil {
-		return nil, fmt.Errorf("source index: %w", err)
-	}
-	return ix, nil
-}
-
-// BlobPath is where one file's content lives: content-addressed under
-// the source, so two revisions of a file coexist and an unchanged file
-// is never rewritten.
-func BlobPath(sourceId, digest string) string {
-	return fmt.Sprintf("sources/%s/files/%s", sourceId, strings.TrimPrefix(digest, "sha256:"))
-}
-
-// IndexPath is where one version of the index lives.
-func IndexPath(sourceId, digest string) string {
-	return fmt.Sprintf("sources/%s/index/%s.json", sourceId, strings.TrimPrefix(digest, "sha256:"))
-}
-
-// FileDigest is the digest of one file's content.
-func FileDigest(content []byte) string {
-	sum := sha256.Sum256(content)
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
 
 // CleanPath refuses anything that would escape the tree. Both an
 // absolute path and one that climbs out are refused rather than
@@ -122,8 +32,7 @@ func CleanPath(p string) (string, error) {
 	return clean, nil
 }
 
-// UnpackTar reads a tar.gz into memory: path -> content. This is how
-// an archive becomes a managed tree, once.
+// UnpackTar reads a tar.gz into memory: path -> content.
 func UnpackTar(raw []byte, maxFileBytes int64) (map[string][]byte, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(raw))
 	if err != nil {

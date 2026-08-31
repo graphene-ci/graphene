@@ -33,9 +33,8 @@ const Kind entity.KindName = "pipeline"
 // Spec is what a pipeline IS: its source. Everything else
 // is state the publications write. The record's id IS the pipeline id.
 type Spec struct {
-	// A pipeline declares NOTHING about its source any more: sources
-	// are records of their own under it (gitsource, managedsource),
-	// because they differ in what may be done to them. What stays here
+	// A pipeline declares NOTHING about its source any more: the source
+	// is a record of its own under it (gitsource). What stays here
 	// is what only the pipeline can be: the arbiter of its runs and the
 	// holder of the version those runs use.
 }

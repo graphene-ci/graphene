@@ -1,7 +1,7 @@
 // Package sourcecmd is the ctl surface of a pipeline's SOURCE side:
-// create one from a Git repository or a local directory, re-sync it,
-// download or edit the working tree. Reading, listing and deleting are
-// the ordinary record verbs — a pipeline is a record like any other.
+// create one from a Git repository, re-sync it, download or read its
+// tree. A checkout is read-only. Declaring, syncing and deleting are
+// the ordinary record verbs — a source is a record like any other.
 package sourcecmd
 
 import (
@@ -33,7 +33,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Short: "Upload a tree and print its reference",
 		Long: `Store a local directory as bytes in the installation and print the
 reference to it. Nothing is declared here: hand the reference to a
-managedsource's "upload" field with the ordinary apply.`,
+revision materialization to build it.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			packed, err := revisioncmd.PackSource(args[1])
@@ -188,81 +188,18 @@ managedsource's "upload" field with the ordinary apply.`,
 		},
 	}
 
-	var fromFile string
-	write := &cobra.Command{
-		Use:   "write <source> <path>",
-		Short: "Write one file into the working tree (stdin, or --from)",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var content []byte
-			var err error
-			if fromFile != "" {
-				content, err = os.ReadFile(fromFile) //nolint:gosec // the user's named file
-			} else {
-				content, err = io.ReadAll(os.Stdin)
-			}
-			if err != nil {
-				return err
-			}
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			ref, err := sourceRef(args[0])
-			if err != nil {
-				return err
-			}
-			resp, err := d.Source.WriteFile(cmd.Context(), connect.NewRequest(&managementv1.WriteFileRequest{
-				Source: ref, Path: args[1], Content: content,
-			}))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "%s written; tree %s (generation %d)\n",
-				args[1], resp.Msg.GetTreeDigest(), resp.Msg.GetGeneration())
-			return nil
-		},
-	}
-	write.Flags().StringVar(&fromFile, "from", "", "read the content from this local file")
-
-	rm := &cobra.Command{
-		Use:   "rm <source> <path>",
-		Short: "Delete one file from the working tree",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			d, err := f.Dial()
-			if err != nil {
-				return err
-			}
-			ref, err := sourceRef(args[0])
-			if err != nil {
-				return err
-			}
-			resp, err := d.Source.DeleteFile(cmd.Context(), connect.NewRequest(&managementv1.DeleteFileRequest{
-				Source: ref, Path: args[1],
-			}))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "%s deleted; tree %s (generation %d)\n",
-				args[1], resp.Msg.GetTreeDigest(), resp.Msg.GetGeneration())
-			return nil
-		},
-	}
-
-	cmd.AddCommand(upload, download, runtimesCmd, files, cat, write, rm)
+	cmd.AddCommand(upload, download, runtimesCmd, files, cat)
 	return cmd
 }
 
 // sourceRef takes the reference as given. A bare name is refused
 // rather than guessed: which kind a name belongs to is the
-// installation's answer, and guessing "managedsource" here would send
-// a write to a record the caller never named.
+// installation's answer.
 func sourceRef(name string) (string, error) {
 	if strings.Contains(name, "/") {
 		return name, nil
 	}
-	return "", fmt.Errorf("name the source as kind/id (`graphenectl kinds` lists the kinds; `get gitsource` and `get managedsource` list the records)")
+	return "", fmt.Errorf("name the source as kind/id (`graphenectl kinds` lists the kinds; `get gitsource` lists the records)")
 }
 
 // short renders a digest the way a person reads it.

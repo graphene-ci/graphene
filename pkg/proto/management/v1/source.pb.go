@@ -24,7 +24,7 @@ const (
 type UploadSourceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Pipeline the uploaded tree is meant for; the upload area is per
-	// pipeline, and a managedsource adopts it by copy.
+	// pipeline, and a revision materialization builds from it.
 	PipelineId string `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	// The tree as tar.gz.
 	Source        []byte `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
@@ -490,170 +490,6 @@ func (x *ReadFileResponse) GetContent() []byte {
 	return nil
 }
 
-type WriteFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WriteFileRequest) Reset() {
-	*x = WriteFileRequest{}
-	mi := &file_proto_management_v1_source_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteFileRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteFileRequest) ProtoMessage() {}
-
-func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_source_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
-func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *WriteFileRequest) GetSource() string {
-	if x != nil {
-		return x.Source
-	}
-	return ""
-}
-
-func (x *WriteFileRequest) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-func (x *WriteFileRequest) GetContent() []byte {
-	if x != nil {
-		return x.Content
-	}
-	return nil
-}
-
-type WriteFileResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TreeDigest    string                 `protobuf:"bytes,1,opt,name=tree_digest,json=treeDigest,proto3" json:"tree_digest,omitempty"`
-	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WriteFileResponse) Reset() {
-	*x = WriteFileResponse{}
-	mi := &file_proto_management_v1_source_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteFileResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteFileResponse) ProtoMessage() {}
-
-func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_source_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
-func (*WriteFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *WriteFileResponse) GetTreeDigest() string {
-	if x != nil {
-		return x.TreeDigest
-	}
-	return ""
-}
-
-func (x *WriteFileResponse) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
-}
-
-type DeleteFileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteFileRequest) Reset() {
-	*x = DeleteFileRequest{}
-	mi := &file_proto_management_v1_source_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteFileRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteFileRequest) ProtoMessage() {}
-
-func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_source_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
-func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_source_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *DeleteFileRequest) GetSource() string {
-	if x != nil {
-		return x.Source
-	}
-	return ""
-}
-
-func (x *DeleteFileRequest) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
 type ListRuntimesResponse_Runtime struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -666,7 +502,7 @@ type ListRuntimesResponse_Runtime struct {
 
 func (x *ListRuntimesResponse_Runtime) Reset() {
 	*x = ListRuntimesResponse_Runtime{}
-	mi := &file_proto_management_v1_source_proto_msgTypes[13]
+	mi := &file_proto_management_v1_source_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +514,7 @@ func (x *ListRuntimesResponse_Runtime) String() string {
 func (*ListRuntimesResponse_Runtime) ProtoMessage() {}
 
 func (x *ListRuntimesResponse_Runtime) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_source_proto_msgTypes[13]
+	mi := &file_proto_management_v1_source_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -732,7 +568,7 @@ type ListFilesResponse_File struct {
 
 func (x *ListFilesResponse_File) Reset() {
 	*x = ListFilesResponse_File{}
-	mi := &file_proto_management_v1_source_proto_msgTypes[14]
+	mi := &file_proto_management_v1_source_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -744,7 +580,7 @@ func (x *ListFilesResponse_File) String() string {
 func (*ListFilesResponse_File) ProtoMessage() {}
 
 func (x *ListFilesResponse_File) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_source_proto_msgTypes[14]
+	mi := &file_proto_management_v1_source_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -812,29 +648,13 @@ const file_proto_management_v1_source_proto_rawDesc = "" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\",\n" +
 	"\x10ReadFileResponse\x12\x18\n" +
-	"\acontent\x18\x01 \x01(\fR\acontent\"X\n" +
-	"\x10WriteFileRequest\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\fR\acontent\"T\n" +
-	"\x11WriteFileResponse\x12\x1f\n" +
-	"\vtree_digest\x18\x01 \x01(\tR\n" +
-	"treeDigest\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"?\n" +
-	"\x11DeleteFileRequest\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path2\xd8\x05\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent2\x92\x04\n" +
 	"\tSourceAPI\x12i\n" +
 	"\fUploadSource\x12+.graphene.management.v1.UploadSourceRequest\x1a,.graphene.management.v1.UploadSourceResponse\x12n\n" +
 	"\x0eDownloadSource\x12-.graphene.management.v1.DownloadSourceRequest\x1a+.graphene.management.v1.DownloadSourceChunk0\x01\x12i\n" +
 	"\fListRuntimes\x12+.graphene.management.v1.ListRuntimesRequest\x1a,.graphene.management.v1.ListRuntimesResponse\x12`\n" +
 	"\tListFiles\x12(.graphene.management.v1.ListFilesRequest\x1a).graphene.management.v1.ListFilesResponse\x12]\n" +
-	"\bReadFile\x12'.graphene.management.v1.ReadFileRequest\x1a(.graphene.management.v1.ReadFileResponse\x12`\n" +
-	"\tWriteFile\x12(.graphene.management.v1.WriteFileRequest\x1a).graphene.management.v1.WriteFileResponse\x12b\n" +
-	"\n" +
-	"DeleteFile\x12).graphene.management.v1.DeleteFileRequest\x1a).graphene.management.v1.WriteFileResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\bReadFile\x12'.graphene.management.v1.ReadFileRequest\x1a(.graphene.management.v1.ReadFileResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_source_proto_rawDescOnce sync.Once
@@ -848,7 +668,7 @@ func file_proto_management_v1_source_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_source_proto_rawDescData
 }
 
-var file_proto_management_v1_source_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_proto_management_v1_source_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_proto_management_v1_source_proto_goTypes = []any{
 	(*UploadSourceRequest)(nil),          // 0: graphene.management.v1.UploadSourceRequest
 	(*UploadSourceResponse)(nil),         // 1: graphene.management.v1.UploadSourceResponse
@@ -860,31 +680,24 @@ var file_proto_management_v1_source_proto_goTypes = []any{
 	(*ListFilesResponse)(nil),            // 7: graphene.management.v1.ListFilesResponse
 	(*ReadFileRequest)(nil),              // 8: graphene.management.v1.ReadFileRequest
 	(*ReadFileResponse)(nil),             // 9: graphene.management.v1.ReadFileResponse
-	(*WriteFileRequest)(nil),             // 10: graphene.management.v1.WriteFileRequest
-	(*WriteFileResponse)(nil),            // 11: graphene.management.v1.WriteFileResponse
-	(*DeleteFileRequest)(nil),            // 12: graphene.management.v1.DeleteFileRequest
-	(*ListRuntimesResponse_Runtime)(nil), // 13: graphene.management.v1.ListRuntimesResponse.Runtime
-	(*ListFilesResponse_File)(nil),       // 14: graphene.management.v1.ListFilesResponse.File
+	(*ListRuntimesResponse_Runtime)(nil), // 10: graphene.management.v1.ListRuntimesResponse.Runtime
+	(*ListFilesResponse_File)(nil),       // 11: graphene.management.v1.ListFilesResponse.File
 }
 var file_proto_management_v1_source_proto_depIdxs = []int32{
-	13, // 0: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
-	14, // 1: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
+	10, // 0: graphene.management.v1.ListRuntimesResponse.runtimes:type_name -> graphene.management.v1.ListRuntimesResponse.Runtime
+	11, // 1: graphene.management.v1.ListFilesResponse.files:type_name -> graphene.management.v1.ListFilesResponse.File
 	0,  // 2: graphene.management.v1.SourceAPI.UploadSource:input_type -> graphene.management.v1.UploadSourceRequest
 	2,  // 3: graphene.management.v1.SourceAPI.DownloadSource:input_type -> graphene.management.v1.DownloadSourceRequest
 	4,  // 4: graphene.management.v1.SourceAPI.ListRuntimes:input_type -> graphene.management.v1.ListRuntimesRequest
 	6,  // 5: graphene.management.v1.SourceAPI.ListFiles:input_type -> graphene.management.v1.ListFilesRequest
 	8,  // 6: graphene.management.v1.SourceAPI.ReadFile:input_type -> graphene.management.v1.ReadFileRequest
-	10, // 7: graphene.management.v1.SourceAPI.WriteFile:input_type -> graphene.management.v1.WriteFileRequest
-	12, // 8: graphene.management.v1.SourceAPI.DeleteFile:input_type -> graphene.management.v1.DeleteFileRequest
-	1,  // 9: graphene.management.v1.SourceAPI.UploadSource:output_type -> graphene.management.v1.UploadSourceResponse
-	3,  // 10: graphene.management.v1.SourceAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
-	5,  // 11: graphene.management.v1.SourceAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
-	7,  // 12: graphene.management.v1.SourceAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
-	9,  // 13: graphene.management.v1.SourceAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
-	11, // 14: graphene.management.v1.SourceAPI.WriteFile:output_type -> graphene.management.v1.WriteFileResponse
-	11, // 15: graphene.management.v1.SourceAPI.DeleteFile:output_type -> graphene.management.v1.WriteFileResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
+	1,  // 7: graphene.management.v1.SourceAPI.UploadSource:output_type -> graphene.management.v1.UploadSourceResponse
+	3,  // 8: graphene.management.v1.SourceAPI.DownloadSource:output_type -> graphene.management.v1.DownloadSourceChunk
+	5,  // 9: graphene.management.v1.SourceAPI.ListRuntimes:output_type -> graphene.management.v1.ListRuntimesResponse
+	7,  // 10: graphene.management.v1.SourceAPI.ListFiles:output_type -> graphene.management.v1.ListFilesResponse
+	9,  // 11: graphene.management.v1.SourceAPI.ReadFile:output_type -> graphene.management.v1.ReadFileResponse
+	7,  // [7:12] is the sub-list for method output_type
+	2,  // [2:7] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -901,7 +714,7 @@ func file_proto_management_v1_source_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_source_proto_rawDesc), len(file_proto_management_v1_source_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -202,11 +202,10 @@ func (s *Worker) applyBrought(ctx context.Context, kind, name string, spec json.
 // marksFor derives a record's system markers from what it declares.
 // The ownership tree already answers ancestry; these carry the CROSS
 // references a tree has no edge for — which pipeline a source serves,
-// where a copy came from, which source a revision was built from.
+// which source a revision was built from.
 func (s *Worker) marksFor(kind string, spec json.RawMessage) map[string]string {
 	var decl struct {
 		PipelineId   string `json:"pipelineId"`
-		From         string `json:"from"`
 		SourceRef    string `json:"sourceRef"`
 		SourceDigest string `json:"sourceDigest"`
 		Commit       string `json:"commit"`
@@ -216,7 +215,6 @@ func (s *Worker) marksFor(kind string, spec json.RawMessage) map[string]string {
 	}
 	marks := map[string]string{
 		syslabels.Pipeline: decl.PipelineId,
-		syslabels.Origin:   decl.From,
 		syslabels.Source:   decl.SourceRef,
 		syslabels.Commit:   decl.Commit,
 	}
@@ -298,16 +296,11 @@ func buildKinds() map[string]*kindEntry {
 	add("secret", "a name whose value lives sealed beside it", true,
 		reflect.TypeFor[valueflow.SecretSpec]())
 
-	// The two source kinds differ in what may be DONE to them, which is
-	// why they are two kinds and not one with a mode field.
+	// The source of a pipeline: a checkout of a ref, read-only, moved
+	// only by fetching again.
 	add("gitsource", "a checkout of a ref: read-only, moves by fetching again", true,
 		reflect.TypeFor[sourceflow.GitSpec](),
 		cmd("sync", nil))
-
-	add("managedsource", "the project's own tree: every file editable in place", true,
-		reflect.TypeFor[sourceflow.ManagedSpec](),
-		cmd("write", reflect.TypeFor[sourceflow.WriteCmd]()),
-		cmd("revert", reflect.TypeFor[sourceflow.RevertCmd]()))
 
 	add("revision", "one immutable build of a source tree", true,
 		reflect.TypeFor[revisionflow.Spec]())
