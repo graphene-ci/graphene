@@ -65,11 +65,8 @@ const (
 	KindAgent    Kind = "agent"
 	KindArtifact Kind = "artifact"
 	KindSecret   Kind = "secret"
-	// KindGitSource and KindManagedSource are separate because what may
-	// be done to them differs: a checkout is read, a managed tree is
-	// written.
+	// KindGitSource is a checkout of a ref: read-only.
 	KindGitSource      Kind = "gitsource"
-	KindManagedSource  Kind = "managedsource"
 	KindVar            Kind = "var"
 	KindNamespace      Kind = "namespace"
 	KindRole           Kind = "role"
@@ -91,7 +88,7 @@ var AllKinds = []Kind{
 	KindAgent, KindArtifact, KindNamespace, KindPipeline, KindResource,
 	KindRevision, KindRole, KindRoleBinding, KindRun, KindSecret,
 	KindServiceAccount, KindStand, KindTrigger, KindVar,
-	KindGitSource, KindManagedSource, KindKind,
+	KindGitSource, KindKind,
 }
 
 // KindOf maps a record reference ("k8s.../vm-1", "pipeline/x") to the
@@ -202,7 +199,7 @@ var (
 	RoleDeveloper = Rules{
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbBuild, VerbRun, VerbActivate, VerbInvoke, VerbTransfer, VerbDelete},
-			Kinds: []Kind{KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource, KindGitSource, KindManagedSource, KindKind},
+			Kinds: []Kind{KindPipeline, KindRevision, KindRun, KindTrigger, KindStand, KindArtifact, KindResource, KindGitSource, KindKind},
 		},
 		{
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch},
@@ -231,7 +228,7 @@ var (
 			Verbs: []Verb{VerbGet, VerbList, VerbWatch, VerbCreate, VerbUpdate, VerbDelete, VerbTransfer, VerbInvoke},
 			Kinds: []Kind{KindResource, KindArtifact, KindAgent, KindStand},
 		},
-		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision, KindGitSource, KindManagedSource, KindKind}},
+		{Verbs: []Verb{VerbGet, VerbList, VerbWatch}, Kinds: []Kind{KindPipeline, KindRun, KindRevision, KindGitSource, KindKind}},
 	}
 )
 

@@ -55,12 +55,9 @@ func (s *Worker) SweepOrphanBlobs(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	removed := 0
-	// sources/<id>/** — owned by a gitsource OR managedsource record.
+	// sources/<id>/** — owned by a gitsource record.
 	n, err := s.sweepFamily(ctx, "sources/", 1, func(id string) bool {
-		if _, _, _, err := s.DescribeGitSource(ctx, id); err == nil {
-			return true
-		}
-		_, _, _, err := s.DescribeManagedSource(ctx, id)
+		_, _, _, err := s.DescribeGitSource(ctx, id)
 		return err == nil
 	})
 	removed += n

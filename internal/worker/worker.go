@@ -108,7 +108,6 @@ type Worker struct {
 	secretDef    *entdefine.Definition[valueflow.SecretSpec, valueflow.SecretState]
 	namespaceDef *entdefine.Definition[nsflow.Spec, nsflow.State]
 	gitSourceDef *entdefine.Definition[sourceflow.GitSpec, sourceflow.GitState]
-	managedDef   *entdefine.Definition[sourceflow.ManagedSpec, sourceflow.ManagedState]
 	kindDef      *entdefine.Definition[kindflow.Spec, kindflow.State]
 
 	// varCache holds variable values for a moment — one submit resolves
@@ -189,7 +188,6 @@ func New(deps Deps) (*Worker, error) {
 		secretDef:    valueflow.NewSecret(),
 		namespaceDef: nsflow.New(),
 		gitSourceDef: sourceflow.NewGit(),
-		managedDef:   sourceflow.NewManaged(),
 		kindDef:      kindflow.New(),
 		kinds:        buildKinds(),
 		varCache:     newValueCache(3 * time.Second),
@@ -203,7 +201,7 @@ func New(deps Deps) (*Worker, error) {
 		s.roleDef.Register(w), s.bindingDef.Register(w), s.accountDef.Register(w),
 		s.varDef.Register(w), s.secretDef.Register(w),
 		s.namespaceDef.Register(w),
-		s.gitSourceDef.Register(w), s.managedDef.Register(w),
+		s.gitSourceDef.Register(w),
 		s.kindDef.Register(w),
 	); err != nil {
 		return nil, err
@@ -238,10 +236,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.forgetSecret, activity.RegisterOptions{Name: valueflow.ForgetActivity})
 	w.RegisterActivityWithOptions(s.ensureNamespace, activity.RegisterOptions{Name: nsflow.EnsureActivity})
 	w.RegisterActivityWithOptions(s.retireNamespace, activity.RegisterOptions{Name: nsflow.RetireActivity})
-	// The source contour: a checkout is fetched, a managed tree is laid
-	// out file by file.
+	// The source contour: a checkout is fetched.
 	w.RegisterActivityWithOptions(s.fetchGitSource, activity.RegisterOptions{Name: sourceflow.FetchActivity})
-	w.RegisterActivityWithOptions(s.adoptManagedSource, activity.RegisterOptions{Name: sourceflow.AdoptActivity})
 	// The dictionary polices itself through these two.
 	w.RegisterActivityWithOptions(s.auditKind, activity.RegisterOptions{Name: kindflow.AuditActivity})
 	w.RegisterActivityWithOptions(s.retireKind, activity.RegisterOptions{Name: kindflow.RetireActivity})

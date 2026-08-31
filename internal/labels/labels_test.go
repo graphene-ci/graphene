@@ -10,7 +10,6 @@ func TestMarkerTable(t *testing.T) {
 		"run":           {Pipeline, Revision, Source, SourceDigest, Image, Trigger},
 		"revision":      {Pipeline, Source, SourceDigest, Commit},
 		"gitsource":     {Pipeline},
-		"managedsource": {Pipeline, Origin},
 		"trigger":       {Pipeline},
 		"stand":         {Pipeline},
 		"agent":         {Run, Pipeline},

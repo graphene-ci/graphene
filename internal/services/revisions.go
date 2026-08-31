@@ -198,7 +198,7 @@ func (m *Management) resolveSource(ctx context.Context, b *nsbundle.Bundle, pipe
 	switch len(sources) {
 	case 0:
 		return "", status.Errorf(codes.FailedPrecondition,
-			"pipeline %s has no source: declare a gitsource or a managedsource under it", pipelineId)
+			"pipeline %s has no source: declare a gitsource under it", pipelineId)
 	case 1:
 		return sources[0], nil
 	}
