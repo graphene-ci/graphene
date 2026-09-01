@@ -565,8 +565,12 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	query := fmt.Sprintf("(%s IS NULL OR %s = '') AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
 		wire.SearchAttrOwner.GetName(), wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
 	if owner != "" {
-		query = fmt.Sprintf("%s = '%s' AND ExecutionStatus = 'Running'",
-			wire.SearchAttrOwner.GetName(), string(owner))
+		// Entity children are shown while LIVE (a closed entity workflow
+		// is a deleted record), but a run is shown at ANY status — a
+		// finished run is history, not death, and the tree is where a
+		// developer finds it under its pipeline.
+		query = fmt.Sprintf("%s = '%s' AND (ExecutionStatus = 'Running' OR %s = 'run')",
+			wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrKind.GetName())
 	}
 	// Visibility carries everything a tree node shows; a describe per
 	// node would wake every record's worker.
