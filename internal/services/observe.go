@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -385,6 +386,7 @@ func translate(he *historypb.HistoryEvent, sched map[int64]*historypb.ActivityTa
 		ev.Raw = raw
 	}
 	subjectOf := func(scheduledId int64) {
+		ev.ActivityId = strconv.FormatInt(scheduledId, 10)
 		if a := sched[scheduledId]; a != nil {
 			ev.Subject = a.GetActivityType().GetName()
 			ev.Agent = agentOfQueue(a.GetTaskQueue().GetName())
@@ -413,6 +415,7 @@ func translate(he *historypb.HistoryEvent, sched map[int64]*historypb.ActivityTa
 	case he.GetActivityTaskScheduledEventAttributes() != nil:
 		a := he.GetActivityTaskScheduledEventAttributes()
 		ev.Kind = "activity-scheduled"
+		ev.ActivityId = strconv.FormatInt(he.GetEventId(), 10)
 		ev.Subject = a.GetActivityType().GetName()
 		ev.Agent = agentOfQueue(a.GetTaskQueue().GetName())
 		ev.Input = payloadsJSON(a.GetInput())

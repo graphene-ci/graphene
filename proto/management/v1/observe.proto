@@ -75,6 +75,12 @@ message Event {
   bytes result = 10;
   // Raw is the entire history event (protojson) for drill-down.
   bytes raw = 11;
+  // ActivityId groups the events of ONE activity execution: the
+  // scheduled event's id, shared by its started/completed/failed
+  // events. Empty for non-activity events. Lets a client render a
+  // per-instance trace (three k8s.entity.declare calls are three rows,
+  // not one).
+  string activity_id = 12;
 }
 
 message LogsRequest {

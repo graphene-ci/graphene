@@ -222,7 +222,13 @@ type Event struct {
 	Input  []byte `protobuf:"bytes,9,opt,name=input,proto3" json:"input,omitempty"`
 	Result []byte `protobuf:"bytes,10,opt,name=result,proto3" json:"result,omitempty"`
 	// Raw is the entire history event (protojson) for drill-down.
-	Raw           []byte `protobuf:"bytes,11,opt,name=raw,proto3" json:"raw,omitempty"`
+	Raw []byte `protobuf:"bytes,11,opt,name=raw,proto3" json:"raw,omitempty"`
+	// ActivityId groups the events of ONE activity execution: the
+	// scheduled event's id, shared by its started/completed/failed
+	// events. Empty for non-activity events. Lets a client render a
+	// per-instance trace (three k8s.entity.declare calls are three rows,
+	// not one).
+	ActivityId    string `protobuf:"bytes,12,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -332,6 +338,13 @@ func (x *Event) GetRaw() []byte {
 		return x.Raw
 	}
 	return nil
+}
+
+func (x *Event) GetActivityId() string {
+	if x != nil {
+		return x.ActivityId
+	}
+	return ""
 }
 
 type LogsRequest struct {
@@ -919,7 +932,7 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"\x0eafter_event_id\x18\x02 \x01(\x03R\fafterEventId\x12\x16\n" +
 	"\x06follow\x18\x03 \x01(\bR\x06follow\x12\x1f\n" +
 	"\vactivity_id\x18\x04 \x01(\tR\n" +
-	"activityId\"\x94\x02\n" +
+	"activityId\"\xb5\x02\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x03R\aeventId\x12$\n" +
 	"\x0etime_unix_nano\x18\x02 \x01(\x03R\ftimeUnixNano\x12\x12\n" +
@@ -932,7 +945,9 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"\x05input\x18\t \x01(\fR\x05input\x12\x16\n" +
 	"\x06result\x18\n" +
 	" \x01(\fR\x06result\x12\x10\n" +
-	"\x03raw\x18\v \x01(\fR\x03raw\"u\n" +
+	"\x03raw\x18\v \x01(\fR\x03raw\x12\x1f\n" +
+	"\vactivity_id\x18\f \x01(\tR\n" +
+	"activityId\"u\n" +
 	"\vLogsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12&\n" +
