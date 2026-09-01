@@ -42,6 +42,18 @@ service ResourcesAPI {
   // Apply declares a record of ANY kind: the one door creation goes
   // through, so a new kind never needs an API of its own.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
+  // Download streams the bytes a record holds — an artifact's blob, and
+  // anything else whose state names a blob. NotFound when the record
+  // has no downloadable bytes.
+  rpc Download(DownloadRequest) returns (stream DownloadChunk);
+}
+
+message DownloadRequest {
+  string ref = 1;
+}
+
+message DownloadChunk {
+  bytes data = 1;
 }
 
 // Selector picks resources: every set field must match.

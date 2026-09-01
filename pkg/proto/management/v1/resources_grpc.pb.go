@@ -33,6 +33,7 @@ const (
 	ResourcesAPI_Transfer_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Transfer"
 	ResourcesAPI_Invoke_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Invoke"
 	ResourcesAPI_Apply_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Apply"
+	ResourcesAPI_Download_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Download"
 )
 
 // ResourcesAPIClient is the client API for ResourcesAPI service.
@@ -70,6 +71,10 @@ type ResourcesAPIClient interface {
 	// Apply declares a record of ANY kind: the one door creation goes
 	// through, so a new kind never needs an API of its own.
 	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
+	// Download streams the bytes a record holds — an artifact's blob, and
+	// anything else whose state names a blob. NotFound when the record
+	// has no downloadable bytes.
+	Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadChunk], error)
 }
 
 type resourcesAPIClient struct {
@@ -170,6 +175,25 @@ func (c *resourcesAPIClient) Apply(ctx context.Context, in *ApplyRequest, opts .
 	return out, nil
 }
 
+func (c *resourcesAPIClient) Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ResourcesAPI_ServiceDesc.Streams[0], ResourcesAPI_Download_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadRequest, DownloadChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ResourcesAPI_DownloadClient = grpc.ServerStreamingClient[DownloadChunk]
+
 // ResourcesAPIServer is the server API for ResourcesAPI service.
 // All implementations must embed UnimplementedResourcesAPIServer
 // for forward compatibility.
@@ -205,6 +229,10 @@ type ResourcesAPIServer interface {
 	// Apply declares a record of ANY kind: the one door creation goes
 	// through, so a new kind never needs an API of its own.
 	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
+	// Download streams the bytes a record holds — an artifact's blob, and
+	// anything else whose state names a blob. NotFound when the record
+	// has no downloadable bytes.
+	Download(*DownloadRequest, grpc.ServerStreamingServer[DownloadChunk]) error
 	mustEmbedUnimplementedResourcesAPIServer()
 }
 
@@ -241,6 +269,9 @@ func (UnimplementedResourcesAPIServer) Invoke(context.Context, *InvokeRequest) (
 }
 func (UnimplementedResourcesAPIServer) Apply(context.Context, *ApplyRequest) (*ApplyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Apply not implemented")
+}
+func (UnimplementedResourcesAPIServer) Download(*DownloadRequest, grpc.ServerStreamingServer[DownloadChunk]) error {
+	return status.Error(codes.Unimplemented, "method Download not implemented")
 }
 func (UnimplementedResourcesAPIServer) mustEmbedUnimplementedResourcesAPIServer() {}
 func (UnimplementedResourcesAPIServer) testEmbeddedByValue()                      {}
@@ -425,6 +456,17 @@ func _ResourcesAPI_Apply_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ResourcesAPI_Download_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ResourcesAPIServer).Download(m, &grpc.GenericServerStream[DownloadRequest, DownloadChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ResourcesAPI_DownloadServer = grpc.ServerStreamingServer[DownloadChunk]
+
 // ResourcesAPI_ServiceDesc is the grpc.ServiceDesc for ResourcesAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -469,6 +511,12 @@ var ResourcesAPI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ResourcesAPI_Apply_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Download",
+			Handler:       _ResourcesAPI_Download_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/management/v1/resources.proto",
 }
