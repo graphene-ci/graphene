@@ -9,6 +9,7 @@ package telemetry
 // travel as raw OTLP chunks.
 
 import (
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -37,6 +38,16 @@ func LogRecordsFrom(env Envelope) []LogRecord {
 				}
 				for _, kv := range rec.GetAttributes() {
 					attrs[kv.GetKey()] = renderValue(kv.GetValue())
+				}
+				// The trace correlation: an OTLP log carries the ids of the
+				// span it happened under. Surfaced as attributes (the same
+				// keys VictoriaLogs stores them under for the history path),
+				// so a log line links to its span — one join across signals.
+				if tid := rec.GetTraceId(); len(tid) > 0 {
+					attrs["trace_id"] = hex.EncodeToString(tid)
+				}
+				if sid := rec.GetSpanId(); len(sid) > 0 {
+					attrs["span_id"] = hex.EncodeToString(sid)
 				}
 				out = append(out, LogRecord{
 					Time:       time.Unix(0, int64(ts)), //nolint:gosec // otel nanos
