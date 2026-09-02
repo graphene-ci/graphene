@@ -500,6 +500,197 @@ func (*CancelRunResponse) Descriptor() ([]byte, []int) {
 	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{9}
 }
 
+type RunStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunStatusRequest) Reset() {
+	*x = RunStatusRequest{}
+	mi := &file_proto_management_v1_runs_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunStatusRequest) ProtoMessage() {}
+
+func (x *RunStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_runs_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunStatusRequest.ProtoReflect.Descriptor instead.
+func (*RunStatusRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RunStatusRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+type RunStatusResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Status is the workflow's execution status (Running, Completed, ...).
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Pending are the activities the run is currently waiting on — empty
+	// when nothing is in flight (between steps, or terminal).
+	Pending       []*PendingActivity `protobuf:"bytes,2,rep,name=pending,proto3" json:"pending,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunStatusResponse) Reset() {
+	*x = RunStatusResponse{}
+	mi := &file_proto_management_v1_runs_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunStatusResponse) ProtoMessage() {}
+
+func (x *RunStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_runs_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunStatusResponse.ProtoReflect.Descriptor instead.
+func (*RunStatusResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RunStatusResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *RunStatusResponse) GetPending() []*PendingActivity {
+	if x != nil {
+		return x.Pending
+	}
+	return nil
+}
+
+// PendingActivity is one in-flight activity of the run: what it is, how
+// far into its retries, and why the last attempt failed.
+type PendingActivity struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ActivityType string                 `protobuf:"bytes,1,opt,name=activity_type,json=activityType,proto3" json:"activity_type,omitempty"`
+	Attempt      int32                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	// State is the temporal pending state (Scheduled, Started, ...).
+	State string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	// LastFailure is the message of the most recent failed attempt, empty
+	// if none failed yet.
+	LastFailure string `protobuf:"bytes,4,opt,name=last_failure,json=lastFailure,proto3" json:"last_failure,omitempty"`
+	// HeartbeatDetail is the latest heartbeat note the activity recorded —
+	// the "what it is doing right now" string.
+	HeartbeatDetail string `protobuf:"bytes,5,opt,name=heartbeat_detail,json=heartbeatDetail,proto3" json:"heartbeat_detail,omitempty"`
+	// LastHeartbeatUnixMs is when that heartbeat landed (0 if never).
+	LastHeartbeatUnixMs int64 `protobuf:"varint,6,opt,name=last_heartbeat_unix_ms,json=lastHeartbeatUnixMs,proto3" json:"last_heartbeat_unix_ms,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PendingActivity) Reset() {
+	*x = PendingActivity{}
+	mi := &file_proto_management_v1_runs_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingActivity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingActivity) ProtoMessage() {}
+
+func (x *PendingActivity) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_runs_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingActivity.ProtoReflect.Descriptor instead.
+func (*PendingActivity) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_runs_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PendingActivity) GetActivityType() string {
+	if x != nil {
+		return x.ActivityType
+	}
+	return ""
+}
+
+func (x *PendingActivity) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *PendingActivity) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *PendingActivity) GetLastFailure() string {
+	if x != nil {
+		return x.LastFailure
+	}
+	return ""
+}
+
+func (x *PendingActivity) GetHeartbeatDetail() string {
+	if x != nil {
+		return x.HeartbeatDetail
+	}
+	return ""
+}
+
+func (x *PendingActivity) GetLastHeartbeatUnixMs() int64 {
+	if x != nil {
+		return x.LastHeartbeatUnixMs
+	}
+	return 0
+}
+
 var File_proto_management_v1_runs_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_runs_proto_rawDesc = "" +
@@ -532,13 +723,26 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\fR\x06result\")\n" +
 	"\x10CancelRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x13\n" +
-	"\x11CancelRunResponse2\xe3\x03\n" +
+	"\x11CancelRunResponse\")\n" +
+	"\x10RunStatusRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\"n\n" +
+	"\x11RunStatusResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12A\n" +
+	"\apending\x18\x02 \x03(\v2'.graphene.management.v1.PendingActivityR\apending\"\xe9\x01\n" +
+	"\x0fPendingActivity\x12#\n" +
+	"\ractivity_type\x18\x01 \x01(\tR\factivityType\x12\x18\n" +
+	"\aattempt\x18\x02 \x01(\x05R\aattempt\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12!\n" +
+	"\flast_failure\x18\x04 \x01(\tR\vlastFailure\x12)\n" +
+	"\x10heartbeat_detail\x18\x05 \x01(\tR\x0fheartbeatDetail\x123\n" +
+	"\x16last_heartbeat_unix_ms\x18\x06 \x01(\x03R\x13lastHeartbeatUnixMs2\xc5\x04\n" +
 	"\aRunsAPI\x12]\n" +
 	"\bStartRun\x12'.graphene.management.v1.StartRunRequest\x1a(.graphene.management.v1.StartRunResponse\x12W\n" +
 	"\x06GetRun\x12%.graphene.management.v1.GetRunRequest\x1a&.graphene.management.v1.GetRunResponse\x12\\\n" +
 	"\bWatchRun\x12'.graphene.management.v1.WatchRunRequest\x1a%.graphene.management.v1.WatchRunEvent0\x01\x12`\n" +
 	"\tRunResult\x12(.graphene.management.v1.RunResultRequest\x1a).graphene.management.v1.RunResultResponse\x12`\n" +
-	"\tCancelRun\x12(.graphene.management.v1.CancelRunRequest\x1a).graphene.management.v1.CancelRunResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
+	"\tCancelRun\x12(.graphene.management.v1.CancelRunRequest\x1a).graphene.management.v1.CancelRunResponse\x12`\n" +
+	"\tRunStatus\x12(.graphene.management.v1.RunStatusRequest\x1a).graphene.management.v1.RunStatusResponseBFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
 var (
 	file_proto_management_v1_runs_proto_rawDescOnce sync.Once
@@ -552,7 +756,7 @@ func file_proto_management_v1_runs_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_runs_proto_rawDescData
 }
 
-var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_management_v1_runs_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*StartRunRequest)(nil),   // 0: graphene.management.v1.StartRunRequest
 	(*StartRunResponse)(nil),  // 1: graphene.management.v1.StartRunResponse
@@ -564,25 +768,31 @@ var file_proto_management_v1_runs_proto_goTypes = []any{
 	(*RunResultResponse)(nil), // 7: graphene.management.v1.RunResultResponse
 	(*CancelRunRequest)(nil),  // 8: graphene.management.v1.CancelRunRequest
 	(*CancelRunResponse)(nil), // 9: graphene.management.v1.CancelRunResponse
-	nil,                       // 10: graphene.management.v1.StartRunRequest.LabelsEntry
+	(*RunStatusRequest)(nil),  // 10: graphene.management.v1.RunStatusRequest
+	(*RunStatusResponse)(nil), // 11: graphene.management.v1.RunStatusResponse
+	(*PendingActivity)(nil),   // 12: graphene.management.v1.PendingActivity
+	nil,                       // 13: graphene.management.v1.StartRunRequest.LabelsEntry
 }
 var file_proto_management_v1_runs_proto_depIdxs = []int32{
-	10, // 0: graphene.management.v1.StartRunRequest.labels:type_name -> graphene.management.v1.StartRunRequest.LabelsEntry
-	0,  // 1: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
-	2,  // 2: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
-	4,  // 3: graphene.management.v1.RunsAPI.WatchRun:input_type -> graphene.management.v1.WatchRunRequest
-	6,  // 4: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
-	8,  // 5: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
-	1,  // 6: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
-	3,  // 7: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
-	5,  // 8: graphene.management.v1.RunsAPI.WatchRun:output_type -> graphene.management.v1.WatchRunEvent
-	7,  // 9: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
-	9,  // 10: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	13, // 0: graphene.management.v1.StartRunRequest.labels:type_name -> graphene.management.v1.StartRunRequest.LabelsEntry
+	12, // 1: graphene.management.v1.RunStatusResponse.pending:type_name -> graphene.management.v1.PendingActivity
+	0,  // 2: graphene.management.v1.RunsAPI.StartRun:input_type -> graphene.management.v1.StartRunRequest
+	2,  // 3: graphene.management.v1.RunsAPI.GetRun:input_type -> graphene.management.v1.GetRunRequest
+	4,  // 4: graphene.management.v1.RunsAPI.WatchRun:input_type -> graphene.management.v1.WatchRunRequest
+	6,  // 5: graphene.management.v1.RunsAPI.RunResult:input_type -> graphene.management.v1.RunResultRequest
+	8,  // 6: graphene.management.v1.RunsAPI.CancelRun:input_type -> graphene.management.v1.CancelRunRequest
+	10, // 7: graphene.management.v1.RunsAPI.RunStatus:input_type -> graphene.management.v1.RunStatusRequest
+	1,  // 8: graphene.management.v1.RunsAPI.StartRun:output_type -> graphene.management.v1.StartRunResponse
+	3,  // 9: graphene.management.v1.RunsAPI.GetRun:output_type -> graphene.management.v1.GetRunResponse
+	5,  // 10: graphene.management.v1.RunsAPI.WatchRun:output_type -> graphene.management.v1.WatchRunEvent
+	7,  // 11: graphene.management.v1.RunsAPI.RunResult:output_type -> graphene.management.v1.RunResultResponse
+	9,  // 12: graphene.management.v1.RunsAPI.CancelRun:output_type -> graphene.management.v1.CancelRunResponse
+	11, // 13: graphene.management.v1.RunsAPI.RunStatus:output_type -> graphene.management.v1.RunStatusResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_runs_proto_init() }
@@ -596,7 +806,7 @@ func file_proto_management_v1_runs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_runs_proto_rawDesc), len(file_proto_management_v1_runs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
