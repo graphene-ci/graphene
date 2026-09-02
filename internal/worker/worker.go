@@ -575,7 +575,7 @@ func (s *Worker) materializeRevision(ctx context.Context, req revisionflow.Mater
 		return res, fmt.Errorf("source %s: %w", req.SourceLocation, err)
 	}
 
-	out, buildErr := s.deps.Materializer.Materialize(ctx, s.deps.Namespace, req.PipelineId, req.Runtime, src,
+	out, buildErr := s.deps.Materializer.Materialize(ctx, s.deps.Namespace, req.PipelineId, req.RevisionId, req.Runtime, src,
 		func(stage, message string) {
 			activity.RecordHeartbeat(ctx, stage+": "+message)
 		})
