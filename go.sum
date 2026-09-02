@@ -86,6 +86,8 @@ github.com/gopherex/xshutdown v1.0.0 h1:oXj0J3iNW+bOzyDbtVBS/p17b3U26loDuIxx2S1E
 github.com/gopherex/xshutdown v1.0.0/go.mod h1:VP9PHNALDhbpRtqDS67qP+M1PQKjj2MgokukD01KQUA=
 github.com/graphene-ci/agent v0.0.0-20260828090457-28c1a92d7853 h1:XviETOmuGBooZDzfjjbBMeOiep7Bi68BzpGEiPCqIDU=
 github.com/graphene-ci/agent v0.0.0-20260828090457-28c1a92d7853/go.mod h1:GZ60n4NF1FG5RFsPrjD1hgLiDXEGDzwkJZerP3BjptY=
+github.com/graphene-ci/agent v0.0.0-20260902105042-dd9da8e074b6 h1:SBsBZgg2du6aa1JYwTnUM/oM4UM8kJpkjeOtpjnww54=
+github.com/graphene-ci/agent v0.0.0-20260902105042-dd9da8e074b6/go.mod h1:GZ60n4NF1FG5RFsPrjD1hgLiDXEGDzwkJZerP3BjptY=
 github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee h1:6UFfSiYMm/6SMWQ8VavX3shudHuyS46Ngiv29LE7+1E=
 github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee/go.mod h1:1LyhLdb5LGyBdHvrGLiXytIwG52N2BWcO0KmlNLpwIQ=
 github.com/graphene-ci/pipeline v0.0.0-20260828090531-fe3e3a190b4d h1:Diudx7eT3JYEED/bsvl98xirgKQS8+cSOZ5LG2gsplU=

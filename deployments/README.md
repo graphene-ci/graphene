@@ -33,8 +33,18 @@ The whole server configuration is environment variables — the dotted
 YAML path uppercased under the `GRAPHENE` prefix
 (`server.external` → `GRAPHENE_SERVER_EXTERNAL`); a YAML file
 (`GRAPHENE_SERVER_CONFIG`) works too and the environment overlays it.
-Before exposing the door anywhere: replace the dev tokens and set the
-external addresses to the host's real ones.
+Before exposing the door anywhere: replace the dev tokens, set the
+external addresses to the host's real ones, and set a real secrets key.
+The sealed secret store is AES-GCM under `GRAPHENE_SECRETS_KEY` (64 hex
+= 32 bytes); the compose reads it from the environment, so put it in a
+`.env` beside the compose file:
+
+    GRAPHENE_SECRETS_KEY=$(openssl rand -hex 32)
+
+Keep it — the server refuses to start against a store sealed with a
+different key rather than silently lose secrets. Rotating it means
+re-entering every secret; a KMS/Vault backend is planned for the key's
+lifecycle.
 
 Blobs live in minio (`blobs.backend: s3`); a single-node file backend
 (`file`) exists for development. The registry uses minio's S3 API as

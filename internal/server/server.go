@@ -10,11 +10,15 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	dockerclient "github.com/docker/docker/client"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -77,6 +81,15 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	registry := agents.New(cfg.AgentHeartbeat, log.With(xlog.String("component", "agents")))
 	// A minted agent credential renews over the live session.
 	registry.SetMinter(minter)
+	// The digest of the agent binary this installation serves — rides
+	// HelloAck so connected agents self-update to it. Best effort: no
+	// binary (a dev server) leaves the digest empty and the check off.
+	if digest, derr := fileSHA256(agentBinaryFile); derr == nil {
+		registry.SetAgentBinaryDigest(digest)
+		log.Info("agent binary digest", xlog.String("sha256", digest[:min(12, len(digest))]))
+	} else {
+		log.Warn("agent binary digest unavailable: self-update disabled", xlog.Err(derr))
+	}
 	var secretStore *secrets.Namespaced
 	if cfg.SecretsKey != "" {
 		secretStore, err = secrets.NewPersistent(cfg.SecretsStore, cfg.SecretsKey, cfg.Secrets)
@@ -559,6 +572,18 @@ if [ -f /etc/graphene-agent/env ]; then
     exit 78
   fi
 fi
+# An unprivileged account for the interactive PTY: the agent runs as
+# root to drive runc, but the operator's shell should not. Created
+# idempotently; the agent reads GRAPHENE_AGENT_PTY_USER to drop to it.
+if ! id graphene-run >/dev/null 2>&1; then
+  if command -v useradd >/dev/null 2>&1; then
+    useradd -m -s /bin/sh graphene-run >/dev/null 2>&1 || true
+  elif command -v adduser >/dev/null 2>&1; then
+    adduser -D -s /bin/sh graphene-run >/dev/null 2>&1 || true
+  fi
+fi
+pty_user=""
+id graphene-run >/dev/null 2>&1 && pty_user=graphene-run
 mkdir -p /etc/graphene-agent
 cat > /etc/graphene-agent/env <<EOF
 GRAPHENE_AGENT_SERVER=%s
@@ -566,6 +591,7 @@ GRAPHENE_AGENT_TOKEN=%s
 GRAPHENE_AGENT_ID=%s
 GRAPHENE_AGENT_REGISTRY=%s
 GRAPHENE_AGENT_INSECURE=1
+GRAPHENE_AGENT_PTY_USER=$pty_user
 EOF
 chmod 600 /etc/graphene-agent/env
 if [ ! -x /usr/local/bin/graphene-agent ]; then
@@ -626,6 +652,24 @@ fi
 `, cfg.External, token, agentId, cfg.External, cfg.External, token)
 		return strings.ReplaceAll(script, "%AGENT_ID%", string(agentId)), nil
 	}
+}
+
+// agentBinaryFile is where the served agent binary lives in the image
+// (the same file httpapi serves at /agent/binary).
+const agentBinaryFile = "/agent/graphene-agent"
+
+// fileSHA256 is the hex sha256 of a file.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // a fixed in-image path
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // runTokenLife bounds a run token: longer than the slowest pipeline,
