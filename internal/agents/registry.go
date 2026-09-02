@@ -52,7 +52,16 @@ type Registry struct {
 	// declared, so a valid token alone cannot claim an agent id. nil
 	// disables the guard (a bootstrap installation with no bundles yet).
 	recordExists func(namespace string, agentId id.AgentId) bool
+
+	// agentBinaryDigest is the sha256 of the binary the installation
+	// serves at /agent/binary. It rides HelloAck so a connecting agent
+	// whose own binary differs self-updates. Empty disables the check.
+	agentBinaryDigest string
 }
+
+// SetAgentBinaryDigest wires the digest of the served agent binary, so
+// connected agents can self-update to it.
+func (r *Registry) SetAgentBinaryDigest(digest string) { r.agentBinaryDigest = digest }
 
 // SetMinter wires token rotation.
 func (r *Registry) SetMinter(m *auth.Minter) { r.minter = m }
@@ -154,7 +163,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	r.log.Info("agent connected", xlog.Any("agent", agentId), xlog.String("version", hello.GetAgentVersion()))
 
 	if err := s.send(&agentpb.SessionResponse{Body: &agentpb.SessionResponse_HelloAck{
-		HelloAck: &agentpb.HelloAck{HeartbeatSeconds: r.heartbeatSeconds},
+		HelloAck: &agentpb.HelloAck{HeartbeatSeconds: r.heartbeatSeconds, AgentBinaryDigest: r.agentBinaryDigest},
 	}}); err != nil {
 		return err
 	}
