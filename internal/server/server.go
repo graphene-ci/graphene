@@ -30,6 +30,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -385,6 +386,20 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		unknownOpt,
 		grpc.ChainStreamInterceptor(authn.StreamInterceptor()),
 		grpc.ChainUnaryInterceptor(authn.UnaryInterceptor()),
+		// Agents keepalive-ping every 15s (with no active call between
+		// commands) so a half-open connection surfaces fast. The default
+		// enforcement policy (MinTime 5m, streams required) rejects those
+		// pings with a GOAWAY "too_many_pings", tearing the session down
+		// every few minutes — so permit the agent's cadence, and ping back
+		// to detect a dead agent from this side too.
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
 	)
 	agentpb.RegisterAgentAPIServer(grpcServer, registry)
 	hv1.RegisterHealthServer(grpcServer, grpcprobe.New(health.Registry))
