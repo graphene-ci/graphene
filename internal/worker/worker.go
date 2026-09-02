@@ -1308,8 +1308,19 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 	if req.Image == "" {
 		return errors.New("ensure container: the run has no worker image (" + wire.EnvImage + " was empty)")
 	}
-	if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
-		s.containerSpec(req.AgentId, req.RunId, req.Image)); err != nil {
+	// EnsureContainer BLOCKS while the agent pulls the run image and starts
+	// the executor with runc — on a fresh machine, over an insecure
+	// registry across NAT, that is routinely longer than the heartbeat
+	// timeout. Left un-heartbeated it looks dead: the activity times out
+	// mid-pull and the whole run tears down over a slow registry, never
+	// over a real failure. Heartbeat while the agent makes progress; the
+	// agent's own error still surfaces when it finishes.
+	done := make(chan error, 1)
+	go func() {
+		done <- s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
+			s.containerSpec(req.AgentId, req.RunId, req.Image))
+	}()
+	if err := heartbeatUntil(ctx, done, "pulling the run image and starting the executor on the machine"); err != nil {
 		return err
 	}
 	// "Ensured" means the worker inside the container POLLS, not that a
@@ -1325,6 +1336,22 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(time.Second):
+		}
+	}
+}
+
+// heartbeatUntil waits for a blocking operation while keeping the
+// activity's heartbeat alive: a cross-machine call that can outlast the
+// heartbeat timeout (an image pull) must not read as a dead worker.
+func heartbeatUntil(ctx context.Context, done <-chan error, note string) error {
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+			activity.RecordHeartbeat(ctx, note)
 		}
 	}
 }
