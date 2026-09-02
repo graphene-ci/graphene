@@ -26,6 +26,11 @@ const agentBinaryPath = "/agent/graphene-agent"
 type Deps struct {
 	Auth             *auth.Authenticator
 	RegistryUpstream string
+	// MetricsUpstream is the metrics store's base URL; when set, the door
+	// accepts Prometheus remote_write at /api/v1/write (authenticated)
+	// and forwards it there. This is how an agent-side vmagent ships a
+	// machine's scraped metrics into the installation's obs.
+	MetricsUpstream string
 	// Health serves /healthz/liveness and /healthz/readiness.
 	Health http.Handler
 	// Bundles and Secrets serve the webhook door (/hooks/...); nil
@@ -58,6 +63,18 @@ func New(deps Deps) http.Handler {
 		// The webhook door: authenticated by the trigger's own secret,
 		// not the installation's tokens.
 		mux.HandleFunc("POST /hooks/{ns}/{pipeline}/{trigger}", deps.hooks)
+	}
+	if deps.MetricsUpstream != "" {
+		proxy, err := remoteWriteProxy(deps.MetricsUpstream)
+		if err != nil {
+			deps.Log.Error("remote_write receiver disabled", xlog.Err(err))
+		} else {
+			// A machine's vmagent ships scraped metrics here with its run
+			// token; the door forwards them to the metrics store. The
+			// series' own labels (vmagent external_labels — graphene entity/
+			// run) carry the correlation.
+			mux.Handle("POST /api/v1/write", deps.requireRole(proxy, auth.RoleRun, auth.RoleAdmin))
+		}
 	}
 	if deps.RegistryUpstream != "" {
 		proxy, err := registryProxy(deps.RegistryUpstream)
@@ -95,6 +112,26 @@ func (d Deps) requireRole(next http.Handler, roles ...auth.Role) http.Handler {
 		}
 		http.Error(w, fmt.Sprintf("role %s may not call this", p.Role), http.StatusForbidden)
 	})
+}
+
+// remoteWriteProxy forwards Prometheus remote_write to the metrics
+// store's /api/v1/write. The graphene token authenticated the sender at
+// our door; the store (internal to the compose network) has its own
+// auth (none in the dev contour), so the header is dropped.
+func remoteWriteProxy(upstream string) (http.Handler, error) {
+	target, err := url.Parse(upstream)
+	if err != nil {
+		return nil, fmt.Errorf("metrics upstream: %w", err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		director(r)
+		r.URL.Path = "/api/v1/write"
+		r.Host = target.Host
+		r.Header.Del("Authorization")
+	}
+	return proxy, nil
 }
 
 func registryProxy(upstream string) (http.Handler, error) {
