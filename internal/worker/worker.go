@@ -815,6 +815,16 @@ func (s *Worker) publishCapability(ctx context.Context, agentId id.AgentId, capa
 
 // attachAgent recognizes an EXISTING agent: no record — an error, never
 // a creation. It waits until the agent is ready AND the needs are met.
+// AgentExists reports whether an agent record is declared in this
+// namespace — the guard against a valid token opening a session for a
+// machine no pipeline ever declared. A pipeline declares the record
+// before the agent connects, so a legitimate agent always finds one.
+func (s *Worker) AgentExists(ctx context.Context, agentId id.AgentId) bool {
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	_, err := agents.Describe(ctx, entity.ResourceID(agentId))
+	return err == nil
+}
+
 func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wire.NeedSpec) (pipeline.AgentState, error) {
 	ctx = obs.WithEntity(ctx, "agent/"+string(agentId))
 	// An attach WAITS for a record it never creates; say so, or the

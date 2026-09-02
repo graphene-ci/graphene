@@ -46,10 +46,22 @@ type Registry struct {
 	// minter renews a session's MINTED credential before it expires;
 	// nil leaves static tokens alone (they have no expiry to renew).
 	minter *auth.Minter
+
+	// recordExists reports whether an agent record is declared in a
+	// namespace. A session is refused for a machine no pipeline ever
+	// declared, so a valid token alone cannot claim an agent id. nil
+	// disables the guard (a bootstrap installation with no bundles yet).
+	recordExists func(namespace string, agentId id.AgentId) bool
 }
 
 // SetMinter wires token rotation.
 func (r *Registry) SetMinter(m *auth.Minter) { r.minter = m }
+
+// SetRecordCheck wires the agent-record guard: a session is only served
+// for an agent a pipeline has declared.
+func (r *Registry) SetRecordCheck(fn func(namespace string, agentId id.AgentId) bool) {
+	r.recordExists = fn
+}
 
 // agentKey isolates agents per namespace: the same agent id in two
 // namespaces is two different agents.
@@ -106,6 +118,14 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	// The token is scoped to one record: an agent cannot embody another.
 	if principal.AgentId != agentId {
 		return status.Error(codes.PermissionDenied, "token is not for this agent")
+	}
+	// A valid token is not enough: the agent must be a DECLARED record.
+	// A pipeline declares the machine before it connects, so this refuses
+	// only an unclaimed agent — a token opening a session (and a PTY) for
+	// a machine no pipeline ever named.
+	if r.recordExists != nil && !r.recordExists(principal.Namespace, agentId) {
+		return status.Errorf(codes.PermissionDenied,
+			"agent %q has no record in namespace %q: a machine is declared by a pipeline before it connects", agentId, principal.Namespace)
 	}
 	key := agentKey{namespace: principal.Namespace, agentId: agentId}
 

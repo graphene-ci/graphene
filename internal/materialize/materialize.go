@@ -45,8 +45,11 @@ type Materializer struct {
 	// languages a pipeline may be written in.
 	Runtimes *runtimes.Catalogue
 	Registry string // the installation's /v2 door, host:port
-	Token    string // a run-scoped token for the registry and blobs
-	Insecure bool
+	// MintToken issues the credential a build presents to the /v2 door,
+	// scoped to the namespace it builds in — not one static token bound
+	// to `default`. nil falls back to no token (a keyless installation).
+	MintToken func(namespace string) string
+	Insecure  bool
 	Blobs    blob.Store
 	Log      *xlog.Logger
 }
@@ -155,11 +158,15 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId, r
 	defer func() { _ = os.RemoveAll(filepath.Dir(binPath)) }()
 
 	progress("publish", "assembling and pushing the worker image")
+	buildToken := ""
+	if m.MintToken != nil {
+		buildToken = m.MintToken(namespace)
+	}
 	imageRef, _, err := selfbuild.PushBinary(ctx, binPath, selfbuild.Options{
 		Registry:   m.Registry,
 		Namespace:  namespace,
 		PipelineId: pipelineId,
-		Token:      m.Token,
+		Token:      buildToken,
 		Insecure:   m.Insecure,
 		BaseImage:  rt.Base,
 		Log: func(format string, args ...any) {
