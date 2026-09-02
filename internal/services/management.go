@@ -180,8 +180,18 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
 		TaskQueue: wire.RunQueue(runId),
-		// A run id names ONE run: starting it twice attaches, never forks.
+		// A run id names ONE run. Two axes decide what "starting it again"
+		// means:
+		//   - ConflictPolicy governs a start while the run is still OPEN:
+		//     attach to the live one, never fork a second.
+		//   - ReusePolicy governs a start after the run has CLOSED: a
+		//     COMPLETED run's id is spent — a success is not re-run under
+		//     the same name; a failed/cancelled/terminated/timed-out run
+		//     MAY be re-started under its id. Without this the default
+		//     ALLOW_DUPLICATE forked a fresh execution every time, stacking
+		//     identical-named rows in visibility.
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
 	// The run carries its labels in the same EntityLabels attribute
 	// resources use — one label language across the system. The system
