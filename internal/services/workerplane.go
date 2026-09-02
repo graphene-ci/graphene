@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/gopherex/xlog"
 	"google.golang.org/grpc/codes"
@@ -203,6 +204,23 @@ func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.Pu
 	}
 	if m.GetPipelineId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "manifest has no pipeline id")
+	}
+	// A run may publish the manifest of ITS OWN pipeline only. Without
+	// this a run of pipeline A could declare pipeline B under a name it
+	// never owned (a run under `baseline` minting `pipeline/minimal`).
+	// The run's minted token names the run; the run's workflow type is
+	// its pipeline id.
+	if ident, ok := auth.IdentityFrom(ctx); ok {
+		if runId, isRun := strings.CutPrefix(ident.Identity.Subject.Name, "run/"); isRun {
+			desc, derr := b.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
+			if derr != nil {
+				return nil, status.Error(codes.PermissionDenied, "run token does not resolve to a run")
+			}
+			if owner := desc.GetWorkflowExecutionInfo().GetType().GetName(); owner != m.GetPipelineId() {
+				return nil, status.Errorf(codes.PermissionDenied,
+					"a run of %q may not publish a manifest for %q", owner, m.GetPipelineId())
+			}
+		}
 	}
 	if err := b.Worker.PublishManifest(ctx, m.GetPipelineId(), req.GetManifest(), req.GetImage()); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
