@@ -165,7 +165,19 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 			Docker:   dc,
 			Runtimes: runtimes.New(cfg.Runtimes),
 			Registry: cfg.External,
-			Token:    runTokenFor(cfg, "default"),
+			// A build presents a token scoped to the namespace it builds
+			// in, minted for the build and short-lived — not one static
+			// token bound to `default`. Without a signing key, fall back
+			// to that namespace's configured token.
+			MintToken: func(namespace string) string {
+				if minter != nil {
+					if t, err := minter.Mint(authz.Subject{Kind: authz.SubjectServiceAccount, Name: "build/" + namespace},
+						namespace, "run", buildTokenLife); err == nil {
+						return t
+					}
+				}
+				return runTokenFor(cfg, namespace)
+			},
 			Insecure: true, // TODO(tls): follow the door
 			Blobs:    blobStore,
 			Log:      log.With(xlog.String("component", "materialize")),
@@ -207,6 +219,16 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 			}
 		},
 		Log: log,
+	})
+	// The agent-record guard: a session is served only for a machine a
+	// pipeline has declared in the caller's namespace — a valid token
+	// alone cannot claim an unowned agent id.
+	registry.SetRecordCheck(func(namespace string, agentId id.AgentId) bool {
+		b, err := bundles.Get(namespace)
+		if err != nil {
+			return false
+		}
+		return b.Worker.AgentExists(stop.Context(), agentId)
 	})
 	// ONE namespace exists by construction: the SYSTEM one, where the
 	// installation itself lives. "default" is a convention, not a
@@ -609,3 +631,7 @@ fi
 // runTokenLife bounds a run token: longer than the slowest pipeline,
 // shorter than anything worth stealing.
 const runTokenLife = 24 * time.Hour
+
+// buildTokenLife bounds a materialization's registry token: a build is
+// minutes, so the token that pushes its image dies within the hour.
+const buildTokenLife = time.Hour
