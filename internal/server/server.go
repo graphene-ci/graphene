@@ -409,6 +409,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	rootMux.Handle("/", httpapi.New(httpapi.Deps{
 		Auth:             authn,
 		RegistryUpstream: cfg.RegistryUpstream,
+		MetricsUpstream:  cfg.QueryMetrics,
 		Health:           health.HTTPMux(),
 		Bundles:          bundles,
 		Secrets:          secretStore,
