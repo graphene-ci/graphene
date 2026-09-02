@@ -43,6 +43,8 @@ const (
 	RunsAPIRunResultProcedure = "/graphene.management.v1.RunsAPI/RunResult"
 	// RunsAPICancelRunProcedure is the fully-qualified name of the RunsAPI's CancelRun RPC.
 	RunsAPICancelRunProcedure = "/graphene.management.v1.RunsAPI/CancelRun"
+	// RunsAPIRunStatusProcedure is the fully-qualified name of the RunsAPI's RunStatus RPC.
+	RunsAPIRunStatusProcedure = "/graphene.management.v1.RunsAPI/RunStatus"
 )
 
 // RunsAPIClient is a client for the graphene.management.v1.RunsAPI service.
@@ -60,6 +62,12 @@ type RunsAPIClient interface {
 	// Listing lives in ResourcesAPI.List under the system kind "run" —
 	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error)
+	// RunStatus reports the run's IN-FLIGHT state: its status and the
+	// activities currently pending — what the run is doing right now, how
+	// many attempts in, the last failure, and the latest heartbeat detail.
+	// This is the "why is it stuck" view, sourced from the workflow's own
+	// pending-activity state (no Temporal CLI needed).
+	RunStatus(context.Context, *connect.Request[v1.RunStatusRequest]) (*connect.Response[v1.RunStatusResponse], error)
 }
 
 // NewRunsAPIClient constructs a client for the graphene.management.v1.RunsAPI service. By default,
@@ -103,6 +111,12 @@ func NewRunsAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...con
 			connect.WithSchema(runsAPIMethods.ByName("CancelRun")),
 			connect.WithClientOptions(opts...),
 		),
+		runStatus: connect.NewClient[v1.RunStatusRequest, v1.RunStatusResponse](
+			httpClient,
+			baseURL+RunsAPIRunStatusProcedure,
+			connect.WithSchema(runsAPIMethods.ByName("RunStatus")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -113,6 +127,7 @@ type runsAPIClient struct {
 	watchRun  *connect.Client[v1.WatchRunRequest, v1.WatchRunEvent]
 	runResult *connect.Client[v1.RunResultRequest, v1.RunResultResponse]
 	cancelRun *connect.Client[v1.CancelRunRequest, v1.CancelRunResponse]
+	runStatus *connect.Client[v1.RunStatusRequest, v1.RunStatusResponse]
 }
 
 // StartRun calls graphene.management.v1.RunsAPI.StartRun.
@@ -140,6 +155,11 @@ func (c *runsAPIClient) CancelRun(ctx context.Context, req *connect.Request[v1.C
 	return c.cancelRun.CallUnary(ctx, req)
 }
 
+// RunStatus calls graphene.management.v1.RunsAPI.RunStatus.
+func (c *runsAPIClient) RunStatus(ctx context.Context, req *connect.Request[v1.RunStatusRequest]) (*connect.Response[v1.RunStatusResponse], error) {
+	return c.runStatus.CallUnary(ctx, req)
+}
+
 // RunsAPIHandler is an implementation of the graphene.management.v1.RunsAPI service.
 type RunsAPIHandler interface {
 	StartRun(context.Context, *connect.Request[v1.StartRunRequest]) (*connect.Response[v1.StartRunResponse], error)
@@ -155,6 +175,12 @@ type RunsAPIHandler interface {
 	// Listing lives in ResourcesAPI.List under the system kind "run" —
 	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error)
+	// RunStatus reports the run's IN-FLIGHT state: its status and the
+	// activities currently pending — what the run is doing right now, how
+	// many attempts in, the last failure, and the latest heartbeat detail.
+	// This is the "why is it stuck" view, sourced from the workflow's own
+	// pending-activity state (no Temporal CLI needed).
+	RunStatus(context.Context, *connect.Request[v1.RunStatusRequest]) (*connect.Response[v1.RunStatusResponse], error)
 }
 
 // NewRunsAPIHandler builds an HTTP handler from the service implementation. It returns the path on
@@ -194,6 +220,12 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 		connect.WithSchema(runsAPIMethods.ByName("CancelRun")),
 		connect.WithHandlerOptions(opts...),
 	)
+	runsAPIRunStatusHandler := connect.NewUnaryHandler(
+		RunsAPIRunStatusProcedure,
+		svc.RunStatus,
+		connect.WithSchema(runsAPIMethods.ByName("RunStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/graphene.management.v1.RunsAPI/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RunsAPIStartRunProcedure:
@@ -206,6 +238,8 @@ func NewRunsAPIHandler(svc RunsAPIHandler, opts ...connect.HandlerOption) (strin
 			runsAPIRunResultHandler.ServeHTTP(w, r)
 		case RunsAPICancelRunProcedure:
 			runsAPICancelRunHandler.ServeHTTP(w, r)
+		case RunsAPIRunStatusProcedure:
+			runsAPIRunStatusHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -233,4 +267,8 @@ func (UnimplementedRunsAPIHandler) RunResult(context.Context, *connect.Request[v
 
 func (UnimplementedRunsAPIHandler) CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.CancelRunResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.CancelRun is not implemented"))
+}
+
+func (UnimplementedRunsAPIHandler) RunStatus(context.Context, *connect.Request[v1.RunStatusRequest]) (*connect.Response[v1.RunStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.RunsAPI.RunStatus is not implemented"))
 }

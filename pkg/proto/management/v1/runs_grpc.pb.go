@@ -24,6 +24,7 @@ const (
 	RunsAPI_WatchRun_FullMethodName  = "/graphene.management.v1.RunsAPI/WatchRun"
 	RunsAPI_RunResult_FullMethodName = "/graphene.management.v1.RunsAPI/RunResult"
 	RunsAPI_CancelRun_FullMethodName = "/graphene.management.v1.RunsAPI/CancelRun"
+	RunsAPI_RunStatus_FullMethodName = "/graphene.management.v1.RunsAPI/RunStatus"
 )
 
 // RunsAPIClient is the client API for RunsAPI service.
@@ -47,6 +48,12 @@ type RunsAPIClient interface {
 	// Listing lives in ResourcesAPI.List under the system kind "run" —
 	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error)
+	// RunStatus reports the run's IN-FLIGHT state: its status and the
+	// activities currently pending — what the run is doing right now, how
+	// many attempts in, the last failure, and the latest heartbeat detail.
+	// This is the "why is it stuck" view, sourced from the workflow's own
+	// pending-activity state (no Temporal CLI needed).
+	RunStatus(ctx context.Context, in *RunStatusRequest, opts ...grpc.CallOption) (*RunStatusResponse, error)
 }
 
 type runsAPIClient struct {
@@ -116,6 +123,16 @@ func (c *runsAPIClient) CancelRun(ctx context.Context, in *CancelRunRequest, opt
 	return out, nil
 }
 
+func (c *runsAPIClient) RunStatus(ctx context.Context, in *RunStatusRequest, opts ...grpc.CallOption) (*RunStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunStatusResponse)
+	err := c.cc.Invoke(ctx, RunsAPI_RunStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RunsAPIServer is the server API for RunsAPI service.
 // All implementations must embed UnimplementedRunsAPIServer
 // for forward compatibility.
@@ -137,6 +154,12 @@ type RunsAPIServer interface {
 	// Listing lives in ResourcesAPI.List under the system kind "run" —
 	// this service is the VERBS of a run's lifecycle only.
 	CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error)
+	// RunStatus reports the run's IN-FLIGHT state: its status and the
+	// activities currently pending — what the run is doing right now, how
+	// many attempts in, the last failure, and the latest heartbeat detail.
+	// This is the "why is it stuck" view, sourced from the workflow's own
+	// pending-activity state (no Temporal CLI needed).
+	RunStatus(context.Context, *RunStatusRequest) (*RunStatusResponse, error)
 	mustEmbedUnimplementedRunsAPIServer()
 }
 
@@ -161,6 +184,9 @@ func (UnimplementedRunsAPIServer) RunResult(context.Context, *RunResultRequest) 
 }
 func (UnimplementedRunsAPIServer) CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelRun not implemented")
+}
+func (UnimplementedRunsAPIServer) RunStatus(context.Context, *RunStatusRequest) (*RunStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunStatus not implemented")
 }
 func (UnimplementedRunsAPIServer) mustEmbedUnimplementedRunsAPIServer() {}
 func (UnimplementedRunsAPIServer) testEmbeddedByValue()                 {}
@@ -266,6 +292,24 @@ func _RunsAPI_CancelRun_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RunsAPI_RunStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RunsAPIServer).RunStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RunsAPI_RunStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RunsAPIServer).RunStatus(ctx, req.(*RunStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RunsAPI_ServiceDesc is the grpc.ServiceDesc for RunsAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -288,6 +332,10 @@ var RunsAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelRun",
 			Handler:    _RunsAPI_CancelRun_Handler,
+		},
+		{
+			MethodName: "RunStatus",
+			Handler:    _RunsAPI_RunStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -21,6 +21,12 @@ service RunsAPI {
   // Listing lives in ResourcesAPI.List under the system kind "run" —
   // this service is the VERBS of a run's lifecycle only.
   rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
+  // RunStatus reports the run's IN-FLIGHT state: its status and the
+  // activities currently pending — what the run is doing right now, how
+  // many attempts in, the last failure, and the latest heartbeat detail.
+  // This is the "why is it stuck" view, sourced from the workflow's own
+  // pending-activity state (no Temporal CLI needed).
+  rpc RunStatus(RunStatusRequest) returns (RunStatusResponse);
 }
 
 message StartRunRequest {
@@ -72,4 +78,33 @@ message CancelRunRequest {
 }
 
 message CancelRunResponse {}
+
+message RunStatusRequest {
+  string run_id = 1;
+}
+
+message RunStatusResponse {
+  // Status is the workflow's execution status (Running, Completed, ...).
+  string status = 1;
+  // Pending are the activities the run is currently waiting on — empty
+  // when nothing is in flight (between steps, or terminal).
+  repeated PendingActivity pending = 2;
+}
+
+// PendingActivity is one in-flight activity of the run: what it is, how
+// far into its retries, and why the last attempt failed.
+message PendingActivity {
+  string activity_type = 1;
+  int32 attempt = 2;
+  // State is the temporal pending state (Scheduled, Started, ...).
+  string state = 3;
+  // LastFailure is the message of the most recent failed attempt, empty
+  // if none failed yet.
+  string last_failure = 4;
+  // HeartbeatDetail is the latest heartbeat note the activity recorded —
+  // the "what it is doing right now" string.
+  string heartbeat_detail = 5;
+  // LastHeartbeatUnixMs is when that heartbeat landed (0 if never).
+  int64 last_heartbeat_unix_ms = 6;
+}
 

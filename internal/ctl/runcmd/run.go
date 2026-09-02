@@ -27,7 +27,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 		Use:   "run",
 		Short: "Run lifecycle: start, watch, result, cancel, list",
 	}
-	cmd.AddCommand(newStart(f), newWatch(f), newResult(f), newCancel(f), newList(f))
+	cmd.AddCommand(newStart(f), newWatch(f), newResult(f), newCancel(f), newList(f), newStatus(f))
 	return cmd
 }
 
@@ -237,6 +237,44 @@ func newCancel(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmdutil.Out, "run %s: cancel requested (teardown still runs)\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newStatus(f *cmdutil.Factory) *cobra.Command {
+	return &cobra.Command{
+		Use:               "status <run-id>",
+		Short:             "Show what the run is doing right now (pending activities, attempts, last failure)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: runIdCompletion(f),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := f.Dial()
+			if err != nil {
+				return err
+			}
+			resp, err := d.Runs.RunStatus(cmd.Context(), connect.NewRequest(&managementv1.RunStatusRequest{RunId: args[0]}))
+			if err != nil {
+				return err
+			}
+			msg := resp.Msg
+			fmt.Fprintf(cmdutil.Out, "run %s: %s\n", args[0], msg.GetStatus())
+			if len(msg.GetPending()) == 0 {
+				fmt.Fprintln(cmdutil.Out, "  no activity in flight")
+				return nil
+			}
+			for _, p := range msg.GetPending() {
+				fmt.Fprintf(cmdutil.Out, "  %s (%s, attempt %d)\n", p.GetActivityType(), strings.ToLower(strings.TrimPrefix(p.GetState(), "PENDING_ACTIVITY_STATE_")), p.GetAttempt())
+				if d := p.GetHeartbeatDetail(); d != "" {
+					fmt.Fprintf(cmdutil.Out, "    doing: %s\n", d)
+				}
+				if lf := p.GetLastFailure(); lf != "" {
+					fmt.Fprintf(cmdutil.Out, "    last failure: %s\n", lf)
+				}
+				if ms := p.GetLastHeartbeatUnixMs(); ms > 0 {
+					fmt.Fprintf(cmdutil.Out, "    last heartbeat: %s ago\n", time.Since(time.UnixMilli(ms)).Round(time.Second))
+				}
+			}
 			return nil
 		},
 	}

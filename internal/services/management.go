@@ -263,6 +263,47 @@ func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managemen
 	}), nil
 }
 
+// RunStatus reports the run's in-flight state — the pending activities
+// it is waiting on, with attempt count, last failure and latest
+// heartbeat note. This is the "what is it doing / why is it stuck" view,
+// read straight from the workflow's pending-activity state so no Temporal
+// CLI is needed to answer it.
+func (m *Management) RunStatus(ctx context.Context, creq *connect.Request[managementv1.RunStatusRequest]) (*connect.Response[managementv1.RunStatusResponse], error) {
+	b, err := m.allow(ctx, authz.VerbGet, authz.KindRun)
+	if err != nil {
+		return nil, err
+	}
+	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+creq.Msg.GetRunId(), "")
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	out := &managementv1.RunStatusResponse{
+		Status: desc.GetWorkflowExecutionInfo().GetStatus().String(),
+	}
+	dc := converter.GetDefaultDataConverter()
+	for _, pa := range desc.GetPendingActivities() {
+		p := &managementv1.PendingActivity{
+			ActivityType: pa.GetActivityType().GetName(),
+			Attempt:      pa.GetAttempt(),
+			State:        pa.GetState().String(),
+			LastFailure:  pa.GetLastFailure().GetMessage(),
+		}
+		if hb := pa.GetHeartbeatDetails(); hb != nil {
+			// The agent-facing activities heartbeat a single string note;
+			// decode it best-effort, a non-string detail just stays blank.
+			var note string
+			if dc.FromPayloads(hb, &note) == nil {
+				p.HeartbeatDetail = note
+			}
+		}
+		if t := pa.GetLastHeartbeatTime(); t != nil {
+			p.LastHeartbeatUnixMs = t.AsTime().UnixMilli()
+		}
+		out.Pending = append(out.Pending, p)
+	}
+	return connect.NewResponse(out), nil
+}
+
 // WatchRun streams status transitions until a terminal one.
 func (m *Management) WatchRun(ctx context.Context, creq *connect.Request[managementv1.WatchRunRequest], stream *connect.ServerStream[managementv1.WatchRunEvent]) error {
 	b, err := m.allow(ctx, authz.VerbWatch, authz.KindRun)
