@@ -75,7 +75,7 @@ type Result struct {
 // Materialize builds one source tree (a tar.gz) into a revision,
 // reporting progress as it goes — a build takes minutes and a silent
 // request dies on the first idle NAT.
-func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId, runtimeName string, srcTarGz []byte, progress Progress) (Result, error) {
+func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId, revisionId, runtimeName string, srcTarGz []byte, progress Progress) (Result, error) {
 	var res Result
 	if progress == nil {
 		progress = func(string, string) {}
@@ -179,11 +179,14 @@ func (m *Materializer) Materialize(ctx context.Context, namespace, pipelineId, r
 		return res, fmt.Errorf("publish image: %w", err)
 	}
 	res.ImageRef = imageRef
-	// The revision id is the image's content tag: same source — same
-	// binary — same revision.
-	res.RevisionId = imageRef[strings.LastIndex(imageRef, ":")+1:]
+	// The revision id is the SOURCE tree digest, chosen by the caller and
+	// used for the record and ALL its blobs — the image's content tag is
+	// a property of the image, not a second id. Using the tag here wrote
+	// the manifest under a different path than the record and its
+	// source/build.log, so activation could not find it.
+	res.RevisionId = revisionId
 
-	res.ManifestLocation = fmt.Sprintf("revisions/%s/%s/manifest.json", pipelineId, res.RevisionId)
+	res.ManifestLocation = fmt.Sprintf("revisions/%s/%s/manifest.json", pipelineId, revisionId)
 	if _, err := m.Blobs.Put(ctx, namespace, res.ManifestLocation, bytes.NewReader(manifest)); err != nil {
 		return res, fmt.Errorf("store manifest: %w", err)
 	}
