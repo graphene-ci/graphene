@@ -141,7 +141,12 @@ services:
       GRAPHENE_SERVER_LISTEN: ":7233"
       # Agents and workers OUTSIDE this host dial this — set to the
       # host's real address for machines beyond localhost.
-      GRAPHENE_SERVER_EXTERNAL: "127.0.0.1:7233"
+      # Agents and worker containers OUTSIDE this host dial this — it
+      # MUST be an address reachable from other machines, not 127.0.0.1
+      # (a remote agent's container that dials loopback finds no server
+      # and dies on connection-refused). Managed containers on this host
+      # use host networking and reach the same address fine.
+      GRAPHENE_SERVER_EXTERNAL: "158.160.209.113:7233"
       GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
       GRAPHENE_TEMPORAL_NAMESPACE: "default"
       GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
