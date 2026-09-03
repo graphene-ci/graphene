@@ -130,8 +130,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 				return
 			case <-tick.C:
 				subs, drops := hub.Stats()
-				obs.Gauge(context.Background(), "graphene.hub.subscriptions", float64(subs))
-				obs.Gauge(context.Background(), "graphene.hub.dropped.total", float64(drops))
+				obs.Gauge(stop.Context(), "graphene.hub.subscriptions", float64(subs))
+				obs.Gauge(stop.Context(), "graphene.hub.dropped.total", float64(drops))
 			}
 		}
 	}()

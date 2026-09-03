@@ -17,6 +17,13 @@ linters:
     - revive
     - staticcheck
   settings:
+    errcheck:
+      # Legacy CLI renderers do not all return errors. A failed fmt write means
+      # the caller closed the output stream; it does not change server state.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     revive:
       rules:
         # Repository convention: identifier suffix is "Id" (matches the

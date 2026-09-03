@@ -39,7 +39,7 @@ other (get run); the listing then shows run columns.`,
 			case 0:
 				return append(f.LiveKinds(), "all"), cobra.ShellCompDirectiveNoFileComp
 			case 1:
-				return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+				return f.LiveIDs(args[0]), cobra.ShellCompDirectiveNoFileComp
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -157,8 +157,7 @@ func (o *options) list(ctx context.Context, f *cmdutil.Factory, kind string) err
 	for _, r := range msg.GetResources() {
 		rows = append(rows, cols(r))
 	}
-	cmdutil.Table(header, rows)
-	return nil
+	return cmdutil.Table(header, rows)
 }
 
 func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) error {
@@ -178,11 +177,14 @@ func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) er
 		return err
 	}
 	r := resp.Msg.GetResource()
-	fmt.Fprintf(cmdutil.Out, "ref:    %s\nphase:  %s\nowner:  %s\nlabels: %s\n",
-		r.GetRef(), r.GetPhase(), r.GetOwner(), cmdutil.LabelsCell(r.GetLabels()))
-	cmdutil.PrintJSONBlock("spec", r.GetSpec())
-	cmdutil.PrintJSONBlock("state", r.GetState())
-	return nil
+	if _, err := fmt.Fprintf(cmdutil.Out, "ref:    %s\nphase:  %s\nowner:  %s\nlabels: %s\n",
+		r.GetRef(), r.GetPhase(), r.GetOwner(), cmdutil.LabelsCell(r.GetLabels())); err != nil {
+		return err
+	}
+	if err := cmdutil.PrintJSONBlock("spec", r.GetSpec()); err != nil {
+		return err
+	}
+	return cmdutil.PrintJSONBlock("state", r.GetState())
 }
 
 func runGetOne(ctx context.Context, f *cmdutil.Factory, runId string) error {
@@ -290,6 +292,5 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 	for _, r := range msg.GetResources() {
 		rows = append(rows, []string{runId(r), pipelineOf(r), r.GetPhase(), cmdutil.LabelsCell(userLabels(r))})
 	}
-	cmdutil.Table(header, rows)
-	return nil
+	return cmdutil.Table(header, rows)
 }

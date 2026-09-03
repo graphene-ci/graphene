@@ -94,7 +94,7 @@ type SecretSpec struct {
 type SecretState struct {
 	ownership.State
 	// Version counts writes; 0 means the name exists with no value yet.
-	Version int `json:"version"`
+	Version int32 `json:"version"`
 	// UpdatedAt is when the value was last written (workflow time).
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
@@ -112,7 +112,7 @@ func (RotateCmd) Result() SecretRes { return SecretRes{} }
 
 // SecretRes reports the secret after a rotation.
 type SecretRes struct {
-	Version int `json:"version"`
+	Version int32 `json:"version"`
 }
 
 // ForgetActivity erases the value behind a deleted secret record:

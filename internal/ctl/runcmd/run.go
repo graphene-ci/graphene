@@ -34,7 +34,7 @@ func New(f *cmdutil.Factory) *cobra.Command {
 func runIdCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return f.LiveIds("run"), cobra.ShellCompDirectiveNoFileComp
+			return f.LiveIDs("run"), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -57,7 +57,7 @@ interactive form walks the schema field by field.`,
 		Args: cobra.ExactArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
-				return f.LiveIds("pipeline"), cobra.ShellCompDirectiveNoFileComp
+				return f.LiveIDs("pipeline"), cobra.ShellCompDirectiveNoFileComp
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -197,6 +197,13 @@ func fetchResult(ctx context.Context, d *cmdutil.Door, runId string) ([]byte, er
 			return nil, fmt.Errorf("run %s was canceled — no result", runId)
 		}
 		return nil, fmt.Errorf("run %s did not complete — no result", runId)
+	case connect.CodeCanceled, connect.CodeUnknown, connect.CodeInvalidArgument,
+		connect.CodeDeadlineExceeded, connect.CodeAlreadyExists,
+		connect.CodePermissionDenied, connect.CodeResourceExhausted,
+		connect.CodeAborted, connect.CodeOutOfRange, connect.CodeUnimplemented,
+		connect.CodeInternal, connect.CodeUnavailable, connect.CodeDataLoss,
+		connect.CodeUnauthenticated:
+		return nil, err
 	}
 	return nil, err
 }

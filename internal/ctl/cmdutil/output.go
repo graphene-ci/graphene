@@ -115,8 +115,8 @@ func printYAML(m proto.Message) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(Out, string(rendered))
-	return nil
+	_, err = fmt.Fprint(Out, string(rendered))
+	return err
 }
 
 // printJQ pipes the message's decoded JSON form through a jq
@@ -158,42 +158,55 @@ func runJQ(query *gojq.Query, v any) error {
 			return fmt.Errorf("--jq: %w", err)
 		}
 		if s, isStr := item.(string); isStr {
-			fmt.Fprintln(Out, s)
+			if _, err := fmt.Fprintln(Out, s); err != nil {
+				return err
+			}
 			continue
 		}
 		enc, err := json.Marshal(item)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(Out, string(enc))
+		if _, err := fmt.Fprintln(Out, string(enc)); err != nil {
+			return err
+		}
 	}
 }
 
 // Table renders rows with aligned columns on stdout.
-func Table(header []string, rows [][]string) {
+func Table(header []string, rows [][]string) error {
 	w := tabwriter.NewWriter(Out, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(w, strings.Join(header, "\t"))
-	for _, row := range rows {
-		fmt.Fprintln(w, strings.Join(row, "\t"))
+	if _, err := fmt.Fprintln(w, strings.Join(header, "\t")); err != nil {
+		return err
 	}
-	_ = w.Flush()
+	for _, row := range rows {
+		if _, err := fmt.Fprintln(w, strings.Join(row, "\t")); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
 
 // PrintJSONBlock renders a raw-JSON field as an indented YAML block
 // under its title — the readable form of a record's spec and state.
-func PrintJSONBlock(title string, raw []byte) {
+func PrintJSONBlock(title string, raw []byte) error {
 	if len(raw) == 0 {
-		return
+		return nil
 	}
 	rendered, err := yamlpkg.JSONToYAML(raw)
 	if err != nil {
-		fmt.Fprintf(Out, "%s: %s\n", title, string(raw))
-		return
+		_, writeErr := fmt.Fprintf(Out, "%s: %s\n", title, string(raw))
+		return writeErr
 	}
-	fmt.Fprintf(Out, "%s:\n", title)
+	if _, err := fmt.Fprintf(Out, "%s:\n", title); err != nil {
+		return err
+	}
 	for line := range strings.SplitSeq(strings.TrimRight(string(rendered), "\n"), "\n") {
-		fmt.Fprintf(Out, "  %s\n", line)
+		if _, err := fmt.Fprintf(Out, "  %s\n", line); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // LabelsCell renders labels compactly for a table cell.

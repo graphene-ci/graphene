@@ -38,7 +38,7 @@ func (s *Worker) fetchGitSource(ctx context.Context, req sourceflow.FetchReq) (s
 		credential = v
 	}
 	out, err := s.deps.Materializer.FetchGit(ctx, materialize.GitRequest{
-		Url:        req.Spec.Url,
+		URL:        req.Spec.URL,
 		Ref:        req.Spec.Ref,
 		Subdir:     req.Spec.Subdir,
 		Credential: credential,

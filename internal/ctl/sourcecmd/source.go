@@ -54,8 +54,8 @@ revision materialization to build it.`,
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			fmt.Fprintln(cmdutil.Out, resp.Msg.GetLocation())
-			return nil
+			_, err = fmt.Fprintln(cmdutil.Out, resp.Msg.GetLocation())
+			return err
 		},
 	}
 	_ = uploadPipeline
@@ -200,13 +200,4 @@ func sourceRef(name string) (string, error) {
 		return name, nil
 	}
 	return "", fmt.Errorf("name the source as kind/id (`graphenectl kinds` lists the kinds; `get gitsource` lists the records)")
-}
-
-// short renders a digest the way a person reads it.
-func short(digest string) string {
-	d := strings.TrimPrefix(digest, "sha256:")
-	if len(d) > 12 {
-		return d[:12]
-	}
-	return d
 }

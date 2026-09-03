@@ -211,7 +211,7 @@ func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.Pu
 	// The run's minted token names the run; the run's workflow type is
 	// its pipeline id.
 	if ident, ok := auth.IdentityFrom(ctx); ok {
-		if runId, isRun := strings.CutPrefix(ident.Identity.Subject.Name, "run/"); isRun {
+		if runId, isRun := strings.CutPrefix(ident.Subject.Name, "run/"); isRun {
 			desc, derr := b.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
 			if derr != nil {
 				return nil, status.Error(codes.PermissionDenied, "run token does not resolve to a run")

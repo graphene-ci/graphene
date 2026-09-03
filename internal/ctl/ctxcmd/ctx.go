@@ -199,8 +199,7 @@ func newList() *cobra.Command {
 				cc := cfg.Contexts[name]
 				rows = append(rows, []string{mark, name, cc.Server, cc.Namespace})
 			}
-			cmdutil.Table([]string{" ", "NAME", "SERVER", "NAMESPACE"}, rows)
-			return nil
+			return cmdutil.Table([]string{" ", "NAME", "SERVER", "NAMESPACE"}, rows)
 		},
 	}
 }

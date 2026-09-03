@@ -74,7 +74,9 @@ func (f *filePersister) save(m map[string]map[string]string) error {
 	if _, err := rand.Read(nonce); err != nil {
 		return err
 	}
-	sealed := append(nonce, f.aead.Seal(nil, nonce, plain, nil)...) //nolint:makezero // the nonce prefix is the format
+	sealed := make([]byte, 0, len(nonce)+len(plain)+f.aead.Overhead())
+	sealed = append(sealed, nonce...)
+	sealed = f.aead.Seal(sealed, nonce, plain, nil)
 	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
 		return err
 	}

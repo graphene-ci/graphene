@@ -15,12 +15,12 @@ func TestValidateGitUrl(t *testing.T) {
 		"github.com/x/y", // no scheme
 	}
 	for _, u := range bad {
-		if err := validateGitUrl(u); err == nil {
+		if err := validateGitURL(u); err == nil {
 			t.Fatalf("url %q must be refused", u)
 		}
 	}
 	for _, u := range []string{"https://github.com/graphene-ci/examples", "http://gitea.internal:3000/team/pipe.git"} {
-		if err := validateGitUrl(u); err != nil {
+		if err := validateGitURL(u); err != nil {
 			t.Fatalf("url %q must be accepted: %v", u, err)
 		}
 	}

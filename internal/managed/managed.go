@@ -174,7 +174,8 @@ func (r *Runner) Ensure(ctx context.Context, runId id.RunId, imageRef, runToken 
 	if err != nil {
 		return false, fmt.Errorf("ensure run container: %w", err)
 	}
-	for _, c := range list {
+	if len(list) > 0 {
+		c := list[0]
 		if c.State == "running" {
 			r.adopt(ctx, c.ID, runId)
 			return false, nil

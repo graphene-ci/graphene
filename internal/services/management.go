@@ -16,7 +16,6 @@ import (
 	"github.com/gopherex/xlog"
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
-	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -768,7 +767,7 @@ func (m *Management) SetSecret(ctx context.Context, creq *connect.Request[manage
 	if err != nil {
 		return connect.NewResponse(&managementv1.SetSecretResponse{}), nil
 	}
-	return connect.NewResponse(&managementv1.SetSecretResponse{Version: int32(st.Version)}), nil
+	return connect.NewResponse(&managementv1.SetSecretResponse{Version: st.Version}), nil
 }
 
 // --- helpers ---
@@ -960,33 +959,6 @@ func labelPairs(labels map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// labelsFromSearchAttrs decodes the EntityLabels keyword list back into
-// a map.
-func labelsFromSearchAttrs(sa *common.SearchAttributes) map[string]string {
-	payload := sa.GetIndexedFields()["EntityLabels"]
-	if payload == nil {
-		return nil
-	}
-	var pairs []string
-	if err := converter.GetDefaultDataConverter().FromPayload(payload, &pairs); err != nil {
-		return nil
-	}
-	out := make(map[string]string, len(pairs))
-	for _, pair := range pairs {
-		if k, v, ok := strings.Cut(pair, "="); ok {
-			out[k] = v
-		}
-	}
-	return out
-}
-
-func stripPrefix(s, prefix string) string {
-	if len(s) > len(prefix) && s[:len(prefix)] == prefix {
-		return s[len(prefix):]
-	}
-	return s
 }
 
 // resourceFromVisibility builds a listing row from ONE visibility
