@@ -31,7 +31,7 @@ const (
 	Revision = Prefix + "revision"
 
 	// Source is the record a revision was built FROM
-	// ("gitsource/main", "managedsource/fix"). A pipeline may have
+	// (for example, "gitsource/main"). A pipeline may have
 	// several, and a revision comes from exactly one.
 	Source = Prefix + "source"
 

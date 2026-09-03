@@ -1,36 +1,40 @@
 # graphene
 
-The graphene control plane server — the single door of an installation.
-The full vision lives in `../GRAPHENE.MD` (org root).
+Репозиторий содержит control plane Graphene и CLI `graphenectl`. Сервер хранит
+записи ресурсов, запускает и восстанавливает их долговечные процессы в Temporal,
+управляет прогонами, исходниками, ревизиями, секретами, RBAC и подключёнными
+агентами.
 
-This repository contains ONLY the server. Everything user-facing and
-everything shared lives in
-[pipeline](https://github.com/graphene-ci/pipeline): the pipeline
-author's library, the identifier/reference vocabulary, the wire
-conventions, and the temporal flows of the system resources. The server:
+Инсталляция имеет одну внешнюю точку входа. На одном listener работают
+Management и worker API, соединения агентов, прокси к Temporal, приём OTLP,
+health probes и прокси container registry. Пользовательский Go SDK находится в
+репозитории [`pipeline`](https://github.com/graphene-ci/pipeline), а полная
+модель продукта и руководства — в
+[`docs`](https://graphene-ci.github.io/docs/).
 
-- registers the system resource flows (`pipeline/flow/*`) on its worker
-  and implements their `Ops` (clouds, agent registry, blob store);
-- implements the server activity contract of the pipeline library
-  (`pipeline/wire`): declare machine/artifact, delete by owner;
-- will serve the API for CLI/UI, hold secrets and tokens, and run the
-  managed execution path (on-demand run workers).
+## Устройство
 
-Temporal is an implementation detail of the server; nothing here is a
-public Go surface — the outside sees the binary and the API.
-
-## Layout
-
-| Path | What it is |
+| Путь | Назначение |
 |---|---|
-| `cmd/graphene-server` | The server binary (wiring lands next) |
-| `internal/` (to come) | `Ops` implementations, API, managed execution path |
+| `cmd/graphene-server` | сборка и запуск сервера |
+| `cmd/graphenectl` | универсальный операторский CLI |
+| `proto/management` | публичный Management API |
+| `internal/services` | реализации Management, worker и agent API |
+| `internal/worker` | Temporal worker и регистрация системных процессов |
+| `internal/*flow`, `internal/ops` | жизненные циклы записей и внешние эффекты |
+| `internal/auth`, `internal/authz` | аутентификация, токены и RBAC |
+| `internal/infrastructure` | хранилища blobs, секретов и интеграции |
+| `deployments/` | контейнерная сборка dev-инсталляции |
 
-## Build and check
+## Локальная разработка
 
 ```bash
-make configure   # pinned tools into bin/, nothing global
+make configure
 make lint
 make test
 make build
 ```
+
+Полный dev-контур поднимается командой `make compose-up` и останавливается
+`make compose-down`. Это окружение для разработки, не production deployment;
+его ограничения и настройка описаны в документации.
