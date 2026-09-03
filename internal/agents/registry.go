@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
@@ -282,17 +283,49 @@ func (r *Registry) command(ctx context.Context, namespace string, agentId id.Age
 		delete(s.pending, commandId)
 		s.pendingMu.Unlock()
 	}()
-	if err := s.send(build(commandId)); err != nil {
+	msg := build(commandId)
+	// DIAG: pinpoint where a command to an agent stalls — is it dispatched
+	// to the right session, does the stream Send return, does the reply come.
+	r.log.Info("command dispatch", xlog.Any("agent", agentId), xlog.String("peer", peerAddr(s)),
+		xlog.String("kind", commandKind(msg)), xlog.String("commandId", commandId))
+	if err := s.send(msg); err != nil {
+		r.log.Error("command send failed", xlog.Any("agent", agentId), xlog.Err(err))
 		return err
 	}
+	r.log.Info("command sent, awaiting reply", xlog.Any("agent", agentId), xlog.String("commandId", commandId))
 	select {
 	case errText := <-ch:
+		r.log.Info("command reply", xlog.Any("agent", agentId), xlog.String("commandId", commandId), xlog.String("err", errText))
 		if errText != "" {
 			return fmt.Errorf("agent: %s", errText)
 		}
 		return nil
 	case <-ctx.Done():
+		r.log.Info("command context done before reply", xlog.Any("agent", agentId), xlog.String("commandId", commandId))
 		return ctx.Err()
+	}
+}
+
+// peerAddr is the remote address of the session's stream — to tell a live
+// session from a stale one in the command diagnostics.
+func peerAddr(s *session) string {
+	if p, ok := peer.FromContext(s.stream.Context()); ok && p.Addr != nil {
+		return p.Addr.String()
+	}
+	return "?"
+}
+
+// commandKind names the command body for the dispatch log.
+func commandKind(msg *agentpb.SessionResponse) string {
+	switch msg.GetBody().(type) {
+	case *agentpb.SessionResponse_EnsureContainer:
+		return "ensure-container"
+	case *agentpb.SessionResponse_StopContainer:
+		return "stop-container"
+	case *agentpb.SessionResponse_RotateToken:
+		return "rotate-token"
+	default:
+		return "unknown"
 	}
 }
 
