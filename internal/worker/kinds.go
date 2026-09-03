@@ -282,8 +282,8 @@ func buildKinds() map[string]*kindEntry {
 		cmd("publish-manifest", reflect.TypeFor[pipelineflow.PublishCmd]()),
 		cmd("activate", reflect.TypeFor[pipelineflow.ActivateCmd]()))
 
-	// A namespace record lives in the DEFAULT namespace: a container
-	// cannot hold its own declaration.
+	// Namespace records live in graphene-system: a container cannot hold
+	// its own declaration.
 	add("namespace", "an isolation unit: its own records, queues and visibility", true,
 		reflect.TypeFor[nsflow.Spec]())
 

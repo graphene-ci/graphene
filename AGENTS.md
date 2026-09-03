@@ -1,29 +1,30 @@
 # AGENTS.md — graphene
 
-The control plane server of graphene vision v3 (`../GRAPHENE.MD` at the
-org root). Server only: no user-facing Go surface here.
+Control plane и `graphenectl` Graphene. Текущая модель продукта находится в
+`../GRAPHENE.MD`. Публичного пользовательского Go SDK в этом репозитории нет.
 
-## Before making changes
+## Перед изменением
 
-1. Read `../GRAPHENE.MD`. A change that contradicts the vision updates
-   the vision first.
-2. `make lint` and `make test` must be green before push.
+1. Прочитайте `../GRAPHENE.MD`. Противоречащее ему изменение сначала правит
+   продуктовый документ.
+2. Перед push обязательны `make lint` и `make test`.
 
-## Code rules
+## Правила кода
 
-- Go; code, names, and comments in English. Commits are Conventional
-  Commits, no `Co-Authored-By`.
-- Shared types, identifiers, wire conventions, and system resource flows
-  come from the pipeline repository — never redefine them here.
-- Side effects of the flows are behind the `Ops` interfaces from
-  `pipeline/flow/*`; implementations live in `internal/`, every method
-  idempotent.
-- Secrets and large data never enter specs, logs, or Temporal history —
-  references only.
+- Go; код, имена и комментарии — на английском. Коммиты — Conventional Commits
+  без `Co-Authored-By`.
+- Pipeline-side типы, идентификаторы, wire conventions и определения системных
+  ресурсов приходят из репозитория `pipeline`. Публичный Management API
+  принадлежит этому репозиторию и живёт в `proto/management`.
+- Внешние эффекты flows скрыты за `Ops` interfaces; реализации находятся в
+  `internal/`, каждый метод идемпотентен.
+- Секреты и большие данные не входят в specs, логи или Temporal history:
+  используются только ссылки.
 
-## Boundaries
+## Границы
 
-- `cmd/` — binary assembly only.
-- `internal/` — everything else: `Ops` implementations, the server
-  worker, API, secrets/tokens, managed execution path. Nothing importable
-  from outside by design.
+- `cmd/` — сборка `graphene-server` и `graphenectl`;
+- `proto/management` — публичный Management API, generated code коммитится;
+- `internal/` — реализации flows, server worker, API, auth, storage,
+  materialization исходников и managed execution; внешних импортируемых пакетов
+  здесь нет.
