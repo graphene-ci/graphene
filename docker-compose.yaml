@@ -146,7 +146,7 @@ services:
       # (a remote agent's container that dials loopback finds no server
       # and dies on connection-refused). Managed containers on this host
       # use host networking and reach the same address fine.
-      GRAPHENE_SERVER_EXTERNAL: "158.160.209.113:7233"
+      GRAPHENE_SERVER_EXTERNAL: "${GRAPHENE_SERVER_EXTERNAL:-127.0.0.1:7233}"
       GRAPHENE_TEMPORAL_HOST_PORT: "temporal:7233"
       GRAPHENE_TEMPORAL_NAMESPACE: "default"
       GRAPHENE_REGISTRY_UPSTREAM: "http://registry:5000"
@@ -167,9 +167,9 @@ services:
       GRAPHENE_AUTH_AGENT_TOKENS: "vm-1:dev-agent-token"
       # Secrets survive restarts in the sealed store on this volume,
       # AES-GCM under this master key. It is read from the environment
-      # (put it in a .env beside this file: GRAPHENE_SECRETS_KEY=$(openssl
-      # rand -hex 32)); the dev fallback is for the throwaway polygon
-      # only. Losing/rotating the key strands the existing store — the
+      # (put the literal output of `openssl rand -hex 32` in a .env file
+      # beside this compose file); the fallback is only for a disposable
+      # dev stack. Losing/rotating the key strands the existing store — the
       # server refuses to start on a mismatch rather than lose secrets.
       GRAPHENE_SECRETS_KEY: "${GRAPHENE_SECRETS_KEY:-6465762d6b65792d6465762d6b65792d6465762d6b65792d6465762d6b657921}"
       GRAPHENE_LOG_LEVEL: "info"
@@ -210,4 +210,3 @@ volumes:
 networks:
   graphene:
     name: graphene
-
