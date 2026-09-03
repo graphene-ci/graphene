@@ -23,7 +23,7 @@ func targetCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string)
 		case 0:
 			return f.LiveKinds(), cobra.ShellCompDirectiveNoFileComp
 		case 1:
-			return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+			return f.LiveIDs(args[0]), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -41,7 +41,7 @@ func commandCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string
 			if kind, _, ok := strings.Cut(args[0], "/"); ok {
 				return f.LiveCommands(kind), cobra.ShellCompDirectiveNoFileComp
 			}
-			return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+			return f.LiveIDs(args[0]), cobra.ShellCompDirectiveNoFileComp
 		case 2:
 			return f.LiveCommands(args[0]), cobra.ShellCompDirectiveNoFileComp
 		}
@@ -80,7 +80,9 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			fmt.Fprintln(cmdutil.Out, ref)
+			if _, err := fmt.Fprintln(cmdutil.Out, ref); err != nil {
+				return err
+			}
 			for _, root := range resp.Msg.GetRoots() {
 				printTree(root, "  ")
 			}
@@ -247,8 +249,8 @@ for its fields.`,
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetResult()))
-			return nil
+			_, err = fmt.Fprintln(cmdutil.Out, string(resp.Msg.GetResult()))
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&data, "data", "", "command payload as inline JSON")

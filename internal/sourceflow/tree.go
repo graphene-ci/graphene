@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -43,7 +44,7 @@ func UnpackTar(raw []byte, maxFileBytes int64) (map[string][]byte, error) {
 	tr := tar.NewReader(zr)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

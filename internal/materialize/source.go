@@ -25,7 +25,7 @@ import (
 
 // GitRequest is one clone.
 type GitRequest struct {
-	Url string
+	URL string
 	Ref string
 	// Subdir narrows the tree to a monorepo subdirectory.
 	Subdir string
@@ -68,7 +68,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	// ext:: transport executes an arbitrary command, file:// reads the
 	// server's own disk, and any value starting with "-" becomes a
 	// flag. All three are rejected before the container starts.
-	if err := validateGitUrl(req.Url); err != nil {
+	if err := validateGitURL(req.URL); err != nil {
 		return res, err
 	}
 	if err := validateGitRef(req.Ref); err != nil {
@@ -77,7 +77,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	if err := validateSubdir(req.Subdir); err != nil {
 		return res, err
 	}
-	cloneUrl, err := authenticatedUrl(req.Url, req.Credential)
+	cloneURL, err := authenticatedURL(req.URL, req.Credential)
 	if err != nil {
 		return res, err
 	}
@@ -88,7 +88,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 		Env: []string{
 			// Never prompt: a bad credential must fail, not hang.
 			"GIT_TERMINAL_PROMPT=0",
-			"GIT_URL=" + cloneUrl,
+			"GIT_URL=" + cloneURL,
 		},
 		WorkingDir: "/work",
 		Labels:     map[string]string{labelKey: "git"},
@@ -103,7 +103,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 		return res, fmt.Errorf("git start: %w", err)
 	}
 
-	progress("source", "cloning "+redact(req.Url))
+	progress("source", "cloning "+redact(req.URL))
 	// A shallow single-branch clone: a workspace needs the tree, not
 	// the history. "$GIT_URL" stays in the environment, so the token
 	// never appears in a command line or a log.
@@ -132,7 +132,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 	}
 	if _, err := m.exec(ctx, cont.ID, nil,
 		fmt.Sprintf("test -d %s || { echo 'subdir not found'; exit 1; }", shellQuote(root)), nil); err != nil {
-		return res, fmt.Errorf("git subdir %q: not found in %s", req.Subdir, redact(req.Url))
+		return res, fmt.Errorf("git subdir %q: not found in %s", req.Subdir, redact(req.URL))
 	}
 	if _, err := m.exec(ctx, cont.ID, nil,
 		fmt.Sprintf("tar czf /tmp/tree.tgz --exclude .git -C %s .", shellQuote(root)), nil); err != nil {
@@ -150,7 +150,7 @@ func (m *Materializer) FetchGit(ctx context.Context, req GitRequest, progress Pr
 		return res, fmt.Errorf("store tree: %w", err)
 	}
 	m.Log.Info("workspace source fetched",
-		xlog.String("url", redact(req.Url)), xlog.String("commit", res.Commit))
+		xlog.String("url", redact(req.URL)), xlog.String("commit", res.Commit))
 	return res, nil
 }
 
@@ -169,10 +169,10 @@ func (m *Materializer) readFile(ctx context.Context, containerId, path string) (
 	return io.ReadAll(f)
 }
 
-// validateGitUrl accepts only the transports a workspace may use.
+// validateGitURL accepts only the transports a workspace may use.
 // git's own ext:: and file:: transports run commands and read local
 // paths — a workspace source must never reach them.
-func validateGitUrl(raw string) error {
+func validateGitURL(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("git source needs a url")
 	}
@@ -230,9 +230,9 @@ func validateSubdir(subdir string) error {
 	return nil
 }
 
-// authenticatedUrl folds a credential into an https URL; an ssh URL
+// authenticatedURL folds a credential into an https URL; an ssh URL
 // takes the credential as a key elsewhere (not supported yet).
-func authenticatedUrl(raw, credential string) (string, error) {
+func authenticatedURL(raw, credential string) (string, error) {
 	if credential == "" {
 		return raw, nil
 	}

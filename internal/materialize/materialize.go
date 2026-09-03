@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,8 +51,8 @@ type Materializer struct {
 	// to `default`. nil falls back to no token (a keyless installation).
 	MintToken func(namespace string) string
 	Insecure  bool
-	Blobs    blob.Store
-	Log      *xlog.Logger
+	Blobs     blob.Store
+	Log       *xlog.Logger
 }
 
 // Progress receives one progress line; stage is "runtime", "build",
@@ -303,7 +304,7 @@ func (m *Materializer) copyOut(ctx context.Context, containerId, path string) (s
 	tr := tar.NewReader(rc)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -359,7 +360,7 @@ func gunzip(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = zr.Close() }()
-	out, err := io.ReadAll(zr) //nolint:gosec // dev PoC; size-cap the upload at the API instead
+	out, err := io.ReadAll(zr)
 	if err != nil {
 		return nil, err
 	}

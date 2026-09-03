@@ -31,7 +31,7 @@ const GitKind = entity.KindName("gitsource")
 type GitSpec struct {
 	// PipelineId is the project this source belongs to.
 	PipelineId string `json:"pipelineId"`
-	Url        string `json:"url"`
+	URL        string `json:"url"`
 	// Ref is a branch, tag or commit; empty takes the default branch.
 	Ref string `json:"ref,omitempty"`
 	// Subdir is the pipeline's root inside a monorepo.
@@ -47,7 +47,7 @@ type GitSpec struct {
 
 // Validate refuses a source that names no repository.
 func (s GitSpec) Validate() error {
-	if s.Url == "" {
+	if s.URL == "" {
 		return fmt.Errorf("a git source needs a url")
 	}
 	if s.PipelineId == "" {

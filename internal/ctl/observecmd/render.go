@@ -66,7 +66,9 @@ func renderMetrics(f *cmdutil.Factory, series []byte) error {
 		}
 		var lastVal float64
 		if n := len(sr.Values); n > 0 {
-			fmt.Sscan(fmt.Sprint(sr.Values[n-1][1]), &lastVal)
+			if _, err := fmt.Sscan(fmt.Sprint(sr.Values[n-1][1]), &lastVal); err != nil {
+				return fmt.Errorf("metric %q value: %w", name, err)
+			}
 			if len(sr.Values) > a.points {
 				a.points = len(sr.Values)
 			}
@@ -104,8 +106,7 @@ func renderMetrics(f *cmdutil.Factory, series []byte) error {
 		}
 		rows = append(rows, []string{cell, fmt.Sprint(a.points), value})
 	}
-	cmdutil.Table([]string{"METRIC", "POINTS", "VALUE"}, rows)
-	return nil
+	return cmdutil.Table([]string{"METRIC", "POINTS", "VALUE"}, rows)
 }
 
 // noiseLabels are the SDK's own stamps — true for every series, so
@@ -137,24 +138,6 @@ func labelKey(labels map[string]string) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
-}
-
-// metricCell renders// metricCell renders a PromQL label set the way prometheus does:
-// name{label="v",...}.
-func metricCell(labels map[string]string) string {
-	name := labels["__name__"]
-	parts := make([]string, 0, len(labels))
-	for k, v := range labels {
-		if k == "__name__" {
-			continue
-		}
-		parts = append(parts, k+`="`+v+`"`)
-	}
-	if len(parts) == 0 {
-		return name
-	}
-	sort.Strings(parts)
-	return name + "{" + strings.Join(parts, ",") + "}"
 }
 
 func renderTrace(f *cmdutil.Factory, trace []byte) error {
@@ -217,6 +200,5 @@ func renderTrace(f *cmdutil.Factory, trace []byte) error {
 	for i, r := range rows {
 		cells[i] = r.cols
 	}
-	cmdutil.Table([]string{"START", "DURATION", "OPERATION", "SERVICE", ""}, cells)
-	return nil
+	return cmdutil.Table([]string{"START", "DURATION", "OPERATION", "SERVICE", ""}, cells)
 }

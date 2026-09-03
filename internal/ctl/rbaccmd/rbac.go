@@ -6,7 +6,6 @@
 package rbaccmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -98,51 +97,4 @@ func NewWhoAmI(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func splitList(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func mustJSON(v any) []byte {
-	raw, _ := json.Marshal(v)
-	return raw
-}
-
-// builtinRoles are the roles every installation starts with; they live
-// in the code, so no record answers for them.
-var builtinRoles = []string{"admin", "developer", "viewer", "agent", "run"}
-
-// record is one listed record with its state.
-type record struct {
-	id    string
-	state []byte
-}
-
-// listRecords lists a kind through the general door and reads each
-// one's state — the same two verbs any client would use.
-func listRecords(cmd *cobra.Command, d *cmdutil.Door, kind string) ([]record, error) {
-	list, err := d.Resources.List(cmd.Context(), connect.NewRequest(&managementv1.ListRequest{
-		Selector: &managementv1.Selector{Kind: kind},
-	}))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]record, 0, len(list.Msg.GetResources()))
-	for _, res := range list.Msg.GetResources() {
-		got, err := d.Resources.Get(cmd.Context(), connect.NewRequest(&managementv1.GetRequest{Ref: res.GetRef()}))
-		if err != nil {
-			continue
-		}
-		id := strings.TrimPrefix(res.GetRef(), kind+"/")
-		out = append(out, record{id: id, state: got.Msg.GetResource().GetState()})
-	}
-	return out, nil
 }

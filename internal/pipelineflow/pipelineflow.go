@@ -265,7 +265,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	})
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd FireCmd) (FireRes, error) {
 		st := ec.State()
-		fire := Fire{Trigger: cmd.Trigger, Params: cmd.Params, Event: cmd.Event, RunId: cmd.RunId, Labels: cmd.Labels}
+		fire := Fire(cmd)
 		running, err := countRuns(ctx, ec)
 		if err != nil {
 			return FireRes{}, err

@@ -154,8 +154,8 @@ func (f *Factory) LiveCommands(kind string) []string {
 	return out
 }
 
-// LiveIds lists the ids of one kind.
-func (f *Factory) LiveIds(kind string) []string {
+// LiveIDs lists the ids of one kind.
+func (f *Factory) LiveIDs(kind string) []string {
 	d, cctx, cancel := f.completionDoor()
 	if d == nil {
 		return nil

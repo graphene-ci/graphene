@@ -46,6 +46,7 @@ func (r *Runner) startTail(ctx context.Context, containerId string, runId id.Run
 	r.tails[containerId] = cancel
 	r.mu.Unlock()
 	go func() {
+		defer cancel()
 		defer func() {
 			r.mu.Lock()
 			delete(r.tails, containerId)
@@ -138,7 +139,7 @@ func scanLines(r io.Reader, stream string, out chan<- tailLine) {
 }
 
 func exportRequest(runId id.RunId, lines []tailLine) *collogspb.ExportLogsServiceRequest {
-	now := uint64(time.Now().UnixNano()) //nolint:gosec // wall clock is non-negative
+	now := uint64(time.Now().UnixNano())
 	records := make([]*logspb.LogRecord, 0, len(lines))
 	for _, line := range lines {
 		records = append(records, &logspb.LogRecord{

@@ -103,14 +103,6 @@ func (m *Management) WhoAmI(ctx context.Context, _ *connect.Request[managementv1
 	return connect.NewResponse(out), nil
 }
 
-// forgetPermissions drops the cached decision set so a change of
-// rights lands at once rather than after the cache expires.
-func (m *Management) forgetPermissions(namespace string) {
-	if m.Authz != nil {
-		m.Authz.Forget(namespace)
-	}
-}
-
 // randomToken mints 32 bytes of secret.
 func randomToken() (string, error) {
 	buf := make([]byte, 32)

@@ -33,7 +33,7 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			case 0:
 				return f.LiveKinds(), cobra.ShellCompDirectiveNoFileComp
 			case 1:
-				return f.LiveIds(args[0]), cobra.ShellCompDirectiveNoFileComp
+				return f.LiveIDs(args[0]), cobra.ShellCompDirectiveNoFileComp
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},

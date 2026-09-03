@@ -123,14 +123,11 @@ func remoteWriteProxy(upstream string) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("metrics upstream: %w", err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
-		director(r)
-		r.URL.Path = "/api/v1/write"
-		r.Host = target.Host
-		r.Header.Del("Authorization")
-	}
+	proxy := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {
+		r.SetURL(target)
+		r.Out.URL.Path = "/api/v1/write"
+		r.Out.Header.Del("Authorization")
+	}}
 	return proxy, nil
 }
 
@@ -139,14 +136,12 @@ func registryProxy(upstream string) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry upstream: %w", err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
-		director(r)
+	proxy := &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {
+		r.SetURL(target)
 		// The graphene token authenticated the puller at our door; the
 		// upstream registry has its own auth (none in the dev contour).
-		r.Header.Del("Authorization")
-	}
+		r.Out.Header.Del("Authorization")
+	}}
 	return proxy, nil
 }
 

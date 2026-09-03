@@ -148,11 +148,15 @@ func NewKinds(f *cmdutil.Factory) *cobra.Command {
 			if len(names) == 0 {
 				return fmt.Errorf("the dictionary answered nothing — is the server reachable?")
 			}
-			fmt.Fprintf(cmdutil.Out, "KIND\tORIGIN\tAPPLY\tRECORDS\tCOMMANDS\n")
+			if _, err := fmt.Fprintf(cmdutil.Out, "KIND\tORIGIN\tAPPLY\tRECORDS\tCOMMANDS\n"); err != nil {
+				return err
+			}
 			for _, name := range names {
 				e, err := f.KindEntryOf(cmd.Context(), name)
 				if err != nil {
-					fmt.Fprintf(cmdutil.Out, "%s\t?\t\t\t(%v)\n", name, err)
+					if _, writeErr := fmt.Fprintf(cmdutil.Out, "%s\t?\t\t\t(%v)\n", name, err); writeErr != nil {
+						return writeErr
+					}
 					continue
 				}
 				declarable := ""
@@ -163,9 +167,13 @@ func NewKinds(f *cmdutil.Factory) *cobra.Command {
 				for _, c := range e.Commands {
 					cmds = append(cmds, c.Name)
 				}
-				fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%d\t%s\n", name, e.Origin, declarable, e.Records, strings.Join(cmds, ", "))
+				if _, err := fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%d\t%s\n", name, e.Origin, declarable, e.Records, strings.Join(cmds, ", ")); err != nil {
+					return err
+				}
 				if verbose && e.Description != "" {
-					fmt.Fprintf(cmdutil.Out, "  %s\n", e.Description)
+					if _, err := fmt.Fprintf(cmdutil.Out, "  %s\n", e.Description); err != nil {
+						return err
+					}
 				}
 			}
 			return nil

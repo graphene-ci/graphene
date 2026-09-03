@@ -259,8 +259,9 @@ func compileTerm(t Term, runMode bool, now time.Time) (string, error) {
 				ids[i] = prefix + v
 			}
 			return fmt.Sprintf("%s IN (%s)", field, quoteList(ids)), nil
+		case OpNeq, OpGt, OpLt:
+			return "", fmt.Errorf("id supports =, =^, in")
 		}
-		return "", fmt.Errorf("id supports =, =^, in")
 	case fieldPhase:
 		field := "EntityPhase"
 		if runMode {
@@ -281,8 +282,9 @@ func compileTerm(t Term, runMode bool, now time.Time) (string, error) {
 			return equality("WorkflowType", t)
 		case OpPrefix:
 			return fmt.Sprintf(`WorkflowType STARTS_WITH "%s"`, t.Values[0]), nil
+		case OpGt, OpLt:
+			return "", fmt.Errorf("pipeline supports =, !=, =^, in")
 		}
-		return "", fmt.Errorf("pipeline supports =, !=, =^, in")
 	case fieldStarted, fieldFinished:
 		field := "StartTime"
 		if t.Field == fieldFinished {
@@ -308,8 +310,10 @@ func equality(field string, t Term) (string, error) {
 		return fmt.Sprintf("%s != '%s'", field, t.Values[0]), nil
 	case OpIn:
 		return fmt.Sprintf("%s IN (%s)", field, quoteList(t.Values)), nil
+	case OpPrefix, OpGt, OpLt:
+		return "", fmt.Errorf("%s supports =, !=, in", strings.ToLower(field))
 	}
-	return "", fmt.Errorf("%s supports =, !=, in", strings.ToLower(field))
+	return "", fmt.Errorf("%s has an unknown operator", strings.ToLower(field))
 }
 
 func quoteList(values []string) string {
