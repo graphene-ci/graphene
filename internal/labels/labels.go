@@ -72,6 +72,10 @@ const DeclaredExternal = "external"
 // TriggerManual is the doors' value for Trigger.
 const TriggerManual = "manual"
 
+// TriggerChild marks a run started as the CHILD of another run (pipeline.Run
+// fan-out), as opposed to a person, a cron, or a cross-pipeline edge.
+const TriggerChild = "child"
+
 // Merge folds system markers onto a record's labels without letting an
 // empty value write an empty key: a marker that is not known is
 // absent, never blank.

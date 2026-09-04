@@ -228,8 +228,8 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		LogSink:     otlp.ForwardLogs,
 		// Trigger firings start runs through the same door logic.
 		MakeRunStarter: func(b *nsbundle.Bundle) worker.RunStarter {
-			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string) error {
-				return services.StartRunOnBundle(ctx, b, log, runId, pipelineId, params, image, labels, trigger)
+			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger, owner string) error {
+				return services.StartRunOnBundle(ctx, b, log, runId, pipelineId, params, image, labels, trigger, owner)
 			}
 		},
 		Log: log,

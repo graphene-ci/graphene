@@ -276,7 +276,7 @@ func (m *Management) RunRevision(ctx context.Context, creq *connect.Request[mana
 		ID:                       "run/" + string(runId),
 		TaskQueue:                wire.RunQueue(runId),
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		TypedSearchAttributes:    runAttributes(req.GetPipelineId(), marked),
+		TypedSearchAttributes:    runAttributes(req.GetPipelineId(), "", marked),
 	}
 	var args []any
 	if len(params) > 0 {

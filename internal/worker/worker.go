@@ -89,7 +89,7 @@ type Deps struct {
 
 // RunStarter starts one run — wired by the bundle after the managed
 // runner exists (the same path the management door uses).
-type RunStarter func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string) error
+type RunStarter func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger, owner string) error
 
 // Worker is the assembled server worker.
 type Worker struct {
@@ -219,6 +219,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.deleteResource, activity.RegisterOptions{Name: wire.DeleteResourceActivity})
 	w.RegisterActivityWithOptions(s.ensureContainer, activity.RegisterOptions{Name: wire.EnsureContainerActivity})
 	w.RegisterActivityWithOptions(s.runCleanup, activity.RegisterOptions{Name: wire.RunCleanupActivity})
+	w.RegisterActivityWithOptions(s.startChildRun, activity.RegisterOptions{Name: wire.StartChildRunActivity})
+	w.RegisterActivityWithOptions(s.awaitChildRun, activity.RegisterOptions{Name: wire.AwaitChildRunActivity})
 	w.RegisterActivityWithOptions(s.agentUserData, activity.RegisterOptions{Name: wire.AgentUserDataActivity})
 	w.RegisterActivityWithOptions(s.attachAgent, activity.RegisterOptions{Name: wire.AttachAgentActivity})
 	w.RegisterActivityWithOptions(s.attachArtifact, activity.RegisterOptions{Name: wire.AttachArtifactActivity})
@@ -358,7 +360,7 @@ func (s *Worker) autoStartRun(ctx context.Context, req pipelineflow.StartReq) (s
 			time.Now().UTC().Format("20060102-150405"))
 	}
 	trigger := triggerLabelValue(st.Manifest, req.Trigger)
-	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, req.Labels, trigger); err != nil {
+	if err := s.startRun(ctx, runId, req.PipelineId, params, st.Image, req.Labels, trigger, ""); err != nil {
 		return "", err
 	}
 	return runId, nil
@@ -1208,6 +1210,16 @@ func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
 	}
 	var errs []error
 	for _, child := range children {
+		// A CHILD RUN is not an entity — it does not answer the delete
+		// signal, and it owns its OWN subtree which its cleanup interceptor
+		// tears down. Cancel it and let its own cascade run; recursing or
+		// delete-signalling here would race that cleanup.
+		if strings.HasPrefix(child, "run/") {
+			if err := s.deps.Client.CancelWorkflow(ctx, child, ""); err != nil && !alreadyGone(err) {
+				errs = append(errs, fmt.Errorf("cancel child run %s: %w", child, err))
+			}
+			continue
+		}
 		if err := s.cascade(ctx, ref.OwnerRef(child)); err != nil {
 			errs = append(errs, err)
 			continue
