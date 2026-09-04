@@ -153,6 +153,16 @@ func (m *Management) Materialize(ctx context.Context, creq *connect.Request[mana
 		}
 		switch phase {
 		case entity.PhaseReady:
+			// A built revision proves the project exists (its binary's name
+			// was checked against the id), so ensure the pipeline record is
+			// there — create-or-attach, idempotent. Without this the
+			// source-first contour never births pipeline/<id> (only the
+			// push door did), and the first `activate` of a NEW pipeline
+			// fails "workflow not found". The record starts empty; activate
+			// fills its manifest, image and active revision.
+			if _, err := b.Worker.Apply(ctx, "pipeline", pipelineId, json.RawMessage("{}"), nil); err != nil {
+				return status.Errorf(codes.Internal, "ensure pipeline record: %v", err)
+			}
 			manifest, err := m.blobBytes(ctx, b.Namespace, st.ManifestLocation)
 			if err != nil {
 				return status.Errorf(codes.Internal, "revision manifest: %v", err)

@@ -89,6 +89,11 @@ a local directory instead, without declaring a source at all.`,
 	run.Flags().StringVarP(&params, "params", "p", "", "params as raw JSON")
 	run.Flags().StringVar(&runId, "run-id", "", "run id (default: generated draft id)")
 
+	// Activation has no dedicated command on purpose: it is the pipeline's
+	// own `activate` command, reached through the generic invoke door —
+	//   graphenectl invoke pipeline <id> activate --data '{"revisionId":"<rev>"}'
+	// Materialize leaves the pipeline record in place, so that invoke works
+	// for a freshly materialized new pipeline with no other step.
 	cmd.AddCommand(mat, run)
 	return cmd
 }
