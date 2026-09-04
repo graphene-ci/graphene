@@ -279,6 +279,13 @@ func (m *Management) RunStatus(ctx context.Context, creq *connect.Request[manage
 	out := &managementv1.RunStatusResponse{
 		Status: desc.GetWorkflowExecutionInfo().GetStatus().String(),
 	}
+	// Pending activities are only meaningful while the run is RUNNING. A
+	// closed run (Completed/Failed/Canceled/Terminated) can still carry a
+	// stale pending-activity snapshot in its describe — reporting it as
+	// "in flight" on a terminal run is misleading, so drop it.
+	if desc.GetWorkflowExecutionInfo().GetStatus() != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		return connect.NewResponse(out), nil
+	}
 	dc := converter.GetDefaultDataConverter()
 	for _, pa := range desc.GetPendingActivities() {
 		p := &managementv1.PendingActivity{
