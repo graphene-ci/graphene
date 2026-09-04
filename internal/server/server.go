@@ -423,7 +423,6 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	services.MountConnect(rootMux, management, observe, authn)
 	rootMux.Handle("/", httpapi.New(httpapi.Deps{
 		Auth:             authn,
-		RegistryAuthz:    management.AuthorizeRegistry,
 		RegistryUpstream: cfg.RegistryUpstream,
 		MetricsUpstream:  cfg.QueryMetrics,
 		Health:           health.HTTPMux(),

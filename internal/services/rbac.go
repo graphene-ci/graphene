@@ -157,27 +157,3 @@ func (m *Management) authenticate(ctx context.Context, token, namespace string) 
 	}
 	return auth.Identity{}, false
 }
-
-// AuthorizeRegistry authorizes a docker-registry request from a token the
-// door's static role check did not settle: it authenticates through the
-// full chain (a service account's issued token, an id_token) and
-// authorizes it on kind revision in the image's namespace — a push
-// (write) needs build, a pull needs get. Static and minted role tokens
-// (agent, run, admin) never reach here; the door answers those directly,
-// so this is the path that lets a person or a service account push and
-// pull worker images with their OWN token, not only the installation's
-// static run/admin tokens.
-func (m *Management) AuthorizeRegistry(ctx context.Context, token, namespace string, write bool) bool {
-	if namespace == "" {
-		namespace = "default"
-	}
-	id, ok := m.authenticate(ctx, token, namespace)
-	if !ok || m.Authz == nil {
-		return false
-	}
-	verb := authz.VerbGet
-	if write {
-		verb = authz.VerbBuild
-	}
-	return m.Authz.Allow(ctx, id.Identity, id.BoundRole, verb, authz.KindRevision).Allowed
-}
