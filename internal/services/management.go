@@ -125,6 +125,13 @@ func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, 
 	if err := wire.ValidateUserLabels(labels); err != nil {
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Validate at the DOOR, before the firing enters the arbiter — a bad
+	// submit fails the caller synchronously here, instead of surfacing later
+	// through the retryable start activity the arbiter drives.
+	params, err := normalizeAndValidate(ctx, b, pipelineId, params)
+	if err != nil {
+		return "", err
+	}
 	res, err := b.Worker.FirePipeline(ctx, pipelineId, pipelineflow.FireCmd{
 		Params: params, RunId: runId, Labels: labels,
 	})
@@ -140,6 +147,33 @@ func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, 
 	return res.RunId, nil
 }
 
+// normalizeAndValidate substitutes ${var:...}, checks the params against the
+// pipeline's published manifest, and verifies secret refs — all at the DOOR,
+// synchronously, so a bad submit fails the caller at once. Both start paths
+// use it: the direct managed start (startRunCore) and the arbiter firing
+// (fireRun), so a firing never carries params that would only fail later in
+// the retryable start activity. No manifest (never pushed) — no gate.
+func normalizeAndValidate(ctx context.Context, b *nsbundle.Bundle, pipelineName string, params []byte) ([]byte, error) {
+	params, err := substituteVars(params, b.Vars)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	st, err := b.Worker.GetPipeline(ctx, pipelineName)
+	if err != nil || len(st.Manifest) == 0 {
+		return params, nil //nolint:nilerr // never pushed: no schema to gate on
+	}
+	normalized, err := validateParams(st.Manifest, params)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// A secret-typed param names a secret; the name must resolve NOW — the
+	// run must not discover a missing secret hours later inside an activity.
+	if err := checkSecretRefs(st.Manifest, normalized, b.Secrets); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return normalized, nil
+}
+
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger, owner string,
 ) (string, string, error) {
@@ -153,28 +187,9 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	if err := wire.ValidateUserLabels(labels); err != nil {
 		return "", "", status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Variables substitute FIRST — "${var:name}" placeholders become
-	// the installation's values, so validation sees what the workflow
-	// will see and a missing variable fails the submit here.
-	params, err = substituteVars(params, b.Vars)
+	params, err = normalizeAndValidate(ctx, b, pipelineName, params)
 	if err != nil {
-		return "", "", status.Error(codes.InvalidArgument, err.Error())
-	}
-	// Validate params against the published manifest — a bad submit
-	// fails at the door. No manifest (never pushed) — no gate. The
-	// validated form comes back duration-normalized for the workflow.
-	if st, err := b.Worker.GetPipeline(ctx, pipelineName); err == nil && len(st.Manifest) > 0 {
-		normalized, err := validateParams(st.Manifest, params)
-		if err != nil {
-			return "", "", status.Error(codes.InvalidArgument, err.Error())
-		}
-		params = normalized
-		// A secret-typed param names a secret; the name must resolve
-		// NOW — the run must not discover a missing secret hours later
-		// inside an activity.
-		if err := checkSecretRefs(st.Manifest, params, b.Secrets); err != nil {
-			return "", "", status.Error(codes.InvalidArgument, err.Error())
-		}
+		return "", "", err
 	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
