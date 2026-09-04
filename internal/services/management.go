@@ -90,7 +90,7 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 	if req.GetImage() != "" {
 		workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
 			req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
-			syslabels.TriggerManual)
+			syslabels.TriggerManual, "")
 		if err != nil {
 			return nil, err
 		}
@@ -106,9 +106,9 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 // StartRunOnBundle exposes the start path to the server wiring: the
 // trigger contour starts runs through the same logic as the doors.
 func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
-	runId, pipelineId string, params []byte, image string, labels map[string]string, trigger string,
+	runId, pipelineId string, params []byte, image string, labels map[string]string, trigger, owner string,
 ) error {
-	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels, trigger)
+	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels, trigger, owner)
 	return err
 }
 
@@ -141,7 +141,7 @@ func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, 
 }
 
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
-	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger string,
+	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger, owner string,
 ) (string, string, error) {
 	runId, err := id.ParseRunId(runIdRaw)
 	if err != nil {
@@ -218,7 +218,7 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 		}
 	}
 	marked = syslabels.Merge(marked, marks)
-	opts.TypedSearchAttributes = runAttributes(pipelineName, marked)
+	opts.TypedSearchAttributes = runAttributes(pipelineName, owner, marked)
 	var args []any
 	if len(params) > 0 {
 		args = append(args, json.RawMessage(params))
@@ -637,13 +637,16 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	if err != nil {
 		return nil, err
 	}
+	// A pipeline owns every run it ever started — thousands of them — so a
+	// run under a PIPELINE is shown shallow (its own tree is asked for
+	// separately). But a run under a RUN is a child run of a fan-out: there
+	// are few, and the whole point of the parent's tree is to show them and
+	// their resources, so recurse into those.
+	ownerIsRun := strings.HasPrefix(string(owner), "run/")
 	var out []*managementv1.TreeNode
 	for _, e := range page.GetExecutions() {
 		node := &managementv1.TreeNode{Resource: resourceFromVisibility(e)}
-		// A pipeline owns every run it ever started — thousands of them.
-		// The tree shows that a run is there; what the RUN owns is read
-		// by asking for that run's own tree.
-		if node.Resource.GetKind() == "run" {
+		if node.Resource.GetKind() == "run" && !ownerIsRun {
 			out = append(out, node)
 			continue
 		}
@@ -847,11 +850,17 @@ func labelsFromPairs(pairs []string) map[string]string {
 // Its phase stays the execution status, which visibility already
 // keeps. ONE place, because a run started from a revision and a run
 // started from a manifest must look the same in the tree.
-func runAttributes(pipelineId string, labels map[string]string) temporal.SearchAttributes {
+func runAttributes(pipelineId, owner string, labels map[string]string) temporal.SearchAttributes {
+	// A run's default owner is its pipeline; a CHILD run is owned by the
+	// parent run instead ("run/<parent>"), which puts it in the parent's
+	// tree and under its cancel cascade.
+	if owner == "" {
+		owner = "pipeline/" + pipelineId
+	}
 	return temporal.NewSearchAttributes(
 		entdefine.SearchAttrLabels.ValueSet(labelPairs(labels)),
 		entdefine.SearchAttrKind.ValueSet("run"),
-		wire.SearchAttrOwner.ValueSet("pipeline/"+pipelineId),
+		wire.SearchAttrOwner.ValueSet(owner),
 	)
 }
 

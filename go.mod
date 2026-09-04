@@ -16,7 +16,7 @@ require (
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260902105042-dd9da8e074b6
 	github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee
-	github.com/graphene-ci/pipeline v0.0.0-20260828090531-fe3e3a190b4d
+	github.com/graphene-ci/pipeline v0.0.0-20260904140737-8f6683e4f50b
 	github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0

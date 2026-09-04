@@ -254,7 +254,7 @@ func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunR
 	}
 	workflowId, temporalRunId, err := startRunCore(ctx, b, w.Log,
 		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
-		syslabels.TriggerManual)
+		syslabels.TriggerManual, "")
 	if err != nil {
 		return nil, err
 	}
