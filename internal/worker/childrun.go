@@ -42,7 +42,7 @@ func terminal(kind, msg string, cause error) error {
 // params, unknown pipeline, policy) — retrying it never helps — versus a
 // transient infrastructure error that should retry.
 func permanentStart(err error) bool {
-	switch status.Code(err) {
+	switch status.Code(err) { //nolint:exhaustive // the default arm covers every other code as retryable
 	case codes.InvalidArgument, codes.FailedPrecondition, codes.NotFound,
 		codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated:
 		return true
@@ -134,7 +134,7 @@ func (s *Worker) awaitChildRun(ctx context.Context, req wire.AwaitChildRunReques
 			}
 			return nil, err // transient: retryable
 		}
-		switch desc.GetWorkflowExecutionInfo().GetStatus() {
+		switch desc.GetWorkflowExecutionInfo().GetStatus() { //nolint:exhaustive // default handles every other terminal status
 		case enums.WORKFLOW_EXECUTION_STATUS_RUNNING:
 			activity.RecordHeartbeat(ctx, "awaiting child "+childWorkflowId)
 			select {
