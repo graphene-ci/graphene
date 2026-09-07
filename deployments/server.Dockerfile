@@ -13,8 +13,11 @@ ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build     CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /out/graphene-server ./cmd/graphene-server
 # The agent binary the door serves to machines (the ssh install and
 # user-data download it from /agent/binary). Pinned by ref.
+# GOPROXY=direct + GOSUMDB=off: the agent ref can be a tag minutes old,
+# and proxy.golang.org negative-caches a not-yet-existing version; fetch
+# straight from the source repo instead.
 ARG AGENT_REF=main
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build     CGO_ENABLED=0 GOBIN=/out go install github.com/graphene-ci/agent/cmd/graphene-agent@${AGENT_REF}
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build     CGO_ENABLED=0 GOPROXY=direct GOSUMDB=off GOBIN=/out go install github.com/graphene-ci/agent/cmd/graphene-agent@${AGENT_REF}
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/graphene-server /graphene-server
