@@ -29,8 +29,32 @@ import (
 	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
-// Runner launches and reaps managed run containers of ONE namespace.
-type Runner struct {
+// Runner launches, resurrects and reaps the managed run workers of ONE
+// namespace. A managed run's worker runs as a container/pod the server
+// brings up from the run's image; the backend (docker on the server host,
+// or Kubernetes) is chosen at wiring time. Every method is a no-op-safe
+// best effort: a backend that is unavailable disables managed runs, it does
+// not crash the server.
+type Runner interface {
+	// Start brings the run worker up (idempotent — an already-running run
+	// is a no-op). runToken is the run's own minted token.
+	Start(ctx context.Context, runId id.RunId, imageRef, runToken string) error
+	// Ensure resurrects a run whose records still live but whose worker is
+	// gone; reports whether it had to revive one.
+	Ensure(ctx context.Context, runId id.RunId, imageRef, runToken string) (revived bool, err error)
+	// Reap tears down the workers of runs that are over (workflow closed and
+	// the run's queue idle).
+	Reap(ctx context.Context)
+	// Tick runs Reap on a period until ctx ends.
+	Tick(ctx context.Context, every time.Duration)
+	// Ping reports the backend's reachability for health probes;
+	// probes.ErrDisabled when managed runs are off.
+	Ping(ctx context.Context) error
+}
+
+// dockerRunner is the docker backend: run workers as containers on the
+// server's own docker host.
+type dockerRunner struct {
 	namespace string
 	docker    *dockerclient.Client
 	temporal  client.Client
@@ -50,13 +74,13 @@ type Runner struct {
 
 // New builds the runner over the host's docker daemon; an installation
 // without docker serves inplace runs only (Start returns the error).
-func New(namespace string, temporal client.Client, externalGRPC, runToken string, sink LogSink, log *xlog.Logger) *Runner {
+func New(namespace string, temporal client.Client, externalGRPC, runToken string, sink LogSink, log *xlog.Logger) Runner {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Warn("managed contour disabled: no docker", xlog.Err(err))
 		docker = nil
 	}
-	return &Runner{
+	return &dockerRunner{
 		namespace:    namespace,
 		docker:       docker,
 		temporal:     temporal,
@@ -71,7 +95,7 @@ func New(namespace string, temporal client.Client, externalGRPC, runToken string
 
 // Ping reports the docker daemon's reachability for the health probes;
 // probes.ErrDisabled when the managed contour is off.
-func (r *Runner) Ping(ctx context.Context) error {
+func (r *dockerRunner) Ping(ctx context.Context) error {
 	if r.docker == nil {
 		return probes.ErrDisabled
 	}
@@ -84,7 +108,7 @@ func (r *Runner) Ping(ctx context.Context) error {
 // run's OWN token — minted for this run, scoped to it, and dying with
 // it; the installation-wide token is only the fallback of a server
 // without a signing key.
-func (r *Runner) Start(ctx context.Context, runId id.RunId, imageRef, runToken string) error {
+func (r *dockerRunner) Start(ctx context.Context, runId id.RunId, imageRef, runToken string) error {
 	if runToken == "" {
 		runToken = r.runToken
 	}
@@ -160,7 +184,7 @@ const (
 // existing container is adopted — running gets its tail reattached,
 // stopped is started; a missing one is created the same way Start
 // creates it. Idempotent, cheap when the worker is already alive.
-func (r *Runner) Ensure(ctx context.Context, runId id.RunId, imageRef, runToken string) (revived bool, err error) {
+func (r *dockerRunner) Ensure(ctx context.Context, runId id.RunId, imageRef, runToken string) (revived bool, err error) {
 	if r.docker == nil {
 		return false, fmt.Errorf("managed runs need docker on the server host")
 	}
@@ -201,7 +225,7 @@ func (r *Runner) Ensure(ctx context.Context, runId id.RunId, imageRef, runToken 
 // adopt takes an already-existing container under management: tracked
 // for the reaper, its stdout tailed. startTail is a no-op for a
 // container already tailed.
-func (r *Runner) adopt(ctx context.Context, containerId string, runId id.RunId) {
+func (r *dockerRunner) adopt(ctx context.Context, containerId string, runId id.RunId) {
 	r.mu.Lock()
 	r.runs[runId] = containerId
 	r.mu.Unlock()
@@ -212,7 +236,7 @@ func (r *Runner) adopt(ctx context.Context, containerId string, runId id.RunId) 
 // closed and nothing runs on the run's queue any more. Called on a
 // tick. The candidates come from the DAEMON by label, not from process
 // memory — a server restart leaves no orphans.
-func (r *Runner) Reap(ctx context.Context) {
+func (r *dockerRunner) Reap(ctx context.Context) {
 	if r.docker == nil {
 		return
 	}
@@ -254,7 +278,7 @@ func (r *Runner) Reap(ctx context.Context) {
 
 // runOver: the run workflow is closed AND no workflow is running on the
 // run's task queue — the run worker serves nothing any more.
-func (r *Runner) runOver(ctx context.Context, runId id.RunId) (bool, error) {
+func (r *dockerRunner) runOver(ctx context.Context, runId id.RunId) (bool, error) {
 	desc, err := r.temporal.DescribeWorkflowExecution(ctx, "run/"+string(runId), "")
 	if err == nil && desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
 		return false, nil
@@ -268,7 +292,7 @@ func (r *Runner) runOver(ctx context.Context, runId id.RunId) (bool, error) {
 }
 
 // Tick runs the reaper until ctx ends.
-func (r *Runner) Tick(ctx context.Context, every time.Duration) {
+func (r *dockerRunner) Tick(ctx context.Context, every time.Duration) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	for {
