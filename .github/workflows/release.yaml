@@ -2,8 +2,10 @@ name: release
 
 # A pushed semver tag (X.Y.Z, no prefix) IS a release: goreleaser ships the
 # graphenectl CLI to a GitHub Release, and the docker job builds the
-# graphene-server image (which embeds the agent of the SAME tag — lockstep)
-# and pushes it to GHCR.
+# graphene-server image and pushes it to GHCR. The image embeds the agent
+# binary at the LATEST agent release (resolved at build time) — the agent
+# versions independently, so a graphene release never forces a matching
+# agent tag.
 on:
   push:
     tags:
@@ -23,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
+      agent_ref: ${{ steps.agent.outputs.AGENT_REF }}
     steps:
       - name: Resolve version from tag
         id: version
@@ -34,9 +37,23 @@ jobs:
             echo "tag must be a Go module version vX.Y.Z; got: $TAG" >&2
             exit 1
           fi
-          # version WITHOUT the v for image tags and ldflags; the v-tag itself
-          # is AGENT_REF (go install needs the module version tag).
+          # version WITHOUT the v for image tags and ldflags.
           echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Resolve latest agent release
+        id: agent
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The agent versions on its own cadence; bundle whatever its latest
+          # release is (a vX.Y.Z tag go install can fetch).
+          REF="$(gh release view --repo graphene-ci/agent --json tagName -q .tagName)"
+          if ! [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "latest agent release is not a vX.Y.Z tag; got: $REF" >&2
+            exit 1
+          fi
+          echo "AGENT_REF=${REF}" >> "$GITHUB_OUTPUT"
 
   cli:
     name: graphenectl (goreleaser)
@@ -78,7 +95,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ needs.prepare.outputs.version }}
-            AGENT_REF=${{ github.ref_name }}
+            AGENT_REF=${{ needs.prepare.outputs.agent_ref }}
           tags: |
             ghcr.io/graphene-ci/graphene-server:${{ needs.prepare.outputs.version }}
             ghcr.io/graphene-ci/graphene-server:latest
