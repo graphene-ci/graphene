@@ -45,6 +45,20 @@ type File struct {
 		Upstream string `mapstructure:"upstream"`
 	} `mapstructure:"registry"`
 
+	Managed struct {
+		// Backend runs managed run workers: "docker" (containers on the
+		// server's docker host) or "k8s" (Deployments in the cluster).
+		Backend string `mapstructure:"backend" default:"docker" validate:"oneof=docker k8s"`
+		// PodNamespace (k8s) is the namespace run Deployments are created in.
+		PodNamespace string `mapstructure:"pod_namespace"`
+		// PullSecret (k8s) is the imagePullSecret run pods reference to pull
+		// their image (e.g. `docker login` against the graphene door).
+		PullSecret string `mapstructure:"pull_secret"`
+		// PullRegistry (k8s), if set, rewrites the image ref's host so pods
+		// pull from an in-cluster registry instead of the door.
+		PullRegistry string `mapstructure:"pull_registry"`
+	} `mapstructure:"managed"`
+
 	Blobs struct {
 		// Backend: file | s3.
 		Backend string `mapstructure:"backend" default:"file" validate:"oneof=file s3"`
@@ -182,6 +196,12 @@ type Config struct {
 	BlobDir          string
 	BlobS3           S3
 	RegistryUpstream string
+
+	ManagedBackend      string
+	ManagedPodNamespace string
+	ManagedPullSecret   string
+	ManagedPullRegistry string
+
 	OtelTraces       string
 	OtelLogs         string
 	OtelMetrics      string
@@ -251,6 +271,10 @@ func Resolve(f File) (Config, error) {
 			UseSSL:    f.Blobs.S3.UseSSL,
 		},
 		RegistryUpstream:      f.Registry.Upstream,
+		ManagedBackend:        f.Managed.Backend,
+		ManagedPodNamespace:   f.Managed.PodNamespace,
+		ManagedPullSecret:     f.Managed.PullSecret,
+		ManagedPullRegistry:   f.Managed.PullRegistry,
 		OtelTraces:            f.Otel.Traces,
 		OtelLogs:              f.Otel.Logs,
 		OtelMetrics:           f.Otel.Metrics,

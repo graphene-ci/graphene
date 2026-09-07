@@ -279,12 +279,18 @@ func (r *dockerRunner) Reap(ctx context.Context) {
 // runOver: the run workflow is closed AND no workflow is running on the
 // run's task queue — the run worker serves nothing any more.
 func (r *dockerRunner) runOver(ctx context.Context, runId id.RunId) (bool, error) {
-	desc, err := r.temporal.DescribeWorkflowExecution(ctx, "run/"+string(runId), "")
+	return runIsOver(ctx, r.temporal, runId)
+}
+
+// runIsOver is the backend-agnostic "the run's worker can go" check: the run
+// workflow is closed AND nothing runs on the run's task queue.
+func runIsOver(ctx context.Context, tc client.Client, runId id.RunId) (bool, error) {
+	desc, err := tc.DescribeWorkflowExecution(ctx, "run/"+string(runId), "")
 	if err == nil && desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
 		return false, nil
 	}
 	query := fmt.Sprintf("TaskQueue = '%s' AND ExecutionStatus = 'Running'", wire.RunQueue(runId))
-	resp, err := r.temporal.CountWorkflow(ctx, &workflowservice.CountWorkflowExecutionsRequest{Query: query})
+	resp, err := tc.CountWorkflow(ctx, &workflowservice.CountWorkflowExecutionsRequest{Query: query})
 	if err != nil {
 		return false, err
 	}

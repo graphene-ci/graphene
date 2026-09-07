@@ -58,6 +58,9 @@ type Deps struct {
 	// LogSink receives tailed run-container output (the server's OTLP
 	// collector); nil disables orchestrator log tailing.
 	LogSink managed.LogSink
+	// MakeRunner builds the managed-run backend (docker or k8s) for a
+	// namespace; nil falls back to the docker backend.
+	MakeRunner func(namespace string, temporal client.Client) managed.Runner
 	// MakeRunStarter builds the run-start path for trigger firings —
 	// wired by the server so the worker shares the management door's
 	// start logic (validation, labels, the managed contour).
@@ -212,8 +215,13 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		c.Close()
 		return nil, err
 	}
-	runner := managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
-		m.deps.LogSink, log.With(xlog.String("component", "managed")))
+	var runner managed.Runner
+	if m.deps.MakeRunner != nil {
+		runner = m.deps.MakeRunner(namespace, c)
+	} else {
+		runner = managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
+			m.deps.LogSink, log.With(xlog.String("component", "managed")))
+	}
 
 	// Variables ARE records now: the door reads them the way it reads
 	// everything else, through the namespace's own worker.
