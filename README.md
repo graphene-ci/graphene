@@ -1,32 +1,55 @@
 # graphene
 
-Репозиторий содержит control plane Graphene и CLI `graphenectl`. Сервер хранит
-записи ресурсов, запускает и восстанавливает их долговечные процессы в Temporal,
-управляет прогонами, исходниками, ревизиями, секретами, RBAC и подключёнными
-агентами.
+The Graphene control plane and the `graphenectl` CLI. The server stores
+resource records, starts and recovers their durable processes on Temporal, and
+manages runs, sources, revisions, secrets, RBAC and connected agents.
 
-Инсталляция имеет одну внешнюю точку входа. На одном listener работают
-Management и worker API, соединения агентов, прокси к Temporal, приём OTLP,
-health probes и прокси container registry. Пользовательский Go SDK находится в
-репозитории [`pipeline`](https://github.com/graphene-ci/pipeline), а полная
-модель продукта и руководства — в
-[`docs`](https://graphene-ci.github.io/docs/).
+An installation has a single external entry point: one listener serves the
+Management and worker APIs, agent connections, the Temporal proxy, OTLP
+ingestion, health probes and the container-registry proxy. The user-facing Go
+SDK lives in [`pipeline`](https://github.com/graphene-ci/pipeline); the full
+product model and guides are in the [`docs`](https://graphene-ci.github.io/docs/).
 
-## Устройство
+## Install
 
-| Путь | Назначение |
+Releases: [github.com/graphene-ci/graphene/releases](https://github.com/graphene-ci/graphene/releases).
+
+**Server** — pull the image from GHCR:
+
+```bash
+docker pull ghcr.io/graphene-ci/graphene-server:0.1.0   # or :latest
+```
+
+**`graphenectl`** — install with Go:
+
+```bash
+go install github.com/graphene-ci/graphene/cmd/graphenectl@latest   # or @v0.1.0
+```
+
+or download a binary from the release page (linux/darwin/windows ×
+amd64/arm64), unpack it and put it on your `PATH`:
+
+```bash
+tar xzf graphenectl_0.1.0_linux_amd64.tar.gz
+sudo install graphenectl /usr/local/bin/
+graphenectl login --server <host:port>
+```
+
+## Layout
+
+| Path | Purpose |
 |---|---|
-| `cmd/graphene-server` | сборка и запуск сервера |
-| `cmd/graphenectl` | универсальный операторский CLI |
-| `proto/management` | публичный Management API |
-| `internal/services` | реализации Management, worker и agent API |
-| `internal/worker` | Temporal worker и регистрация системных процессов |
-| `internal/*flow`, `internal/ops` | жизненные циклы записей и внешние эффекты |
-| `internal/auth`, `internal/authz` | аутентификация, токены и RBAC |
-| `internal/infrastructure` | хранилища blobs, секретов и интеграции |
-| `deployments/` | контейнерная сборка dev-инсталляции |
+| `cmd/graphene-server` | build and run the server |
+| `cmd/graphenectl` | the general-purpose operator CLI |
+| `proto/management` | the public Management API |
+| `internal/services` | Management, worker and agent API implementations |
+| `internal/worker` | the Temporal worker and system-process registration |
+| `internal/*flow`, `internal/ops` | record lifecycles and external effects |
+| `internal/auth`, `internal/authz` | authentication, tokens and RBAC |
+| `internal/infrastructure` | blob and secret stores and integrations |
+| `deployments/` | the container build of the dev installation |
 
-## Локальная разработка
+## Local development
 
 ```bash
 make configure
@@ -35,6 +58,18 @@ make test
 make build
 ```
 
-Полный dev-контур поднимается командой `make compose-up` и останавливается
-`make compose-down`. Это окружение для разработки, не production deployment;
-его ограничения и настройка описаны в документации.
+The full dev contour comes up with `make compose-up` and down with
+`make compose-down`. That is a development environment, not a production
+deployment; its limits and configuration are described in the docs.
+
+## Release
+
+Cutting a release is a pushed semver tag (`vX.Y.Z`):
+
+```bash
+make ver v=0.1.0        # or: make bump TYPE=minor
+```
+
+The tag drives the release workflow: goreleaser publishes the `graphenectl`
+binaries to a GitHub Release, and the server image is built (embedding the
+agent of the same tag) and pushed to GHCR as `:X.Y.Z` and `:latest`.
