@@ -1,0 +1,49 @@
+# Release config for graphenectl (the CLI). The server ships as a Docker
+# image (deployments/server.Dockerfile, built in release.yaml) — not here.
+version: 2
+
+project_name: graphenectl
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: graphenectl
+    main: ./cmd/graphenectl
+    binary: graphenectl
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: graphenectl
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "graphenectl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: graphene-ci
+    name: graphene
+  # The Docker job in release.yaml owns the image; the release notes carry
+  # both. Draft off — a pushed tag is a real release.
+  draft: false
+  prerelease: auto
+
+changelog:
+  use: github
+  sort: asc
