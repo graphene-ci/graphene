@@ -10,8 +10,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -112,23 +110,17 @@ func shell(ctx context.Context, d *cmdutil.Door, agent string) error {
 		}
 	}()
 
-	// The window follows the viewer.
+	// The window follows the viewer (a no-op on Windows, which has no
+	// window-change signal).
 	if interactive {
-		winch := make(chan os.Signal, 1)
-		signal.Notify(winch, syscall.SIGWINCH)
-		defer signal.Stop(winch)
-		go func() {
-			for range winch {
-				if w, h, err := term.GetSize(fd); err == nil {
-					_, _ = d.Agents.PtyInput(ctx, connect.NewRequest(&managementv1.PtyInputRequest{
-						SessionId: sessionId,
-						Body: &managementv1.PtyInputRequest_Resize_{Resize: &managementv1.PtyInputRequest_Resize{
-							Cols: uint32(w), Rows: uint32(h), //nolint:gosec // terminal sizes are small
-						}},
-					}))
-				}
-			}
-		}()
+		watchResize(ctx, fd, func(cols, rows uint32) {
+			_, _ = d.Agents.PtyInput(ctx, connect.NewRequest(&managementv1.PtyInputRequest{
+				SessionId: sessionId,
+				Body: &managementv1.PtyInputRequest_Resize_{Resize: &managementv1.PtyInputRequest_Resize{
+					Cols: cols, Rows: rows,
+				}},
+			}))
+		})
 	}
 
 	for stream.Receive() {
