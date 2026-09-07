@@ -29,12 +29,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "tag must be semver X.Y.Z (no prefix); got: $VERSION" >&2
+          TAG="${GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag must be a Go module version vX.Y.Z; got: $TAG" >&2
             exit 1
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          # version WITHOUT the v for image tags and ldflags; the v-tag itself
+          # is AGENT_REF (go install needs the module version tag).
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   cli:
     name: graphenectl (goreleaser)
@@ -76,7 +78,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ needs.prepare.outputs.version }}
-            AGENT_REF=${{ needs.prepare.outputs.version }}
+            AGENT_REF=${{ github.ref_name }}
           tags: |
             ghcr.io/graphene-ci/graphene-server:${{ needs.prepare.outputs.version }}
             ghcr.io/graphene-ci/graphene-server:latest
