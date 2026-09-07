@@ -31,6 +31,8 @@ import (
 	"google.golang.org/grpc"
 	hv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -45,6 +47,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/infrastructure/blob"
 	"github.com/graphene-ci/graphene/internal/infrastructure/s3"
 	"github.com/graphene-ci/graphene/internal/logging"
+	"github.com/graphene-ci/graphene/internal/managed"
 	"github.com/graphene-ci/graphene/internal/materialize"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/nsflow"
@@ -200,6 +203,33 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		log.Warn("materialization disabled: no docker", xlog.Err(derr))
 	}
 
+	// The managed-run backend factory: docker on the server host by
+	// default, Kubernetes Deployments when configured. Built once (the
+	// clientset is shared across namespaces), handed per-namespace to
+	// each bundle.
+	var makeRunner func(namespace string, temporal client.Client) managed.Runner
+	if cfg.ManagedBackend == "k8s" {
+		k8sConf, kerr := rest.InClusterConfig()
+		if kerr != nil {
+			log.Warn("managed k8s backend disabled: no in-cluster config", xlog.Err(kerr))
+		} else if clientset, cerr := kubernetes.NewForConfig(k8sConf); cerr != nil {
+			log.Warn("managed k8s backend disabled: no clientset", xlog.Err(cerr))
+		} else {
+			k8sCfg := managed.K8sConfig{
+				PodNamespace: cfg.ManagedPodNamespace,
+				ExternalGRPC: cfg.External,
+				PullSecret:   cfg.ManagedPullSecret,
+				PullRegistry: cfg.ManagedPullRegistry,
+				Insecure:     true, // TODO(tls): follow the door
+			}
+			makeRunner = func(namespace string, temporal client.Client) managed.Runner {
+				return managed.NewK8s(namespace, temporal, clientset, runTokenFor(cfg, namespace), k8sCfg,
+					log.With(xlog.String("component", "managed"), xlog.String("backend", "k8s")))
+			}
+			log.Info("managed runs served by the Kubernetes backend", xlog.String("podNamespace", cfg.ManagedPodNamespace))
+		}
+	}
+
 	// One runtime bundle per namespace: client, server worker, managed
 	// reaper, stand sweeper — started lazily, bounded by the manager ctx.
 	bundles := nsbundle.New(stop.Context(), nsbundle.Deps{
@@ -226,6 +256,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		SweepEvery:  time.Duration(cfg.SweepSeconds) * time.Second,
 		ReapEvery:   time.Duration(cfg.ReapSeconds) * time.Second,
 		LogSink:     otlp.ForwardLogs,
+		MakeRunner:  makeRunner,
 		// Trigger firings start runs through the same door logic.
 		MakeRunStarter: func(b *nsbundle.Bundle) worker.RunStarter {
 			return func(ctx context.Context, runId, pipelineId string, params []byte, image string, labels map[string]string, trigger, owner string) error {
