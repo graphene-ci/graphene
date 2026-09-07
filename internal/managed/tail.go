@@ -33,7 +33,7 @@ const (
 
 // startTail follows one run container's output until the container or
 // the runner goes away. Idempotent per container id.
-func (r *Runner) startTail(ctx context.Context, containerId string, runId id.RunId) {
+func (r *dockerRunner) startTail(ctx context.Context, containerId string, runId id.RunId) {
 	if r.sink == nil {
 		return
 	}
@@ -56,7 +56,7 @@ func (r *Runner) startTail(ctx context.Context, containerId string, runId id.Run
 	}()
 }
 
-func (r *Runner) stopTail(containerId string) {
+func (r *dockerRunner) stopTail(containerId string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if cancel, ok := r.tails[containerId]; ok {
@@ -68,7 +68,7 @@ func (r *Runner) stopTail(containerId string) {
 // followLogs streams the container's demultiplexed output line by line
 // into the sink. Follows from "now": a reattach after a server restart
 // picks up the present, not the past.
-func (r *Runner) followLogs(ctx context.Context, containerId string, runId id.RunId) {
+func (r *dockerRunner) followLogs(ctx context.Context, containerId string, runId id.RunId) {
 	stream, err := r.docker.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,

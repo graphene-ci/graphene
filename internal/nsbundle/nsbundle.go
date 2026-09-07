@@ -72,7 +72,7 @@ type Bundle struct {
 	MintRunToken func(namespace, runId string) string
 	Client       client.Client
 	Worker       *worker.Worker
-	Runner       *managed.Runner
+	Runner       managed.Runner
 	// Secrets and Vars are the namespace-bound value stores: on run
 	// start the door substitutes ${var:...} params and checks that
 	// secret-typed params name existing secrets.
