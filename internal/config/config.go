@@ -30,9 +30,15 @@ type File struct {
 		// content. A TLS proxy in front (caddy: reverse_proxy
 		// h2c://host:port) terminates TLS for everything at once.
 		Listen string `mapstructure:"listen" default:":7233"`
-		// External is the address agents, workers, and managed
-		// containers dial ("host:port"); defaults from Listen.
+		// External is the PUBLIC address agents, workers, and managed
+		// containers dial ("host:port"); defaults from Listen. Used to
+		// bootstrap external agents (a bare VM reaches the door here).
 		External string `mapstructure:"external"`
+		// ExternalInternal, if set, is the IN-CLUSTER address managed k8s
+		// run workers dial instead of External — the door's ClusterIP
+		// Service, so in-cluster traffic never leaves the cluster. Empty
+		// falls back to External.
+		ExternalInternal string `mapstructure:"external_internal"`
 	} `mapstructure:"server"`
 
 	Temporal struct {
@@ -57,6 +63,13 @@ type File struct {
 		// PullRegistry (k8s), if set, rewrites the image ref's host so pods
 		// pull from an in-cluster registry instead of the door.
 		PullRegistry string `mapstructure:"pull_registry"`
+		// PodTemplate (k8s) is a raw corev1.PodSpec (YAML) the run pod is
+		// built from — the door's own scheduling policy: nodeSelector,
+		// tolerations, affinity, resources, volumes, securityContext, etc.
+		// The run container (image, wiring env, pull secret) is overlaid on
+		// top; a container named "run" in the template is merged into, any
+		// other container is kept as a sidecar. Empty means a bare pod.
+		PodTemplate string `mapstructure:"pod_template"`
 	} `mapstructure:"managed"`
 
 	Blobs struct {
@@ -168,8 +181,9 @@ type Config struct {
 	// Version is the build version, stamped by main.
 	Version string
 
-	Listen   string
-	External string
+	Listen           string
+	External         string
+	ExternalInternal string
 
 	TemporalHostPort  string
 	TemporalNamespace string
@@ -201,13 +215,14 @@ type Config struct {
 	ManagedPodNamespace string
 	ManagedPullSecret   string
 	ManagedPullRegistry string
+	ManagedPodTemplate  string
 
-	OtelTraces       string
-	OtelLogs         string
-	OtelMetrics      string
-	QueryMetrics     string
-	QueryLogs        string
-	QueryTraces      string
+	OtelTraces   string
+	OtelLogs     string
+	OtelMetrics  string
+	QueryMetrics string
+	QueryLogs    string
+	QueryTraces  string
 
 	AgentHeartbeat        time.Duration
 	AgentHeartbeatSeconds int
@@ -259,6 +274,7 @@ func Resolve(f File) (Config, error) {
 		LogFormat:         f.Log.Format,
 		Listen:            f.Server.Listen,
 		External:          f.Server.External,
+		ExternalInternal:  f.Server.ExternalInternal,
 		TemporalHostPort:  f.Temporal.HostPort,
 		TemporalNamespace: f.Temporal.Namespace,
 		BlobBackend:       f.Blobs.Backend,
@@ -275,6 +291,7 @@ func Resolve(f File) (Config, error) {
 		ManagedPodNamespace:   f.Managed.PodNamespace,
 		ManagedPullSecret:     f.Managed.PullSecret,
 		ManagedPullRegistry:   f.Managed.PullRegistry,
+		ManagedPodTemplate:    f.Managed.PodTemplate,
 		OtelTraces:            f.Otel.Traces,
 		OtelLogs:              f.Otel.Logs,
 		OtelMetrics:           f.Otel.Metrics,

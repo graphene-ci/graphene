@@ -104,13 +104,22 @@ keeps your --namespace pick).`,
 			scope := who.GetNamespace()
 			fmt.Fprintf(os.Stderr, "✓ %s, namespace %s\n", who.GetSubject(), scope)
 			if cc.Namespace == "" {
-				if !who.GetClusterWide() && scope != "*" {
+				switch {
+				case !who.GetClusterWide() && scope != "*":
+					// A namespaced token pins the context to its own scope.
 					cc.Namespace = scope
-				} else if interactive {
+				case interactive:
 					if cc.Namespace, err = promptLine("namespace to work in", "default"); err != nil {
 						return err
 					}
+				default:
+					// A cluster-wide token names no namespace, so refs would
+					// build as "//<name>" — the context MUST pin one.
+					return fmt.Errorf("cluster-wide token: --namespace required (it sets the namespace refs resolve in)")
 				}
+			}
+			if cc.Namespace == "" {
+				return fmt.Errorf("--namespace required: a context with no namespace builds refs as \"//<name>\"")
 			}
 			ctxName := name
 			if ctxName == "" {

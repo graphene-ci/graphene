@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/gopherex/xlog"
+	"go.temporal.io/sdk/client"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"go.temporal.io/sdk/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/graphene-ci/graphene/internal/probes"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -37,6 +38,24 @@ type K8sConfig struct {
 	PullRegistry string
 	// Insecure passes GRAPHENE_INSECURE=1 to the run worker (h2c door).
 	Insecure bool
+	// PodTemplate is a raw corev1.PodSpec (YAML) the run pod is built from —
+	// the door's scheduling policy (nodeSelector, tolerations, affinity,
+	// resources, volumes, securityContext, ...). The run container is
+	// overlaid onto it. Empty means a bare pod.
+	PodTemplate string
+}
+
+// parsePodTemplate turns the raw PodSpec YAML into a corev1.PodSpec the run
+// pod is built from; empty yields a zero PodSpec (a bare pod).
+func parsePodTemplate(raw string) (corev1.PodSpec, error) {
+	var spec corev1.PodSpec
+	if strings.TrimSpace(raw) == "" {
+		return spec, nil
+	}
+	if err := yaml.UnmarshalStrict([]byte(raw), &spec); err != nil {
+		return spec, fmt.Errorf("managed.pod_template: %w", err)
+	}
+	return spec, nil
 }
 
 // k8sRunner is the Kubernetes backend: each managed run worker is a
@@ -51,12 +70,20 @@ type k8sRunner struct {
 	temporal  client.Client
 	log       *xlog.Logger
 	cfg       K8sConfig
-	runToken  string // installation-wide fallback token
+	runToken  string         // installation-wide fallback token
+	podBase   corev1.PodSpec // parsed cfg.PodTemplate the run pod is built from
+	podErr    error          // cfg.PodTemplate parse error, surfaced on Start
 }
 
-// NewK8s builds the Kubernetes managed backend over a clientset.
+// NewK8s builds the Kubernetes managed backend over a clientset. A bad
+// pod template does not stop construction — it is reported on Start, so a
+// misconfiguration disables runs loudly instead of mis-scheduling them.
 func NewK8s(namespace string, temporal client.Client, clients kubernetes.Interface, runToken string, cfg K8sConfig, log *xlog.Logger) Runner {
-	return &k8sRunner{namespace: namespace, clients: clients, temporal: temporal, log: log, cfg: cfg, runToken: runToken}
+	base, err := parsePodTemplate(cfg.PodTemplate)
+	if err != nil {
+		log.Error("managed pod template is invalid; runs disabled", xlog.Err(err))
+	}
+	return &k8sRunner{namespace: namespace, clients: clients, temporal: temporal, log: log, cfg: cfg, runToken: runToken, podBase: base, podErr: err}
 }
 
 func (r *k8sRunner) Ping(ctx context.Context) error {
@@ -70,6 +97,9 @@ func (r *k8sRunner) Ping(ctx context.Context) error {
 func (r *k8sRunner) Start(ctx context.Context, runId id.RunId, imageRef, runToken string) error {
 	if r.clients == nil {
 		return fmt.Errorf("managed runs need a Kubernetes client")
+	}
+	if r.podErr != nil {
+		return fmt.Errorf("managed runs disabled: %w", r.podErr)
 	}
 	if runToken == "" {
 		runToken = r.runToken
@@ -148,7 +178,12 @@ func (r *k8sRunner) Tick(ctx context.Context, every time.Duration) {
 	}
 }
 
-// deployment builds the run worker's Deployment.
+// deployment builds the run worker's Deployment by overlaying the run
+// container onto the configured pod template (the door's scheduling
+// policy). The template owns node placement, resources and volumes; the
+// overlay owns the run container's identity — image, wiring env, pull
+// secret — so a misconfigured template can never strand a run somewhere
+// nameless.
 func (r *k8sRunner) deployment(runId id.RunId, imageRef, runToken string) *appsv1.Deployment {
 	name := runName(r.namespace, runId)
 	labels := map[string]string{labelNamespace: r.namespace, labelRun: string(runId)}
@@ -163,10 +198,31 @@ func (r *k8sRunner) deployment(runId id.RunId, imageRef, runToken string) *appsv
 	if r.cfg.Insecure {
 		env = append(env, corev1.EnvVar{Name: wire.EnvInsecure, Value: "1"})
 	}
-	var pullSecrets []corev1.LocalObjectReference
-	if r.cfg.PullSecret != "" {
-		pullSecrets = []corev1.LocalObjectReference{{Name: r.cfg.PullSecret}}
+
+	spec := *r.podBase.DeepCopy()
+	// A Deployment pod can only ever restart Always — override whatever the
+	// template said.
+	spec.RestartPolicy = corev1.RestartPolicyAlways
+	// The run container: merge into a "run" container if the template
+	// declares one (keeping its resources, mounts, ...), else prepend ours.
+	idx := -1
+	for i := range spec.Containers {
+		if spec.Containers[i].Name == "run" {
+			idx = i
+			break
+		}
 	}
+	if idx < 0 {
+		spec.Containers = append([]corev1.Container{{Name: "run"}}, spec.Containers...)
+		idx = 0
+	}
+	spec.Containers[idx].Image = r.imageFor(imageRef)
+	spec.Containers[idx].Env = mergeEnv(spec.Containers[idx].Env, env)
+	// The pull secret is additive — the template may reference its own.
+	if r.cfg.PullSecret != "" && !hasPullSecret(spec.ImagePullSecrets, r.cfg.PullSecret) {
+		spec.ImagePullSecrets = append(spec.ImagePullSecrets, corev1.LocalObjectReference{Name: r.cfg.PullSecret})
+	}
+
 	replicas := int32(1)
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.cfg.PodNamespace, Labels: labels},
@@ -175,18 +231,35 @@ func (r *k8sRunner) deployment(runId id.RunId, imageRef, runToken string) *appsv
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					RestartPolicy:    corev1.RestartPolicyAlways,
-					ImagePullSecrets: pullSecrets,
-					Containers: []corev1.Container{{
-						Name:  "run",
-						Image: r.imageFor(imageRef),
-						Env:   env,
-					}},
-				},
+				Spec:       spec,
 			},
 		},
 	}
+}
+
+// mergeEnv overlays ours onto base, ours authoritative on name collision
+// and base's other entries kept in place.
+func mergeEnv(base, ours []corev1.EnvVar) []corev1.EnvVar {
+	out := make([]corev1.EnvVar, 0, len(base)+len(ours))
+	ourNames := make(map[string]int, len(ours))
+	for i, e := range ours {
+		ourNames[e.Name] = i
+	}
+	for _, e := range base {
+		if _, clash := ourNames[e.Name]; !clash {
+			out = append(out, e)
+		}
+	}
+	return append(out, ours...)
+}
+
+func hasPullSecret(refs []corev1.LocalObjectReference, name string) bool {
+	for _, r := range refs {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // imageFor rewrites the image ref's registry host to PullRegistry when set —

@@ -215,11 +215,19 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		} else if clientset, cerr := kubernetes.NewForConfig(k8sConf); cerr != nil {
 			log.Warn("managed k8s backend disabled: no clientset", xlog.Err(cerr))
 		} else {
+			// In-cluster run workers dial the internal door address when one
+			// is set (traffic never leaves the cluster); otherwise the public
+			// one. External bootstrap agents always use the public address.
+			runDoor := cfg.External
+			if cfg.ExternalInternal != "" {
+				runDoor = cfg.ExternalInternal
+			}
 			k8sCfg := managed.K8sConfig{
 				PodNamespace: cfg.ManagedPodNamespace,
-				ExternalGRPC: cfg.External,
+				ExternalGRPC: runDoor,
 				PullSecret:   cfg.ManagedPullSecret,
 				PullRegistry: cfg.ManagedPullRegistry,
+				PodTemplate:  cfg.ManagedPodTemplate,
 				Insecure:     true, // TODO(tls): follow the door
 			}
 			makeRunner = func(namespace string, temporal client.Client) managed.Runner {
