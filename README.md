@@ -35,6 +35,20 @@ sudo install graphenectl /usr/local/bin/
 graphenectl login --server <host:port>
 ```
 
+## Public TLS and internal workers
+
+Keep `GRAPHENE_SERVER_EXTERNAL` as `host:port` and set
+`GRAPHENE_SERVER_EXTERNAL_TLS=true` when a TLS proxy terminates the public
+endpoint. Bootstrap downloads use HTTPS; agents, machine executors, Docker
+managed workers and source builds use TLS to that address.
+
+Kubernetes managed workers can use `GRAPHENE_SERVER_EXTERNAL_INTERNAL`
+with their own `GRAPHENE_SERVER_EXTERNAL_INTERNAL_TLS` setting. Without an
+internal address they inherit the public address and transport. Both TLS
+flags default to false for local plaintext installations. Internal loopback
+telemetry stays plaintext. The registry proxy makes upstream upload locations
+relative to the door, including when accessed through a port forward.
+
 ## Layout
 
 | Path | Purpose |
@@ -72,4 +86,4 @@ make ver v=0.1.0        # or: make bump TYPE=minor
 
 The tag drives the release workflow: goreleaser publishes the `graphenectl`
 binaries to a GitHub Release, and the server image is built (embedding the
-agent of the same tag) and pushed to GHCR as `:X.Y.Z` and `:latest`.
+latest released agent selected by the release workflow) and pushed to GHCR as `:X.Y.Z` and `:latest`.

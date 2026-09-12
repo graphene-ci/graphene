@@ -32,3 +32,10 @@ linters:
           arguments:
             - ["ID"]
             - []
+
+  exclusions:
+    rules:
+      # PullSecret is a Kubernetes Secret reference, never credential bytes.
+      - path: internal/managed/k8s_test.go
+        linters: [gosec]
+        text: "G101"

@@ -141,6 +141,16 @@ func registryProxy(upstream string) (http.Handler, error) {
 		// The graphene token authenticated the puller at our door; the
 		// upstream registry has its own auth (none in the dev contour).
 		r.Out.Header.Del("Authorization")
+	}, ModifyResponse: func(res *http.Response) error {
+		// Upload locations belong to the public door. Return a relative
+		// reference so clients also work through TLS ingress and port forwards.
+		location := res.Header.Get("Location")
+		u, err := url.Parse(location)
+		if err == nil && u.Host == target.Host {
+			u.Scheme, u.Host = "", ""
+			res.Header.Set("Location", u.String())
+		}
+		return nil
 	}}
 	return proxy, nil
 }

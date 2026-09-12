@@ -45,6 +45,7 @@ type Deps struct {
 	Materializer *materialize.Materializer
 	Blobs        blob.Store
 	External     string
+	ExternalTLS  bool
 	// RunTokenFor returns the run token of a namespace — the fallback
 	// for an installation without a signing key.
 	RunTokenFor func(namespace string) string
@@ -202,6 +203,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		AgentOps:     agentOps,
 		ArtifactOps:  artifactOps,
 		External:     m.deps.External,
+		ExternalTLS:  m.deps.ExternalTLS,
 		StandTick:    m.deps.SweepEvery,
 		RunToken:     m.deps.RunTokenFor(namespace),
 		Materializer: m.deps.Materializer,
@@ -219,7 +221,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 	if m.deps.MakeRunner != nil {
 		runner = m.deps.MakeRunner(namespace, c)
 	} else {
-		runner = managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace),
+		runner = managed.New(namespace, c, m.deps.External, m.deps.RunTokenFor(namespace), m.deps.ExternalTLS,
 			m.deps.LogSink, log.With(xlog.String("component", "managed")))
 	}
 
