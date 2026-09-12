@@ -40,7 +40,9 @@ graphenectl login --server <host:port>
 Keep `GRAPHENE_SERVER_EXTERNAL` as `host:port` and set
 `GRAPHENE_SERVER_EXTERNAL_TLS=true` when a TLS proxy terminates the public
 endpoint. Bootstrap downloads use HTTPS; agents, machine executors, Docker
-managed workers and source builds use TLS to that address.
+managed workers and source builds use TLS to that address. Machine executors
+receive a minted run token on both launch and resurrection; a configured static
+run token is only a fallback. Missing credentials fail before container startup.
 
 Kubernetes managed workers can use `GRAPHENE_SERVER_EXTERNAL_INTERNAL`
 with their own `GRAPHENE_SERVER_EXTERNAL_INTERNAL_TLS` setting. Without an

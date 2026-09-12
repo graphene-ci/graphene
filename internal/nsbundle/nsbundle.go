@@ -206,6 +206,7 @@ func (m *Manager) build(namespace string) (*Bundle, error) {
 		ExternalTLS:  m.deps.ExternalTLS,
 		StandTick:    m.deps.SweepEvery,
 		RunToken:     m.deps.RunTokenFor(namespace),
+		MintRunToken: m.deps.MintRunToken,
 		Materializer: m.deps.Materializer,
 		Blobs:        m.deps.Blobs,
 		Secrets:      m.deps.Secrets.In(namespace),
