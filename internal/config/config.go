@@ -34,11 +34,15 @@ type File struct {
 		// containers dial ("host:port"); defaults from Listen. Used to
 		// bootstrap external agents (a bare VM reaches the door here).
 		External string `mapstructure:"external"`
+		// ExternalTLS enables HTTPS downloads and TLS for external agents and workers.
+		ExternalTLS bool `mapstructure:"external_tls"`
 		// ExternalInternal, if set, is the IN-CLUSTER address managed k8s
 		// run workers dial instead of External — the door's ClusterIP
 		// Service, so in-cluster traffic never leaves the cluster. Empty
 		// falls back to External.
 		ExternalInternal string `mapstructure:"external_internal"`
+		// ExternalInternalTLS selects TLS on the internal managed-worker address.
+		ExternalInternalTLS bool `mapstructure:"external_internal_tls"`
 	} `mapstructure:"server"`
 
 	Temporal struct {
@@ -181,9 +185,11 @@ type Config struct {
 	// Version is the build version, stamped by main.
 	Version string
 
-	Listen           string
-	External         string
-	ExternalInternal string
+	Listen              string
+	External            string
+	ExternalInternal    string
+	ExternalTLS         bool
+	ExternalInternalTLS bool
 
 	TemporalHostPort  string
 	TemporalNamespace string
@@ -270,15 +276,17 @@ func Load() (Config, error) {
 // Resolve turns the file shape into the runtime configuration.
 func Resolve(f File) (Config, error) {
 	cfg := Config{
-		LogLevel:          f.Log.Level,
-		LogFormat:         f.Log.Format,
-		Listen:            f.Server.Listen,
-		External:          f.Server.External,
-		ExternalInternal:  f.Server.ExternalInternal,
-		TemporalHostPort:  f.Temporal.HostPort,
-		TemporalNamespace: f.Temporal.Namespace,
-		BlobBackend:       f.Blobs.Backend,
-		BlobDir:           f.Blobs.Dir,
+		LogLevel:            f.Log.Level,
+		LogFormat:           f.Log.Format,
+		Listen:              f.Server.Listen,
+		External:            f.Server.External,
+		ExternalInternal:    f.Server.ExternalInternal,
+		ExternalTLS:         f.Server.ExternalTLS,
+		ExternalInternalTLS: f.Server.ExternalInternalTLS,
+		TemporalHostPort:    f.Temporal.HostPort,
+		TemporalNamespace:   f.Temporal.Namespace,
+		BlobBackend:         f.Blobs.Backend,
+		BlobDir:             f.Blobs.Dir,
 		BlobS3: S3{
 			Endpoint:  f.Blobs.S3.Endpoint,
 			Bucket:    f.Blobs.S3.Bucket,
@@ -381,4 +389,13 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// ManagedDoor selects the address and transport for in-cluster workers.
+// The internal transport applies only when an internal address is present.
+func (c Config) ManagedDoor() (address string, insecure bool) {
+	if c.ExternalInternal != "" {
+		return c.ExternalInternal, !c.ExternalInternalTLS
+	}
+	return c.External, !c.ExternalTLS
 }

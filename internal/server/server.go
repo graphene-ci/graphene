@@ -195,7 +195,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 				}
 				return runTokenFor(cfg, namespace)
 			},
-			Insecure: true, // TODO(tls): follow the door
+			Insecure: !cfg.ExternalTLS,
 			Blobs:    blobStore,
 			Log:      log.With(xlog.String("component", "materialize")),
 		}
@@ -218,17 +218,14 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 			// In-cluster run workers dial the internal door address when one
 			// is set (traffic never leaves the cluster); otherwise the public
 			// one. External bootstrap agents always use the public address.
-			runDoor := cfg.External
-			if cfg.ExternalInternal != "" {
-				runDoor = cfg.ExternalInternal
-			}
+			runDoor, runInsecure := cfg.ManagedDoor()
 			k8sCfg := managed.K8sConfig{
 				PodNamespace: cfg.ManagedPodNamespace,
 				ExternalGRPC: runDoor,
 				PullSecret:   cfg.ManagedPullSecret,
 				PullRegistry: cfg.ManagedPullRegistry,
 				PodTemplate:  cfg.ManagedPodTemplate,
-				Insecure:     true, // TODO(tls): follow the door
+				Insecure:     runInsecure,
 			}
 			makeRunner = func(namespace string, temporal client.Client) managed.Runner {
 				return managed.NewK8s(namespace, temporal, clientset, runTokenFor(cfg, namespace), k8sCfg,
@@ -248,6 +245,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Materializer:     materializer,
 		Blobs:            blobStore,
 		External:         cfg.External,
+		ExternalTLS:      cfg.ExternalTLS,
 		RunTokenFor:      func(ns string) string { return runTokenFor(cfg, ns) },
 		MintRunToken: func(ns, runId string) string {
 			// A run's token lives as long as a run may — long enough for
@@ -615,6 +613,10 @@ func userDataBuilder(cfg config.Config, minter *auth.Minter) func(string, id.Age
 		}
 		// The script converges: safe to run twice (ssh install after a
 		// user-data boot, a re-run after a failure).
+		scheme := "http"
+		if cfg.ExternalTLS {
+			scheme = "https"
+		}
 		script := fmt.Sprintf(`#!/bin/sh
 set -eu
 # ONE machine, ONE agent: this env file is the machine's identity, and
@@ -645,14 +647,13 @@ GRAPHENE_AGENT_SERVER=%s
 GRAPHENE_AGENT_TOKEN=%s
 GRAPHENE_AGENT_ID=%s
 GRAPHENE_AGENT_REGISTRY=%s
-GRAPHENE_AGENT_INSECURE=1
+GRAPHENE_AGENT_INSECURE=%t
 GRAPHENE_AGENT_PTY_USER=$pty_user
 EOF
 chmod 600 /etc/graphene-agent/env
 if [ ! -x /usr/local/bin/graphene-agent ]; then
   # The binary comes from the same door the agent will dial.
-  # TODO(tls): https once the door serves it.
-  url="http://%s/agent/binary"
+  url="%s://%s/agent/binary"
   auth="Authorization: Bearer %s"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -H "$auth" "$url" -o /usr/local/bin/graphene-agent
@@ -704,7 +705,7 @@ UNIT
 else
   echo "no systemd: start /usr/local/bin/graphene-agent with /etc/graphene-agent/env yourself" >&2
 fi
-`, cfg.External, token, agentId, cfg.External, cfg.External, token)
+`, cfg.External, token, agentId, cfg.External, !cfg.ExternalTLS, scheme, cfg.External, token)
 		return strings.ReplaceAll(script, "%AGENT_ID%", string(agentId)), nil
 	}
 }

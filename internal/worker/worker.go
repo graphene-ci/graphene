@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/gopherex/xlog"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,7 @@ type Deps struct {
 	AgentOps    *ops.AgentOps
 	ArtifactOps *ops.ArtifactOps
 	External    string
+	ExternalTLS bool
 	// StandTick is how often stands check their holdings for expiry.
 	StandTick time.Duration
 	// RunToken is handed to machine containers so their worker passes the
@@ -1384,8 +1386,7 @@ func (s *Worker) containerSpec(agentId id.AgentId, runId id.RunId, image string)
 			wire.EnvAgentId:   string(agentId),
 			wire.EnvImage:     image,
 			wire.EnvToken:     s.deps.RunToken,
-			// TODO(tls): drop once the door serves TLS.
-			wire.EnvInsecure: "1",
+			wire.EnvInsecure:  strconv.FormatBool(!s.deps.ExternalTLS),
 		},
 	}
 }

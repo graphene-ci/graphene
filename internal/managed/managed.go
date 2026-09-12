@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/gopherex/xlog"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 
@@ -62,6 +63,7 @@ type dockerRunner struct {
 
 	// wiring handed to every run container.
 	externalGRPC string
+	externalTLS  bool
 	runToken     string
 
 	// sink receives tailed container output; nil disables tailing.
@@ -74,7 +76,7 @@ type dockerRunner struct {
 
 // New builds the runner over the host's docker daemon; an installation
 // without docker serves inplace runs only (Start returns the error).
-func New(namespace string, temporal client.Client, externalGRPC, runToken string, sink LogSink, log *xlog.Logger) Runner {
+func New(namespace string, temporal client.Client, externalGRPC, runToken string, externalTLS bool, sink LogSink, log *xlog.Logger) Runner {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Warn("managed contour disabled: no docker", xlog.Err(err))
@@ -86,6 +88,7 @@ func New(namespace string, temporal client.Client, externalGRPC, runToken string
 		temporal:     temporal,
 		log:          log,
 		externalGRPC: externalGRPC,
+		externalTLS:  externalTLS,
 		runToken:     runToken,
 		sink:         sink,
 		runs:         map[id.RunId]string{},
@@ -137,8 +140,7 @@ func (r *dockerRunner) Start(ctx context.Context, runId id.RunId, imageRef, runT
 		wire.EnvRunId + "=" + string(runId),
 		wire.EnvToken + "=" + runToken,
 		wire.EnvImage + "=" + imageRef,
-		// TODO(tls): drop once the door serves TLS.
-		wire.EnvInsecure + "=1",
+		wire.EnvInsecure + "=" + strconv.FormatBool(!r.externalTLS),
 	}
 	created, err := r.docker.ContainerCreate(ctx,
 		&container.Config{
