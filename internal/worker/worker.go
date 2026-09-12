@@ -73,9 +73,10 @@ type Deps struct {
 	ExternalTLS bool
 	// StandTick is how often stands check their holdings for expiry.
 	StandTick time.Duration
-	// RunToken is handed to machine containers so their worker passes the
-	// Temporal proxy. (Per-run minted tokens replace this static one.)
+	// RunToken is the legacy fallback when token minting is unavailable.
 	RunToken string
+	// MintRunToken issues the namespace/run identity used by machine executors.
+	MintRunToken func(namespace, runId string) string
 	// Materializer builds source revisions; nil disables the
 	// source-first contour on this installation.
 	Materializer *materialize.Materializer
@@ -1329,10 +1330,13 @@ func (s *Worker) ensureContainer(ctx context.Context, req wire.EnsureContainerRe
 	// mid-pull and the whole run tears down over a slow registry, never
 	// over a real failure. Heartbeat while the agent makes progress; the
 	// agent's own error still surfaces when it finishes.
+	container, err := s.containerSpec(req.AgentId, req.RunId, req.Image)
+	if err != nil {
+		return err
+	}
 	done := make(chan error, 1)
 	go func() {
-		done <- s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
-			s.containerSpec(req.AgentId, req.RunId, req.Image))
+		done <- s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace, container)
 	}()
 	if err := heartbeatUntil(ctx, done, "pulling the run image and starting the executor on the machine"); err != nil {
 		return err
@@ -1373,7 +1377,17 @@ func heartbeatUntil(ctx context.Context, done <-chan error, note string) error {
 // containerSpec renders the (machine × run) executor container of this
 // namespace — ONE shape whether the run's own path ensures it or the
 // resurrection tick brings it back.
-func (s *Worker) containerSpec(agentId id.AgentId, runId id.RunId, image string) *agentpb.ContainerSpec {
+func (s *Worker) containerSpec(agentId id.AgentId, runId id.RunId, image string) (*agentpb.ContainerSpec, error) {
+	token := ""
+	if s.deps.MintRunToken != nil {
+		token = s.deps.MintRunToken(s.deps.Namespace, string(runId))
+	}
+	if token == "" {
+		token = s.deps.RunToken
+	}
+	if token == "" {
+		return nil, errors.New("machine executor has no run token and token minting is unavailable")
+	}
 	return &agentpb.ContainerSpec{
 		AgentId: string(agentId),
 		RunId:   string(runId),
@@ -1385,10 +1399,10 @@ func (s *Worker) containerSpec(agentId id.AgentId, runId id.RunId, image string)
 			wire.EnvRunId:     string(runId),
 			wire.EnvAgentId:   string(agentId),
 			wire.EnvImage:     image,
-			wire.EnvToken:     s.deps.RunToken,
+			wire.EnvToken:     token,
 			wire.EnvInsecure:  strconv.FormatBool(!s.deps.ExternalTLS),
 		},
-	}
+	}, nil
 }
 
 // runCleanup is the guaranteed teardown of a finished run: delete every
@@ -1552,8 +1566,11 @@ func (s *Worker) resurrectExecutors(ctx context.Context) {
 			// The same ensure the run's own path uses; an offline agent
 			// is an error here and a retry next tick — a PERMANENTLY
 			// dead machine is not resurrection's case but a burial.
-			if err := s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace,
-				s.containerSpec(agentId, runId, image)); err != nil {
+			container, err := s.containerSpec(agentId, runId, image)
+			if err == nil {
+				err = s.deps.Registry.EnsureContainer(ctx, s.deps.Namespace, container)
+			}
+			if err != nil {
 				s.deps.Log.Warn("executor resurrection failed",
 					xlog.Any("agent", agentId), xlog.Any("run", runId), xlog.Err(err))
 				continue
