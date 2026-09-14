@@ -38,27 +38,34 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			window, err := ReadWindow(cmd, dim)
+			if err != nil {
+				return err
+			}
 			// The RAW view: one argument in the backend's own language
 			// ("gctl metrics 'rate(...)'"), over the whole store. A
 			// record target never contains these characters.
 			if len(args) == 1 && strings.ContainsAny(args[0], "{}()|=* ") {
-				return RunQuery(cmd.Context(), f, dim, args[0])
+				return RunQuery(cmd.Context(), f, dim, args[0], window)
 			}
 			ref, rest, err := cmdutil.TargetRef(args)
 			if err != nil || len(rest) != 0 {
 				return fmt.Errorf("usage: %s <kind> <id>, or %s '<backend query>'", dim, dim)
 			}
-			return Run(cmd.Context(), f, dim, ref, follow)
+			return Run(cmd.Context(), f, dim, ref, follow, window)
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep streaming live entries (push from the collector, no polling)")
+	if dim == "metrics" {
+		BindWindowFlags(cmd)
+	}
 	return cmd
 }
 
 // Run executes one dimension read — the shared engine of the verb
 // form ("gctl logs pipeline/x") and the resource-first form
 // ("gctl pipeline/x logs").
-func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) error {
+func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, window Window) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
@@ -130,7 +137,7 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool) 
 		}
 		return nil
 	case "metrics":
-		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref, Follow: follow}))
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref, Follow: follow, StartUnixNano: window.Start, EndUnixNano: window.End}))
 		if err != nil {
 			return err
 		}
@@ -239,7 +246,7 @@ func renderLiveSpans(raw []byte) {
 }
 
 // RunQuery executes one raw backend query through the door.
-func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string) error {
+func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string, window Window) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
@@ -257,7 +264,7 @@ func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string) error 
 		}
 		return stream.Err()
 	case "metrics":
-		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Query: query}))
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Query: query, StartUnixNano: window.Start, EndUnixNano: window.End}))
 		if err != nil {
 			return err
 		}

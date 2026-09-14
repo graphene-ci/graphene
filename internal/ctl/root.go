@@ -55,17 +55,24 @@ binary itself, over the same connection contexts.`,
 				switch dim {
 				case "events", "logs", "metrics", "trace":
 					follow, _ := cmd.Flags().GetBool("follow")
-					return observecmd.Run(cmd.Context(), f, dim, args[0], follow)
+					window, err := observecmd.ReadWindow(cmd, dim)
+					if err != nil {
+						return err
+					}
+					return observecmd.Run(cmd.Context(), f, dim, args[0], follow, window)
 				}
 			}
 			return cmd.Help()
 		},
 	}
-	// The resource-first form's one flag. Declared, not hand-parsed:
+	// The resource-first form's flags. Declared, not hand-parsed:
 	// cobra refuses an undeclared -f before RunE ever runs. Local to
 	// the root — subcommands keep their own flags.
 	root.Flags().BoolP("follow", "f", false, "keep streaming live entries (resource-first form)")
 	_ = root.Flags().MarkHidden("follow")
+	observecmd.BindWindowFlags(root)
+	_ = root.Flags().MarkHidden("start")
+	_ = root.Flags().MarkHidden("end")
 	f.Bind(root)
 
 	connection := &cobra.Group{ID: "connection", Title: "Connection:"}

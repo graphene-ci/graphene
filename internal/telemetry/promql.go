@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -34,31 +32,7 @@ func (p *PromQL) Series(ctx context.Context, sel Selector, start, end time.Time)
 			p.label("graphene.namespace"), sel.Namespace,
 			p.label(sel.AltAttribute), sel.AltValue)
 	}
-	step := max(int(end.Sub(start).Seconds())/200, 15)
-	q := url.Values{
-		"query": {matcher},
-		"start": {strconv.FormatInt(start.Unix(), 10)},
-		"end":   {strconv.FormatInt(end.Unix(), 10)},
-		"step":  {strconv.Itoa(step) + "s"},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		strings.TrimSuffix(p.Base, "/")+"/api/v1/query_range?"+q.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := p.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("metrics backend: %s: %s", resp.Status, truncate(raw, 512))
-	}
-	return raw, nil
+	return p.RawMetrics(ctx, matcher, start, end)
 }
 
 func (p *PromQL) label(attr string) string {
