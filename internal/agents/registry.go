@@ -90,6 +90,7 @@ type session struct {
 
 	sendMu sync.Mutex
 	stream agentpb.AgentAPI_SessionServer
+	done   chan struct{} // closed when this session stops receiving replies
 
 	pendingMu sync.Mutex
 	pending   map[string]chan string // command id -> error text ("" = ok)
@@ -146,6 +147,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 		factsDigest: digest(hello.GetFacts()),
 		lastSeen:    time.Now(),
 		stream:      stream,
+		done:        make(chan struct{}),
 		pending:     map[string]chan string{},
 		containers:  map[id.RunId]map[id.AgentId]agentpb.ContainerState{},
 	}
@@ -153,6 +155,7 @@ func (r *Registry) Session(stream agentpb.AgentAPI_SessionServer) error {
 	r.agents[key] = s
 	r.mu.Unlock()
 	defer func() {
+		close(s.done)
 		r.mu.Lock()
 		if r.agents[key] == s {
 			delete(r.agents, key)
@@ -300,6 +303,8 @@ func (r *Registry) command(ctx context.Context, namespace string, agentId id.Age
 			return fmt.Errorf("agent: %s", errText)
 		}
 		return nil
+	case <-s.done:
+		return fmt.Errorf("agent of machine %q disconnected before command reply", agentId)
 	case <-ctx.Done():
 		r.log.Info("command context done before reply", xlog.Any("agent", agentId), xlog.String("commandId", commandId))
 		return ctx.Err()

@@ -100,3 +100,15 @@ activity deadline still bound the wait; command errors reach the caller.
 S3 uploads use the remaining size of seekable inputs. Non-seekable inputs are
 spooled to a temporary file, removed on success or failure, before upload. This
 avoids the SDK's large unknown-size allocation for small concurrent artifacts.
+
+### Long-lived agent connections
+
+AgentAPI.Session is a bidirectional gRPC stream. The reverse proxy must allow
+an unbounded request body duration; for Traefik, set the HTTPS entrypoint's
+`transport.respondingTimeouts.readTimeout` to `0s`. Its default 60-second
+request read deadline terminates sessions even while heartbeats are flowing.
+
+The server stops awaiting a command result when the command's agent session
+ends. The caller receives an error and its activity retry can issue a new
+idempotent command after reconnection. It does not treat reconnect as success
+or keep waiting for a response on the obsolete stream.
