@@ -950,7 +950,13 @@ func (s *Worker) transferResource(ctx context.Context, req wire.TransferResource
 	if req.From == "" {
 		req.From = activity.GetInfo(ctx).WorkflowExecution.ID
 	}
-	return s.Transfer(ctx, req)
+	// Entity updates wait until the resource can accept the command. VM
+	// creation may take minutes; that wait is not a dead activity worker.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- s.Transfer(ctx, req) }()
+	return heartbeatUntil(ctx, done, "waiting for resource ownership transfer")
 }
 
 // Transfer gives a resource to a new owner through the entity's own
