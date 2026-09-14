@@ -24,6 +24,18 @@ type PromQL struct {
 // Series returns the standard PromQL range response for every series
 // carrying the selector's attributes.
 func (p *PromQL) Series(ctx context.Context, sel Selector, start, end time.Time) (json.RawMessage, error) {
+	matcher := p.selectorMatcher(sel)
+	if !p.DotsToUnderscores {
+		// A store can contain UTF-8 labels from Graphene and normalized labels
+		// from an OTLP-to-Prometheus exporter. Scope every branch to the tenant.
+		normalized := *p
+		normalized.DotsToUnderscores = true
+		matcher += " or " + normalized.selectorMatcher(sel)
+	}
+	return p.RawMetrics(ctx, matcher, start, end)
+}
+
+func (p *PromQL) selectorMatcher(sel Selector) string {
 	matcher := fmt.Sprintf("{%s=%q,%s=%q}",
 		p.label("graphene.namespace"), sel.Namespace,
 		p.label(sel.Attribute), sel.Value)
@@ -32,7 +44,7 @@ func (p *PromQL) Series(ctx context.Context, sel Selector, start, end time.Time)
 			p.label("graphene.namespace"), sel.Namespace,
 			p.label(sel.AltAttribute), sel.AltValue)
 	}
-	return p.RawMetrics(ctx, matcher, start, end)
+	return matcher
 }
 
 func (p *PromQL) label(attr string) string {
