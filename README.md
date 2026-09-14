@@ -43,6 +43,9 @@ endpoint. Bootstrap downloads use HTTPS; agents, machine executors, Docker
 managed workers and source builds use TLS to that address. Machine executors
 receive a minted run token on both launch and resurrection; a configured static
 run token is only a fallback. Missing credentials fail before container startup.
+Bootstrap retries binary downloads up to ten times with a 30-second network
+timeout and a two-second delay. It installs a successful nonempty download
+atomically; exhausted retries fail without leaving a partial executable.
 
 Kubernetes managed workers can use `GRAPHENE_SERVER_EXTERNAL_INTERNAL`
 with their own `GRAPHENE_SERVER_EXTERNAL_INTERNAL_TLS` setting. Without an

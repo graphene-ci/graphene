@@ -652,18 +652,37 @@ GRAPHENE_AGENT_PTY_USER=$pty_user
 EOF
 chmod 600 /etc/graphene-agent/env
 if [ ! -x /usr/local/bin/graphene-agent ]; then
-  # The binary comes from the same door the agent will dial.
+  # A rolling server restart or transient network error must not strand
+  # a fresh VM. Download into a temporary file, then install atomically.
   url="%s://%s/agent/binary"
   auth="Authorization: Bearer %s"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -H "$auth" "$url" -o /usr/local/bin/graphene-agent
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q --header "$auth" -O /usr/local/bin/graphene-agent "$url"
-  else
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
     echo "neither curl nor wget on the machine" >&2
     exit 1
   fi
-  chmod 755 /usr/local/bin/graphene-agent
+  tmp=$(mktemp /usr/local/bin/.graphene-agent.XXXXXX)
+  trap 'rm -f "$tmp"' 0
+  attempt=0
+  while :; do
+    attempt=$((attempt + 1))
+    downloaded=false
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --connect-timeout 10 --max-time 30 -H "$auth" "$url" -o "$tmp" && downloaded=true
+    else
+      wget -q -T 30 -t 1 --header "$auth" -O "$tmp" "$url" && downloaded=true
+    fi
+    if [ "$downloaded" = true ] && [ -s "$tmp" ]; then
+      chmod 755 "$tmp"
+      mv -f "$tmp" /usr/local/bin/graphene-agent
+      trap - 0
+      break
+    fi
+    if [ "$attempt" -ge 10 ]; then
+      echo "agent download failed after $attempt attempts" >&2
+      exit 1
+    fi
+    sleep 2
+  done
 fi
 # The container runtime the agent drives; best-effort via the distro's
 # package manager when absent.
