@@ -112,3 +112,15 @@ The server stops awaiting a command result when the command's agent session
 ends. The caller receives an error and its activity retry can issue a new
 idempotent command after reconnection. It does not treat reconnect as success
 or keep waiting for a response on the obsolete stream.
+
+### Historical metrics
+
+Both `graphenectl metrics run/<id>` and `graphenectl run/<id> metrics`
+accept `--start` and `--end` as RFC3339 timestamps. The flags also apply to
+raw PromQL queries. Omitted bounds retain the server defaults: end now,
+start one hour before end.
+
+Metrics responses are limited to 8 MiB. Oversized or invalid backend JSON
+returns an error without a partial snapshot. For a large run, request an
+individual resource or fewer metric names; use an explicit interval for
+historical runs. This bound also applies to raw PromQL queries.

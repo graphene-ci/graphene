@@ -62,12 +62,20 @@ func (p *PromQL) RawMetrics(ctx context.Context, query string, start, end time.T
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("metrics backend: %s: %s", resp.Status, raw)
+	}
+	const maxMetricsBytes = 8 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMetricsBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("metrics backend: %s: %s", resp.Status, truncate(raw, 512))
+	if len(raw) > maxMetricsBytes {
+		return nil, fmt.Errorf("metrics backend response exceeds 8 MiB; narrow the time range, target an individual resource, or select fewer metrics")
+	}
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("metrics backend returned invalid JSON")
 	}
 	return raw, nil
 }
