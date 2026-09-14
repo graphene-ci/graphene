@@ -96,3 +96,7 @@ latest released agent selected by the release workflow) and pushed to GHCR as `:
 Resource ownership transfer activities emit heartbeats while waiting for the
 entity command, including during resource creation. Cancellation and the
 activity deadline still bound the wait; command errors reach the caller.
+
+S3 uploads use the remaining size of seekable inputs. Non-seekable inputs are
+spooled to a temporary file, removed on success or failure, before upload. This
+avoids the SDK's large unknown-size allocation for small concurrent artifacts.
