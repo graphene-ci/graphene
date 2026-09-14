@@ -89,3 +89,7 @@ make ver v=0.1.0        # or: make bump TYPE=minor
 The tag drives the release workflow: goreleaser publishes the `graphenectl`
 binaries to a GitHub Release, and the server image is built (embedding the
 latest released agent selected by the release workflow) and pushed to GHCR as `:X.Y.Z` and `:latest`.
+
+Resource ownership transfer activities emit heartbeats while waiting for the
+entity command, including during resource creation. Cancellation and the
+activity deadline still bound the wait; command errors reach the caller.
