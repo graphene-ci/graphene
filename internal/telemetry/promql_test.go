@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,6 +47,29 @@ func TestMetricsResponseBoundaries(t *testing.T) {
 				} else if err != nil || string(result) != tc.body {
 					t.Fatalf("raw=%v: got %d bytes, error %v; want complete response (%d bytes)", raw, len(result), err, len(tc.body))
 				}
+			}
+		})
+	}
+}
+
+func TestMetricsSelectsBothLabelEncodingsWithinNamespace(t *testing.T) {
+	for _, normalizedOnly := range []bool{false, true} {
+		t.Run(fmt.Sprint(normalizedOnly), func(t *testing.T) {
+			want := `{graphene_namespace="tenant",graphene_run="run-1"} or {graphene_namespace="tenant",graphene_owner="run/run-1"}`
+			if !normalizedOnly {
+				want = `{"graphene.namespace"="tenant","graphene.run"="run-1"} or {"graphene.namespace"="tenant","graphene.owner"="run/run-1"} or ` + want
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("query"); got != want {
+					t.Errorf("query = %s; want %s", got, want)
+				}
+				_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			}))
+			defer server.Close()
+			backend := &PromQL{Base: server.URL, Client: server.Client(), DotsToUnderscores: normalizedOnly}
+			_, err := backend.Series(context.Background(), Selector{Namespace: "tenant", Attribute: "graphene.run", Value: "run-1", AltAttribute: "graphene.owner", AltValue: "run/run-1"}, time.Unix(100, 0), time.Unix(200, 0))
+			if err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

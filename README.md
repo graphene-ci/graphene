@@ -120,6 +120,10 @@ accept `--start` and `--end` as RFC3339 timestamps. The flags also apply to
 raw PromQL queries. Omitted bounds retain the server defaults: end now,
 start one hour before end.
 
+Scoped metrics queries accept both UTF-8 attribute labels (`graphene.run`)
+and OTLP/Prometheus-normalized labels (`graphene_run`) in the same store.
+Every selector branch retains the namespace filter.
+
 Metrics responses are limited to 8 MiB. Oversized or invalid backend JSON
 returns an error without a partial snapshot. For a large run, request an
 individual resource or fewer metric names; use an explicit interval for
