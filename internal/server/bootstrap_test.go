@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"github.com/graphene-ci/graphene/internal/config"
 	"net/http"
 	"net/http/httptest"
@@ -143,5 +144,93 @@ func TestBootstrapRetriesBinaryDownload(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestBootstrapRequiresRuntimeAndRetriesPackageFailures(t *testing.T) {
+	for _, recover := range []bool{true, false} {
+		t.Run(fmt.Sprint(recover), func(t *testing.T) {
+			root := t.TempDir()
+			bin := filepath.Join(root, "bin")
+			systemd := filepath.Join(root, "systemd")
+			for _, dir := range []string{bin, systemd} {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, tool := range []string{"sh", "sed", "mkdir", "cat", "chmod", "timeout"} {
+				path, err := exec.LookPath(tool)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(path, filepath.Join(bin, tool)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write := func(name, body string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0700); err != nil { //nolint:gosec // Isolated executable test fixtures.
+					t.Fatal(err)
+				}
+			}
+			for _, tool := range []string{"id", "sleep", "graphene-agent"} {
+				write(tool, "#!/bin/sh\nexit 0\n")
+			}
+			marker := filepath.Join(root, "service-started")
+			write("systemctl", "#!/bin/sh\necho called >> '"+marker+"'\n")
+			count := filepath.Join(root, "attempts")
+			install := fmt.Sprintf(`#!/bin/sh
+case "$*" in
+ *update*) exit 0 ;;
+esac
+n=0
+[ ! -f '%s' ] || n=$(cat '%s')
+n=$((n+1))
+echo "$n" > '%s'
+if [ '%t' = true ] && [ "$n" -ge 3 ]; then
+ printf '#!/bin/sh\nexit 0\n' > '%s/runc'
+ chmod 755 '%s/runc'
+ exit 0
+fi
+exit 1
+`, count, count, count, recover, bin, bin)
+			write("apt-get", install)
+			c := config.Config{External: "unused:443", Tokens: []config.Token{{Role: "agent", AgentId: "agent1", Namespace: "ns", Token: "test-token"}}}
+			script, err := userDataBuilder(c, nil)("ns", "agent1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			script = strings.NewReplacer("/etc/graphene-agent", filepath.Join(root, "env"), "/usr/local/bin", bin, "/etc/systemd/system", systemd).Replace(script)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "/bin/sh")
+			cmd.Env = append(os.Environ(), "PATH="+bin)
+			cmd.Stdin = strings.NewReader(script)
+			out, err := cmd.CombinedOutput()
+			if recover && err != nil {
+				t.Fatalf("bootstrap failed after recovery: %v %s", err, out)
+			}
+			if !recover && (err == nil || !strings.Contains(string(out), "agent will not start")) {
+				t.Fatalf("bootstrap accepted missing runtime: %v %s", err, out)
+			}
+			got, readErr := os.ReadFile(count) //nolint:gosec // Test-owned path.
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			want := "5"
+			if recover {
+				want = "3"
+			}
+			if strings.TrimSpace(string(got)) != want {
+				t.Fatalf("attempts %s, want %s", got, want)
+			}
+			_, statErr := os.Stat(marker)
+			if recover && statErr != nil {
+				t.Fatal("recovered runtime did not start service")
+			}
+			if !recover && !os.IsNotExist(statErr) {
+				t.Fatal("service started without runtime")
+			}
+		})
 	}
 }
