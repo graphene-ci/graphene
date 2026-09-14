@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -59,11 +60,54 @@ func (s *Store) Put(ctx context.Context, namespace, location string, r io.Reader
 	if err != nil {
 		return 0, err
 	}
-	info, err := s.client.PutObject(ctx, s.bucket, k, r, -1, minio.PutObjectOptions{})
+	body, size, cleanup, err := uploadBody(r)
+	if err != nil {
+		return 0, err
+	}
+	defer cleanup()
+	info, err := s.client.PutObject(ctx, s.bucket, k, body, size, minio.PutObjectOptions{})
 	if err != nil {
 		return 0, err
 	}
 	return info.Size, nil
+}
+
+// uploadBody supplies the remaining length, avoiding MinIO's roughly 528 MiB
+// unknown-size buffer even for tiny artifacts. Non-seekable inputs are spooled
+// to disk so memory stays bounded without reducing the maximum object size.
+func uploadBody(r io.Reader) (io.Reader, int64, func(), error) {
+	if seeker, ok := r.(io.ReadSeeker); ok {
+		start, err := seeker.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		end, err := seeker.Seek(0, io.SeekEnd)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		if _, err := seeker.Seek(start, io.SeekStart); err != nil {
+			return nil, 0, nil, err
+		}
+		if end < start {
+			return nil, 0, nil, fmt.Errorf("s3: reader offset exceeds its size")
+		}
+		return seeker, end - start, func() {}, nil
+	}
+	f, err := os.CreateTemp("", "graphene-s3-*")
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	cleanup := func() { _ = f.Close(); _ = os.Remove(f.Name()) }
+	size, err := io.Copy(f, r)
+	if err != nil {
+		cleanup()
+		return nil, 0, nil, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, 0, nil, err
+	}
+	return f, size, cleanup, nil
 }
 
 // Get opens the blob for reading.
