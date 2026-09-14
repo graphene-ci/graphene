@@ -128,3 +128,9 @@ Metrics responses are limited to 8 MiB. Oversized or invalid backend JSON
 returns an error without a partial snapshot. For a large run, request an
 individual resource or fewer metric names; use an explicit interval for
 historical runs. This bound also applies to raw PromQL queries.
+
+VM bootstrap requires a working `runc` before starting the agent. Package-manager
+failures retry up to five times; apt waits for package locks and retries downloads.
+Each installation attempt is bounded to two minutes when `timeout` is available.
+Exhausted installation fails bootstrap instead of advertising a machine that
+cannot execute activities.

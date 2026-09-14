@@ -684,25 +684,44 @@ if [ ! -x /usr/local/bin/graphene-agent ]; then
     sleep 2
   done
 fi
-# The container runtime the agent drives; best-effort via the distro's
-# package manager when absent.
+# runc is required before the agent can advertise an executable machine.
+# Package mirrors and cloud-init package locks can be temporarily unavailable.
 if ! command -v runc >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq >/dev/null 2>&1 || true
-    apt-get install -y -qq runc >/dev/null 2>&1 || true
+    install_runc='apt-get -o DPkg::Lock::Timeout=60 -o Acquire::Retries=2 update -qq && apt-get -o DPkg::Lock::Timeout=60 -o Acquire::Retries=2 install -y -qq runc'
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q runc >/dev/null 2>&1 || true
+    install_runc='dnf install -y -q runc'
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y -q runc >/dev/null 2>&1 || true
+    install_runc='yum install -y -q runc'
   elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive install runc >/dev/null 2>&1 || true
+    install_runc='zypper --non-interactive install runc'
   elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm runc >/dev/null 2>&1 || true
+    install_runc='pacman -Sy --noconfirm runc'
   elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache runc >/dev/null 2>&1 || true
+    install_runc='apk add --no-cache runc'
+  else
+    echo "runc is missing and no supported package manager was found" >&2
+    exit 1
   fi
-  command -v runc >/dev/null 2>&1 || echo "WARNING: runc is still missing — machine activities will not run" >&2
+  attempt=0
+  while ! command -v runc >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 120 sh -c "$install_runc" || true
+    else
+      sh -c "$install_runc" || true
+    fi
+    if command -v runc >/dev/null 2>&1; then
+      break
+    fi
+    if [ "$attempt" -ge 5 ]; then
+      echo "runc installation failed after $attempt attempts; agent will not start" >&2
+      exit 1
+    fi
+    sleep 2
+  done
 fi
+runc --version >/dev/null
 if command -v systemctl >/dev/null 2>&1; then
   cat > /etc/systemd/system/graphene-agent.service <<'UNIT'
 [Unit]
