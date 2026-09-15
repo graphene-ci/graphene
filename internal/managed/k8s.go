@@ -2,6 +2,7 @@ package managed
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
 
@@ -101,13 +103,27 @@ func (r *k8sRunner) Start(ctx context.Context, runId id.RunId, imageRef, runToke
 	if r.podErr != nil {
 		return fmt.Errorf("managed runs disabled: %w", r.podErr)
 	}
+	exists, err := r.hasRunDeployment(ctx, runId)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
 	if runToken == "" {
 		runToken = r.runToken
 	}
 	dep := r.deployment(runId, imageRef, runToken)
-	_, err := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).Create(ctx, dep, metav1.CreateOptions{})
+	_, err = r.clients.AppsV1().Deployments(r.cfg.PodNamespace).Create(ctx, dep, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
-		return nil // idempotent — the worker is already there
+		existing, getErr := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).Get(ctx, dep.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return fmt.Errorf("read existing run deployment: %w", getErr)
+		}
+		if existing.Labels[labelNamespace] != r.namespace || existing.Labels[labelRun] != string(runId) {
+			return fmt.Errorf("run deployment %q belongs to a different identity", dep.Name)
+		}
+		return nil // A concurrent start created this run's worker.
 	}
 	if err != nil {
 		return fmt.Errorf("create run deployment: %w", err)
@@ -120,19 +136,29 @@ func (r *k8sRunner) Ensure(ctx context.Context, runId id.RunId, imageRef, runTok
 	if r.clients == nil {
 		return false, fmt.Errorf("managed runs need a Kubernetes client")
 	}
-	name := runName(r.namespace, runId)
-	_, err := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
-		return false, nil // the Deployment (hence the worker) is alive
+	exists, err := r.hasRunDeployment(ctx, runId)
+	if err != nil {
+		return false, err
 	}
-	if !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("ensure run deployment: %w", err)
+	if exists {
+		return false, nil
 	}
 	if err := r.Start(ctx, runId, imageRef, runToken); err != nil {
 		return false, err
 	}
 	r.log.Info("managed run deployment resurrected", xlog.Any("run", runId))
 	return true, nil
+}
+
+// Exact identity labels also discover workers created with legacy names, so an
+// upgrade does not create duplicate workers or mistake a name collision for one.
+func (r *k8sRunner) hasRunDeployment(ctx context.Context, runId id.RunId) (bool, error) {
+	selector := labels.Set{labelNamespace: r.namespace, labelRun: string(runId)}.AsSelector().String()
+	list, err := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return false, fmt.Errorf("find run deployment: %w", err)
+	}
+	return len(list.Items) > 0, nil
 }
 
 func (r *k8sRunner) Reap(ctx context.Context) {
@@ -276,13 +302,16 @@ func (r *k8sRunner) imageFor(ref string) string {
 	return ref
 }
 
-// runName is the Deployment/pod name for a run: RFC1123, <=63 chars.
+// runName preserves the complete identity even when the readable prefix is
+// normalized or truncated. Namespace/run boundaries participate in the hash.
 func runName(namespace string, runId id.RunId) string {
-	name := "graphene-run-" + k8sSanitize(namespace) + "-" + k8sSanitize(string(runId))
-	if len(name) > 63 {
-		name = name[:63]
+	digest := sha256.Sum256([]byte(namespace + "\x00" + string(runId)))
+	prefix := "graphene-run-" + k8sSanitize(namespace) + "-" + k8sSanitize(string(runId))
+	const prefixLimit = 63 - 1 - 16
+	if len(prefix) > prefixLimit {
+		prefix = prefix[:prefixLimit]
 	}
-	return strings.Trim(name, "-.")
+	return fmt.Sprintf("%s-%x", strings.TrimRight(prefix, "-"), digest[:8])
 }
 
 func k8sSanitize(s string) string {

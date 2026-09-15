@@ -134,3 +134,9 @@ failures retry up to five times; apt waits for package locks and retries downloa
 Each installation attempt is bounded to two minutes when `timeout` is available.
 Exhausted installation fails bootstrap instead of advertising a machine that
 cannot execute activities.
+
+Kubernetes managed workers use a deterministic Deployment name with a readable
+prefix and a hash of the complete namespace/run identity. Long IDs and normalized
+names cannot share a worker merely because their prefixes match. Start/Ensure
+find existing workers by both identity labels, including deployments created by
+older server versions; a conflicting deployment name is an error.
