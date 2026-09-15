@@ -147,10 +147,15 @@ func (s *Worker) auditKind(ctx context.Context, req kindflow.AuditReq) (kindflow
 	return res, nil
 }
 
-// retireKind deletes an orphaned entry — the record asked for its own
-// removal, and a workflow cannot remove itself.
+// retireKind signals the orphaned entry's deletion. The calling workflow is
+// awaiting this activity in its reconcile tick, so waiting for that workflow
+// to close here would prevent it from entering its deletion path.
 func (s *Worker) retireKind(ctx context.Context, kindName string) error {
-	return s.DeleteOne(ctx, string(kindflow.Kind)+"/"+kindName)
+	err := s.deps.Client.SignalWorkflow(ctx, string(kindflow.Kind)+"/"+kindName, "", entity.DeleteSignalName, nil)
+	if alreadyGone(err) {
+		return nil
+	}
+	return err
 }
 
 // manifestNamesKind reports whether a manifest's kinds include name.

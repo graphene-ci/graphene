@@ -56,6 +56,11 @@ relative to the door, including when accessed through a port forward.
 
 ## Layout
 
+The kind dictionary retires an unused brought kind by sending its deletion
+signal. That activity returns after signal acceptance so the calling record
+can finish its audit and enter deletion. It never waits for its own workflow
+to close; ordinary resource teardown still waits for closure.
+
 | Path | Purpose |
 |---|---|
 | `cmd/graphene-server` | build and run the server |
