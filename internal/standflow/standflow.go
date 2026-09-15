@@ -61,7 +61,7 @@ type AcceptCmd struct {
 func (AcceptCmd) Name() entity.CommandName { return "accept" }
 
 // Result binds the response type.
-func (AcceptCmd) Result() HoldingsRes { return HoldingsRes{} }
+func (AcceptCmd) Result() CommandRes { return CommandRes{} }
 
 // Validate rejects a malformed ref.
 func (c AcceptCmd) Validate() error { return c.Ref.Validate() }
@@ -77,7 +77,7 @@ type ExtendCmd struct {
 func (ExtendCmd) Name() entity.CommandName { return "extend" }
 
 // Result binds the response type.
-func (ExtendCmd) Result() HoldingsRes { return HoldingsRes{} }
+func (ExtendCmd) Result() CommandRes { return CommandRes{} }
 
 // ReleaseCmd tears a holding down NOW (cascade included); empty Ref
 // releases everything.
@@ -89,11 +89,14 @@ type ReleaseCmd struct {
 func (ReleaseCmd) Name() entity.CommandName { return "release" }
 
 // Result binds the response type.
-func (ReleaseCmd) Result() HoldingsRes { return HoldingsRes{} }
+func (ReleaseCmd) Result() CommandRes { return CommandRes{} }
 
-// HoldingsRes reports the holdings after a command.
-type HoldingsRes struct {
-	Holdings map[string]Holding `json:"holdings,omitempty"`
+// CommandRes reports the number of holdings after a command. The entity
+// deduplicates the last 100 responses across Continue-as-New: returning the
+// entire holdings map here would copy a growing state into every cache entry.
+// Read the holdings through the record describe query instead.
+type CommandRes struct {
+	Count int `json:"count"`
 }
 
 // New builds the stand definition. tick is how often expiry is checked.
@@ -123,7 +126,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	)
 	ownership.Register(def, func(st *State) *ownership.State { return &st.State })
 
-	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd AcceptCmd) (HoldingsRes, error) {
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd AcceptCmd) (CommandRes, error) {
 		st := ec.State()
 		if st.Holdings == nil {
 			st.Holdings = map[string]Holding{}
@@ -134,10 +137,10 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			h.KeepUntil = &deadline
 		}
 		st.Holdings[string(cmd.Ref)] = h
-		return HoldingsRes{Holdings: st.Holdings}, nil
+		return CommandRes{Count: len(st.Holdings)}, nil
 	})
 
-	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ExtendCmd) (HoldingsRes, error) {
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ExtendCmd) (CommandRes, error) {
 		st := ec.State()
 		extend := func(key string, h Holding) {
 			if cmd.Keep > 0 {
@@ -151,7 +154,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		if cmd.Ref != "" {
 			h, held := st.Holdings[string(cmd.Ref)]
 			if !held {
-				return HoldingsRes{}, fmt.Errorf("stand does not hold %s", cmd.Ref)
+				return CommandRes{}, fmt.Errorf("stand does not hold %s", cmd.Ref)
 			}
 			extend(string(cmd.Ref), h)
 		} else {
@@ -159,15 +162,15 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 				extend(key, h)
 			}
 		}
-		return HoldingsRes{Holdings: st.Holdings}, nil
+		return CommandRes{Count: len(st.Holdings)}, nil
 	})
 
-	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ReleaseCmd) (HoldingsRes, error) {
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ReleaseCmd) (CommandRes, error) {
 		st := ec.State()
 		targets := []string{}
 		if cmd.Ref != "" {
 			if _, held := st.Holdings[string(cmd.Ref)]; !held {
-				return HoldingsRes{}, fmt.Errorf("stand does not hold %s", cmd.Ref)
+				return CommandRes{}, fmt.Errorf("stand does not hold %s", cmd.Ref)
 			}
 			targets = append(targets, string(cmd.Ref))
 		} else {
@@ -177,11 +180,11 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		}
 		for _, held := range targets {
 			if err := cascade(ctx, held); err != nil {
-				return HoldingsRes{}, err
+				return CommandRes{}, err
 			}
 			delete(st.Holdings, held)
 		}
-		return HoldingsRes{Holdings: st.Holdings}, nil
+		return CommandRes{Count: len(st.Holdings)}, nil
 	})
 
 	return def
