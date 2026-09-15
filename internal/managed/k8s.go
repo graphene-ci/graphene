@@ -14,6 +14,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
 
@@ -120,7 +121,7 @@ func (r *k8sRunner) Start(ctx context.Context, runId id.RunId, imageRef, runToke
 		if getErr != nil {
 			return fmt.Errorf("read existing run deployment: %w", getErr)
 		}
-		if existing.Labels[labelNamespace] != r.namespace || existing.Labels[labelRun] != string(runId) {
+		if !r.matchesIdentity(existing, runId) {
 			return fmt.Errorf("run deployment %q belongs to a different identity", dep.Name)
 		}
 		return nil // A concurrent start created this run's worker.
@@ -150,13 +151,18 @@ func (r *k8sRunner) Ensure(ctx context.Context, runId id.RunId, imageRef, runTok
 	return true, nil
 }
 
-// Exact identity labels also discover workers created with legacy names, so an
-// upgrade does not create duplicate workers or mistake a name collision for one.
+// Valid legacy labels remain unchanged. Encoded labels are lookup keys only;
+// annotations preserve the complete identity and are verified before adoption.
 func (r *k8sRunner) hasRunDeployment(ctx context.Context, runId id.RunId) (bool, error) {
-	selector := labels.Set{labelNamespace: r.namespace, labelRun: string(runId)}.AsSelector().String()
+	selector := labels.Set{labelNamespace: k8sIdentityLabel(r.namespace), labelRun: k8sIdentityLabel(string(runId))}.AsSelector().String()
 	list, err := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
 		return false, fmt.Errorf("find run deployment: %w", err)
+	}
+	for i := range list.Items {
+		if !r.matchesIdentity(&list.Items[i], runId) {
+			return false, fmt.Errorf("run deployment %q belongs to a different identity", list.Items[i].Name)
+		}
 	}
 	return len(list.Items) > 0, nil
 }
@@ -166,7 +172,7 @@ func (r *k8sRunner) Reap(ctx context.Context) {
 		return
 	}
 	list, err := r.clients.AppsV1().Deployments(r.cfg.PodNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labelNamespace + "=" + r.namespace,
+		LabelSelector: labelNamespace + "=" + k8sIdentityLabel(r.namespace),
 	})
 	if err != nil {
 		r.log.Error("reap: list run deployments", xlog.Err(err))
@@ -174,8 +180,8 @@ func (r *k8sRunner) Reap(ctx context.Context) {
 	}
 	for i := range list.Items {
 		dep := &list.Items[i]
-		runId := id.RunId(dep.Labels[labelRun])
-		if runId == "" {
+		runId := id.RunId(k8sIdentity(dep, labelRun))
+		if runId == "" || !r.matchesIdentity(dep, runId) {
 			continue
 		}
 		over, err := runIsOver(ctx, r.temporal, runId)
@@ -212,7 +218,8 @@ func (r *k8sRunner) Tick(ctx context.Context, every time.Duration) {
 // nameless.
 func (r *k8sRunner) deployment(runId id.RunId, imageRef, runToken string) *appsv1.Deployment {
 	name := runName(r.namespace, runId)
-	labels := map[string]string{labelNamespace: r.namespace, labelRun: string(runId)}
+	identity := map[string]string{labelNamespace: r.namespace, labelRun: string(runId)}
+	labels := map[string]string{labelNamespace: k8sIdentityLabel(r.namespace), labelRun: k8sIdentityLabel(string(runId))}
 	env := []corev1.EnvVar{
 		{Name: wire.EnvRole, Value: "run"},
 		{Name: wire.EnvAddress, Value: r.cfg.ExternalGRPC},
@@ -251,12 +258,12 @@ func (r *k8sRunner) deployment(runId id.RunId, imageRef, runToken string) *appsv
 
 	replicas := int32(1)
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.cfg.PodNamespace, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.cfg.PodNamespace, Labels: labels, Annotations: identity},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: identity},
 				Spec:       spec,
 			},
 		},
@@ -324,4 +331,28 @@ func k8sSanitize(s string) string {
 		}
 	}
 	return string(out)
+}
+
+// Kubernetes limits label values to 63 ASCII characters. Keep valid labels
+// unchanged for existing workers; annotations carry IDs that need encoding.
+func k8sIdentityLabel(value string) string {
+	if len(validation.IsValidLabelValue(value)) == 0 {
+		return value
+	}
+	digest := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("sha256-%x", digest[:28])
+}
+
+func k8sIdentity(dep *appsv1.Deployment, key string) string {
+	if value, ok := dep.Annotations[key]; ok {
+		return value
+	}
+	return dep.Labels[key]
+}
+
+func (r *k8sRunner) matchesIdentity(dep *appsv1.Deployment, runId id.RunId) bool {
+	return k8sIdentity(dep, labelNamespace) == r.namespace &&
+		k8sIdentity(dep, labelRun) == string(runId) &&
+		dep.Labels[labelNamespace] == k8sIdentityLabel(r.namespace) &&
+		dep.Labels[labelRun] == k8sIdentityLabel(string(runId))
 }

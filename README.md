@@ -150,3 +150,8 @@ older server versions; a conflicting deployment name is an error.
 ответа не удаляет holdings, не меняет TTL и не ограничивает срок хранения
 конфигов. Само состояние stand по-прежнему переносится в Temporal; для очень
 больших списков сохраняется лимит размера workflow payload.
+
+Kubernetes managed workers preserve complete namespace/run IDs in Deployment and
+Pod annotations. Label values that exceed Kubernetes limits are encoded; valid
+legacy labels remain compatible. Worker discovery and cleanup verify the complete
+identity, so long suite cell IDs retain their original Temporal queue.
