@@ -140,3 +140,13 @@ prefix and a hash of the complete namespace/run identity. Long IDs and normalize
 names cannot share a worker merely because their prefixes match. Start/Ensure
 find existing workers by both identity labels, including deployments created by
 older server versions; a conflicting deployment name is an error.
+
+### Ответы команд stand
+
+`accept`, `extend`, `release` возвращают `{"count": N}` — число сохранённых
+корней после команды. Полный список и сроки доступны в `get stand/<pipeline>`
+(`state.holdings`). Ответ не содержит копию списка: кеш последних 100 ответов
+переносится через Continue-as-New и должен оставаться небольшим. Изменение
+ответа не удаляет holdings, не меняет TTL и не ограничивает срок хранения
+конфигов. Само состояние stand по-прежнему переносится в Temporal; для очень
+больших списков сохраняется лимит размера workflow payload.
