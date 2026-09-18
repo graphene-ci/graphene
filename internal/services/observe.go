@@ -14,6 +14,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -44,16 +45,56 @@ type Observe struct {
 	Log *xlog.Logger
 }
 
-// watch authorizes a dimension 3-5 read the same way every other door
-// verb is authorized — through the namespace's roles and bindings, so
-// a service account's token watches exactly what it may get. Answers
-// the namespace the telemetry selector scopes to.
-func (o *Observe) watch(ctx context.Context, ref string) (string, error) {
+// birthSlack widens the record's lower bound: a signal's timestamp is set
+// on the machine that emitted it, the record's birth on the server, and
+// the two clocks are not one.
+const birthSlack = 5 * time.Second
+
+// subject is the authorized selector of a record's dimensions 3-5. The
+// read is authorized the way every other door verb is — through the
+// namespace's roles and bindings, so a service account's token watches
+// exactly what it may get. The selector is bounded by the record's birth,
+// so a reused name does not inherit the signals of its previous bearer.
+func (o *Observe) subject(ctx context.Context, ref string) (telemetry.Selector, error) {
 	b, err := o.Management.allow(ctx, authz.VerbWatch, authz.KindOf(ref))
 	if err != nil {
-		return "", err
+		return telemetry.Selector{}, err
 	}
-	return b.Namespace, nil
+	sel := telemetry.SelectorFor(b.Namespace, ref)
+	// A run's id is unique — its signals cannot be another run's.
+	if !strings.HasPrefix(ref, "run/") {
+		if born := recordBirth(ctx, b.Client, ref); !born.IsZero() {
+			sel.Since = born.Add(-birthSlack)
+		}
+	}
+	return sel, nil
+}
+
+// recordBirth is when the record behind ref came to be: the start of the
+// FIRST run of its workflow chain — a record continues-as-new through its
+// life, and the latest run's start is only the last turn of it. Unknown
+// (no such workflow, the first run already past retention) is the zero
+// time: showing too much beats hiding a long-lived record's own history.
+func recordBirth(ctx context.Context, cl workflowDescriber, ref string) time.Time {
+	latest, err := cl.DescribeWorkflowExecution(ctx, ref, "")
+	if err != nil {
+		return time.Time{}
+	}
+	info := latest.GetWorkflowExecutionInfo()
+	first := info.GetFirstRunId()
+	if first == "" || first == info.GetExecution().GetRunId() {
+		return info.GetStartTime().AsTime()
+	}
+	origin, err := cl.DescribeWorkflowExecution(ctx, ref, first)
+	if err != nil {
+		return time.Time{}
+	}
+	return origin.GetWorkflowExecutionInfo().GetStartTime().AsTime()
+}
+
+// workflowDescriber is the one Temporal call recordBirth needs.
+type workflowDescriber interface {
+	DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 }
 
 // watchRaw gates the RAW query surface — the whole store in the
@@ -155,11 +196,10 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 		}
 		return nil
 	}
-	namespace, err := o.watch(ctx, req.GetRef())
+	sel, err := o.subject(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}
-	sel := telemetry.SelectorFor(namespace, req.GetRef())
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
 		sub = o.Hub.Subscribe(sel, "log")
@@ -253,11 +293,10 @@ func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv
 		}
 		return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: raw}})
 	}
-	namespace, err := o.watch(ctx, req.GetRef())
+	sel, err := o.subject(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}
-	sel := telemetry.SelectorFor(namespace, req.GetRef())
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
 		sub = o.Hub.Subscribe(sel, "metric")
@@ -311,11 +350,10 @@ func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.
 		}
 		return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: raw}})
 	}
-	namespace, err := o.watch(ctx, req.GetRef())
+	sel, err := o.subject(ctx, req.GetRef())
 	if err != nil {
 		return asConnectError(err)
 	}
-	sel := telemetry.SelectorFor(namespace, req.GetRef())
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
 		sub = o.Hub.Subscribe(sel, "span")

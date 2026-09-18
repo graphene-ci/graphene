@@ -26,6 +26,20 @@ type Selector struct {
 	// with the first; empty means one axis is enough.
 	AltAttribute string
 	AltValue     string
+	// Since is when THIS record was born. A ref is a name, and names are
+	// reused: run after run declares agent/db-1, docker/pg. Each is a new
+	// record, and the signals of the previous bearer of the name are not
+	// its history. Zero means unknown — no bound.
+	Since time.Time
+}
+
+// After is the later of the caller's own lower bound and the record's
+// birth: nothing older than the record belongs to it.
+func (s Selector) After(since time.Time) time.Time {
+	if s.Since.After(since) {
+		return s.Since
+	}
+	return since
 }
 
 // SelectorFor maps an entity ref to its correlation attribute.

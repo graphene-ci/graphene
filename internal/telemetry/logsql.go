@@ -31,6 +31,7 @@ func (l *LogsQL) Query(ctx context.Context, sel Selector, since time.Time, limit
 		match = fmt.Sprintf("(%s OR %q:=%q)", match, sel.AltAttribute, sel.AltValue)
 	}
 	query := fmt.Sprintf("%q:=%q AND %s", "graphene.namespace", sel.Namespace, match)
+	since = sel.After(since)
 	if !since.IsZero() {
 		query += " AND _time:>" + since.UTC().Format(time.RFC3339Nano)
 	}

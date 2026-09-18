@@ -24,6 +24,11 @@ type PromQL struct {
 // Series returns the standard PromQL range response for every series
 // carrying the selector's attributes.
 func (p *PromQL) Series(ctx context.Context, sel Selector, start, end time.Time) (json.RawMessage, error) {
+	// A record born inside the window starts the window: the series of an
+	// earlier record of the same name carry the same labels.
+	if start = sel.After(start); start.After(end) {
+		start = end
+	}
 	matcher := p.selectorMatcher(sel)
 	if !p.DotsToUnderscores {
 		// A store can contain UTF-8 labels from Graphene and normalized labels

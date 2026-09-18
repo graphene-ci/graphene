@@ -53,6 +53,10 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 				"tags":    {string(tags)},
 				"limit":   {strconv.Itoa(limit)},
 			}
+			if !sel.Since.IsZero() {
+				// Jaeger's bounds are microseconds since the epoch.
+				q.Set("start", strconv.FormatInt(sel.Since.UnixMicro(), 10))
+			}
 			raw, err := j.get(ctx, "/api/traces?"+q.Encode())
 			if err != nil {
 				return nil, err
