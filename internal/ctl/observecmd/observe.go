@@ -264,7 +264,9 @@ func logLine(rec *managementv1.LogRecord, wide bool) string {
 // logLevel maps an OTLP severity text onto a fixed-width tag and the
 // style of the body: a warning or an error must not look like the rest.
 func logLevel(severity string) (string, func(string) string) {
-	plain := func(s string) string { return s }
+	// An ordinary line keeps its level and gets its telling words marked:
+	// a tool's output (pytest, a compiler) carries no severity of its own.
+	plain := ui.Highlight
 	switch sev := strings.ToUpper(severity); {
 	case strings.HasPrefix(sev, "ERR"), strings.HasPrefix(sev, "FATAL"):
 		return ui.Red("ERR"), ui.Red

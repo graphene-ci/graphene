@@ -198,3 +198,32 @@ func TestBlockFolds(t *testing.T) {
 		t.Errorf("an empty document printed %q", out.String())
 	}
 }
+
+// A tool's output has no severity: the words are marked, the text is kept.
+func TestHighlightMarksWordsOnly(t *testing.T) {
+	withColor(t, ColorAlways)
+	for _, body := range []string{
+		"FAILED work/tests/test_infra.py::test_disk - AssertionError",
+		"1 failed, 2 passed, 3 warnings in 17.49s",
+		"E       assert 14.7 >= 50.0",
+		"3 passed in 7.80s",
+	} {
+		got := Highlight(body)
+		if Strip(got) != body {
+			t.Errorf("text changed: %q -> %q", body, Strip(got))
+		}
+		if got == body {
+			t.Errorf("nothing marked in %q", body)
+		}
+	}
+	// Words inside other words are left alone, and so is a quiet line.
+	for _, body := range []string{"iterations_total 149565", "profailed okay-ish", "Started Worker"} {
+		if got := Highlight(body); got != body {
+			t.Errorf("marked a quiet line: %q", got)
+		}
+	}
+	withColor(t, ColorNever)
+	if got := Highlight("FAILED"); got != "FAILED" {
+		t.Errorf("styled with color off: %q", got)
+	}
+}
