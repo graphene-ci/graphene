@@ -14,6 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -257,20 +258,24 @@ func renderEvent(ev *managementv1.Event) string {
 	if strings.HasPrefix(kind, "internal-") {
 		return ""
 	}
-	line := "⚡ " + kind
+	mark := ui.Yellow("⚡ ")
+	if strings.HasSuffix(kind, "-completed") {
+		mark = ui.Green("✓ ")
+	}
+	line := kind
 	if ev.GetSubject() != "" {
 		line += "  " + ev.GetSubject()
 	}
 	if ev.GetAgent() != "" {
-		line += "  @" + ev.GetAgent()
+		line += "  " + ui.Blue("@"+ev.GetAgent())
 	}
 	if ev.GetAttempt() > 1 {
-		line += fmt.Sprintf("  (attempt %d)", ev.GetAttempt())
+		line += ui.Yellow(fmt.Sprintf("  (attempt %d)", ev.GetAttempt()))
 	}
 	if ev.GetError() != "" {
-		line = "✗ " + strings.TrimPrefix(line, "⚡ ") + " — " + firstLine(ev.GetError())
+		return ui.Red("✗ " + ui.Strip(line) + " — " + firstLine(ev.GetError()))
 	}
-	return line
+	return mark + line
 }
 
 // pullLogs drains the node's new log records since the cursor.
@@ -339,14 +344,15 @@ func (p *panelRenderer) draw(lines []string) {
 	p.lastLines = len(lines)
 }
 
-// clip bounds one line to the terminal width, counting runes (close
-// enough for the frame's height bookkeeping).
+// clip bounds one line to the terminal width by its VISIBLE length — a
+// wrapped line would break the frame's height bookkeeping. A line that has
+// to be cut loses its styling with the tail rather than keep an open
+// escape.
 func clip(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) <= width {
+	if ui.Len(s) <= width {
 		return s
 	}
-	return string(runes[:width-1]) + "…"
+	return ui.Cut(ui.Strip(s), width)
 }
 
 // frameLines renders the current model as one panel frame.
@@ -358,9 +364,9 @@ func (v *runWatchView) frameLines() []string {
 	if status == "" {
 		status = "starting"
 	}
-	lines := []string{fmt.Sprintf("run %s   %s   %s",
-		v.runId, status, time.Since(v.start).Truncate(time.Second))}
-	lines = append(lines, "│")
+	lines := []string{fmt.Sprintf("%s %s   %s   %s",
+		ui.Gray("run"), ui.Bold(v.runId), ui.Phase(status), ui.Gray(time.Since(v.start).Truncate(time.Second).String()))}
+	lines = append(lines, ui.Gray("│"))
 
 	runRef := "run/" + v.runId
 	// The resource nodes in tree order (the run node renders as the
@@ -373,33 +379,34 @@ func (v *runWatchView) frameLines() []string {
 		if !ok || node.gone {
 			continue
 		}
-		head := fmt.Sprintf("%s─ %-36s %-10s %s",
-			strings.Repeat("  ", node.depth-1)+"├",
-			ref, phaseWord(node.phase), time.Since(node.firstSee).Truncate(time.Second))
+		head := fmt.Sprintf("%s %s %s %s",
+			ui.Gray(strings.Repeat("  ", node.depth-1)+"├─"),
+			ui.Pad(ui.Ref(ref), 36), ui.Pad(ui.Phase(phaseWord(node.phase)), 10),
+			ui.Gray(time.Since(node.firstSee).Truncate(time.Second).String()))
 		if node.attempt > 1 && node.phase != "ready" {
-			head += fmt.Sprintf("   ↻ attempt %d", node.attempt)
+			head += ui.Yellow(fmt.Sprintf("   ↻ attempt %d", node.attempt))
 		}
 		lines = append(lines, head)
 		if v.opts.collapse && node.phase == "ready" {
 			continue
 		}
-		indent := strings.Repeat("  ", node.depth-1) + "│   "
+		indent := ui.Gray(strings.Repeat("  ", node.depth-1) + "│   ")
 		for _, ev := range node.events {
 			lines = append(lines, indent+ev)
 		}
 		for _, lg := range node.logs {
-			lines = append(lines, indent+lg)
+			lines = append(lines, indent+ui.Gray(lg))
 		}
 	}
 
 	// The run's own strip: its events and the orchestrator's logs.
 	if run, ok := v.nodes[runRef]; ok && (len(run.events) > 0 || len(run.logs) > 0) {
-		lines = append(lines, strings.Repeat("─", 58))
+		lines = append(lines, ui.Gray(strings.Repeat("─", 58)))
 		for _, ev := range run.events {
-			lines = append(lines, "run  "+ev)
+			lines = append(lines, ui.Gray("run  ")+ev)
 		}
 		for _, lg := range run.logs {
-			lines = append(lines, "     "+lg)
+			lines = append(lines, "     "+ui.Gray(lg))
 		}
 	}
 	return lines

@@ -26,6 +26,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/graphene-ci/graphene/internal/agents"
 	"github.com/graphene-ci/graphene/internal/auth"
@@ -618,6 +619,14 @@ func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1
 	res, err := m.describe(ctx, b, req.GetRef())
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	// A record's age is the start of the FIRST run of its chain — a
+	// continue-as-new is the same record, not a newborn. A run's describe
+	// fills its own start.
+	if res.GetStartedAt() == nil {
+		if born := recordBirth(ctx, b.Client, req.GetRef()); !born.IsZero() {
+			res.StartedAt = timestamppb.New(born)
+		}
 	}
 	return connect.NewResponse(&managementv1.GetResponse{Resource: res}), nil
 }

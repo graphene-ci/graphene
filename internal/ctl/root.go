@@ -24,6 +24,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/ctl/revisioncmd"
 	"github.com/graphene-ci/graphene/internal/ctl/runcmd"
 	"github.com/graphene-ci/graphene/internal/ctl/sourcecmd"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 )
 
 // Version is stamped by the build.
@@ -124,11 +125,11 @@ func Main(args []string) int {
 	root := NewRoot()
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "graphenectl:", err)
+		fmt.Fprintln(os.Stderr, ui.Red("graphenectl:"), err)
 		if hint := hintFor(err); hint != "" {
-			fmt.Fprintln(os.Stderr, "  hint:", hint)
+			fmt.Fprintln(os.Stderr, ui.Gray("  hint: "+hint))
 		}
-		return 1
+		return cmdutil.ExitCode(err)
 	}
 	return 0
 }

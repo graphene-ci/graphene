@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,9 +23,45 @@ import (
 // detail nobody should have to read.
 func NoRecord(ref string) error {
 	if id, ok := strings.CutPrefix(ref, "run/"); ok {
-		return fmt.Errorf("no run %s", id)
+		return &NotFoundError{What: "run " + id}
 	}
-	return fmt.Errorf("no record %s", ref)
+	return &NotFoundError{What: "record " + ref}
+}
+
+// Exit codes: a script tells "it broke" from "there is no such thing" from
+// "the run itself failed" without parsing words.
+const (
+	ExitError     = 1
+	ExitNotFound  = 2
+	ExitRunFailed = 3
+)
+
+// NotFoundError is a target that does not exist; graphenectl exits 2.
+type NotFoundError struct{ What string }
+
+func (e *NotFoundError) Error() string { return "no " + e.What }
+
+// RunFailedError is a run that ended any way but Completed: the command
+// worked, the RUN did not; graphenectl exits 3.
+type RunFailedError struct{ RunId, Status string }
+
+func (e *RunFailedError) Error() string {
+	return fmt.Sprintf("run %s: %s", e.RunId, strings.ToLower(e.Status))
+}
+
+// ExitCode maps an error onto the process exit code.
+func ExitCode(err error) int {
+	var notFound *NotFoundError
+	var runFailed *RunFailedError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &notFound):
+		return ExitNotFound
+	case errors.As(err, &runFailed):
+		return ExitRunFailed
+	}
+	return ExitError
 }
 
 // OrNoRecord rewrites a not-found from the door into NoRecord and passes

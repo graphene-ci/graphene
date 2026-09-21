@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -81,45 +82,75 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			indent := ""
-			if ref != "" {
-				if _, err := fmt.Fprintln(cmdutil.Out, ref); err != nil {
-					return err
-				}
-				indent = "  "
-			}
-			shown := 0
 			roots := resp.Msg.GetRoots()
-			sort.SliceStable(roots, func(i, j int) bool {
-				return roots[i].GetResource().GetRef() < roots[j].GetResource().GetRef()
-			})
-			for _, root := range roots {
+			if ref == "" {
 				// The forest's roots are the installation's records; the
 				// dictionary of kinds is `kinds`, and would bury them.
-				if ref == "" && root.GetResource().GetKind() == "kind" {
-					continue
+				kept := roots[:0]
+				for _, root := range roots {
+					if root.GetResource().GetKind() != "kind" {
+						kept = append(kept, root)
+					}
 				}
-				printTree(root, indent)
-				shown++
+				roots = kept
 			}
-			if shown == 0 && ref != "" {
-				fmt.Fprintln(os.Stderr, "  nothing live is owned by "+ref)
+			sortNodes(roots)
+			if ref != "" {
+				if _, err := fmt.Fprintln(cmdutil.Out, ui.Bold(ref)); err != nil {
+					return err
+				}
+				if len(roots) == 0 {
+					fmt.Fprintln(os.Stderr, ui.Gray("└─ nothing live is owned by "+ref))
+					return nil
+				}
+			}
+			var lines []treeLine
+			for i, root := range roots {
+				lines = collectTree(lines, root, "", i == len(roots)-1, ref != "")
+			}
+			width := 0
+			for _, l := range lines {
+				width = max(width, ui.Len(l.name))
+			}
+			for _, l := range lines {
+				if _, err := fmt.Fprintf(cmdutil.Out, "%s  %s  %s\n", ui.Pad(l.name, width), ui.Pad(ui.Phase(l.phase), 8), ui.Gray(l.age)); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
 	}
 }
 
-func printTree(node *managementv1.TreeNode, indent string) {
-	r := node.GetResource()
-	fmt.Fprintf(cmdutil.Out, "%s%s (%s)\n", indent, r.GetRef(), r.GetPhase())
-	children := node.GetChildren()
-	sort.SliceStable(children, func(i, j int) bool {
-		return children[i].GetResource().GetRef() < children[j].GetResource().GetRef()
+func sortNodes(nodes []*managementv1.TreeNode) {
+	sort.SliceStable(nodes, func(i, j int) bool {
+		return nodes[i].GetResource().GetRef() < nodes[j].GetResource().GetRef()
 	})
-	for _, child := range children {
-		printTree(child, indent+"  ")
+}
+
+// treeLine is one drawn node: the branch and the ref, then the columns
+// that line up across the whole tree.
+type treeLine struct{ name, phase, age string }
+
+// collectTree walks a node and its subtree into lines. A root of the
+// forest stands without a branch; everything under an owner hangs off one.
+func collectTree(lines []treeLine, node *managementv1.TreeNode, prefix string, last, branch bool) []treeLine {
+	r := node.GetResource()
+	own, inherit := "", ""
+	if branch {
+		own, inherit = ui.TreeGlyphs(last)
 	}
+	lines = append(lines, treeLine{
+		name:  ui.Gray(prefix+own) + ui.Ref(r.GetRef()),
+		phase: r.GetPhase(),
+		age:   cmdutil.Age(r.GetStartedAt()),
+	})
+	children := node.GetChildren()
+	sortNodes(children)
+	for i, child := range children {
+		lines = collectTree(lines, child, prefix+inherit, i == len(children)-1, true)
+	}
+	return lines
 }
 
 // NewDelete builds `delete`.

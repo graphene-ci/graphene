@@ -6,6 +6,7 @@ package cmdutil
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/graphene-ci/pipeline/pkg/cliconfig"
 
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/pkg/proto/management/v1/managementv1connect"
 )
@@ -28,6 +30,7 @@ type Factory struct {
 	Ns      string
 	Output  string
 	JQ      string
+	Color   string
 }
 
 // Bind registers the persistent flags on the root command.
@@ -38,6 +41,15 @@ func (f *Factory) Bind(root *cobra.Command) {
 	pf.StringVarP(&f.Ns, "namespace", "n", "", "namespace for this call (cluster-wide admin tokens)")
 	pf.StringVarP(&f.Output, "output", "o", "table", "output: table | wide | name | json | yaml")
 	pf.StringVar(&f.JQ, "jq", "", "jq expression over the JSON form (implies -o json)")
+	pf.StringVar(&f.Color, "color", ui.ColorAuto, "color: auto (a terminal, NO_COLOR unset) | always | never")
+	root.PersistentPreRunE = func(*cobra.Command, []string) error {
+		switch f.Color {
+		case ui.ColorAuto, ui.ColorAlways, ui.ColorNever:
+			ui.Configure(f.Color)
+			return nil
+		}
+		return fmt.Errorf("--color %q: want auto, always or never", f.Color)
+	}
 }
 
 // Resolve applies the config override and picks the context, then lays

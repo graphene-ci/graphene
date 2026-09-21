@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -78,7 +80,7 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 		if err != nil {
 			return err
 		}
-		n := 0
+		n, hidden := 0, 0
 		for stream.Receive() {
 			n++
 			ev := stream.Msg()
@@ -87,14 +89,13 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 			} else if done {
 				continue
 			}
-			line := fmt.Sprintf("%s  %-24s %s", cmdutil.Stamp(ev.GetTimeUnixNano()), ev.GetKind(), ev.GetSubject())
-			if ev.GetAgent() != "" {
-				line += "  @" + ev.GetAgent()
+			// Temporal's own bookkeeping (workflow tasks, timers) is most
+			// of a history and none of its story; -o wide keeps it.
+			if strings.HasPrefix(ev.GetKind(), "internal-") && f.Output != "wide" {
+				hidden++
+				continue
 			}
-			if ev.GetError() != "" {
-				line += "  error: " + ev.GetError()
-			}
-			fmt.Fprintln(cmdutil.Out, line)
+			fmt.Fprintln(cmdutil.Out, eventLine(ev))
 		}
 		if err := stream.Err(); err != nil {
 			return cmdutil.OrNoRecord(err, ref)
@@ -104,6 +105,9 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 				return err
 			}
 			fmt.Fprintf(os.Stderr, "%s has no events.\n", ref)
+		}
+		if hidden > 0 && !follow {
+			fmt.Fprintln(os.Stderr, ui.Gray(fmt.Sprintf("… %d internal events hidden; -o wide shows them", hidden)))
 		}
 		return nil
 	case "logs":
@@ -130,7 +134,7 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 				continue
 			}
 			n++
-			fmt.Fprintf(cmdutil.Out, "%s  %s\n", cmdutil.Stamp(rec.GetTimeUnixNano()), rec.GetBody())
+			fmt.Fprintln(cmdutil.Out, logLine(rec, f.Output == "wide"))
 		}
 		if err := stream.Err(); err != nil {
 			return err
@@ -193,6 +197,73 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 	default:
 		return fmt.Errorf("unknown dimension %q", dim)
 	}
+}
+
+// eventLine renders one history event: when, what (colored by how it
+// went), about what, where, and the error if there is one.
+func eventLine(ev *managementv1.Event) string {
+	kind := ev.GetKind()
+	styled := ui.Pad(kind, 20)
+	switch {
+	case strings.HasSuffix(kind, "-failed"), strings.HasSuffix(kind, "-timed-out"), strings.HasSuffix(kind, "-terminated"):
+		styled = ui.Red(styled)
+	case strings.HasSuffix(kind, "-completed"):
+		styled = ui.Green(styled)
+	case strings.HasSuffix(kind, "-started"), strings.HasSuffix(kind, "-scheduled"):
+		styled = ui.Yellow(styled)
+	case strings.HasSuffix(kind, "-canceled"):
+		styled = ui.Purple(styled)
+	case strings.HasPrefix(kind, "internal-"):
+		styled = ui.Gray(styled)
+	default:
+		styled = ui.Cyan(styled)
+	}
+	line := ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())) + "  " + styled + " " + ev.GetSubject()
+	if ev.GetAgent() != "" {
+		line += "  " + ui.Blue("@"+ev.GetAgent())
+	}
+	if ev.GetError() != "" {
+		line += "  " + ui.Red(ev.GetError())
+	}
+	return line
+}
+
+// logLine renders one log record: time, a three-letter level colored by
+// severity, the source a library put on it (a job's name), the body. The
+// wide form appends every attribute.
+func logLine(rec *managementv1.LogRecord, wide bool) string {
+	level, paintBody := logLevel(rec.GetSeverity())
+	line := ui.Gray(cmdutil.Stamp(rec.GetTimeUnixNano())) + "  " + level + "  "
+	if job := rec.GetAttributes()["job"]; job != "" {
+		line += ui.Blue(job) + ui.Gray(" │ ")
+	}
+	line += paintBody(rec.GetBody())
+	if wide {
+		keys := make([]string, 0, len(rec.GetAttributes()))
+		for k := range rec.GetAttributes() {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			line += "  " + ui.Gray(k+"="+rec.GetAttributes()[k])
+		}
+	}
+	return line
+}
+
+// logLevel maps an OTLP severity text onto a fixed-width tag and the
+// style of the body: a warning or an error must not look like the rest.
+func logLevel(severity string) (string, func(string) string) {
+	plain := func(s string) string { return s }
+	switch sev := strings.ToUpper(severity); {
+	case strings.HasPrefix(sev, "ERR"), strings.HasPrefix(sev, "FATAL"):
+		return ui.Red("ERR"), ui.Red
+	case strings.HasPrefix(sev, "WARN"):
+		return ui.Yellow("WRN"), ui.Yellow
+	case strings.HasPrefix(sev, "DEBUG"), strings.HasPrefix(sev, "TRACE"):
+		return ui.Gray("DBG"), ui.Gray
+	}
+	return ui.Green("INF"), plain
 }
 
 // renderLiveMetrics prints one live OTLP metric batch: standard OTel
@@ -265,7 +336,7 @@ func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string, window
 		}
 		for stream.Receive() {
 			if rec := stream.Msg().GetRecord(); rec != nil {
-				fmt.Fprintf(cmdutil.Out, "%s  %s\n", cmdutil.Stamp(rec.GetTimeUnixNano()), rec.GetBody())
+				fmt.Fprintln(cmdutil.Out, logLine(rec, f.Output == "wide"))
 			}
 		}
 		return stream.Err()

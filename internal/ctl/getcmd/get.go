@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -126,14 +127,14 @@ func (o *options) list(ctx context.Context, f *cmdutil.Factory, kind string) err
 	}
 	header := []string{"REF", "PHASE", "OWNER", "AGE", "LABELS"}
 	cols := func(r *managementv1.Resource) []string {
-		return []string{r.GetRef(), r.GetPhase(), r.GetOwner(), cmdutil.Age(r.GetStartedAt()), cmdutil.LabelsCell(cmdutil.UserLabels(r.GetLabels()))}
+		return []string{ui.Ref(r.GetRef()), ui.Phase(r.GetPhase()), ui.Ref(r.GetOwner()), cmdutil.Age(r.GetStartedAt()), ui.Dim(cmdutil.LabelsCell(cmdutil.UserLabels(r.GetLabels())))}
 	}
 	switch f.Output {
 	case "wide":
 		header = []string{"REF", "PHASE", "OWNER", "AGE", "PENDING", "DELETING", "LABELS"}
 		cols = func(r *managementv1.Resource) []string {
-			return []string{r.GetRef(), r.GetPhase(), r.GetOwner(), cmdutil.Age(r.GetStartedAt()),
-				fmt.Sprint(r.GetPendingCommands()), fmt.Sprint(r.GetMarkedForDeletion()), cmdutil.LabelsCell(r.GetLabels())}
+			return []string{ui.Ref(r.GetRef()), ui.Phase(r.GetPhase()), ui.Ref(r.GetOwner()), cmdutil.Age(r.GetStartedAt()),
+				fmt.Sprint(r.GetPendingCommands()), fmt.Sprint(r.GetMarkedForDeletion()), ui.Dim(cmdutil.LabelsCell(r.GetLabels()))}
 		}
 	case "name":
 		header = []string{"REF"}
@@ -188,11 +189,18 @@ func (o *options) list(ctx context.Context, f *cmdutil.Factory, kind string) err
 		}
 		return nil
 	}
-	rows := make([][]string, 0, len(msg.GetResources()))
+	// Rows arrive sorted by ref, so kinds are contiguous: a blank line
+	// between them turns one long column into readable groups.
+	table := ui.NewTable(header...).Flex(len(header) - 1)
+	lastKind := ""
 	for _, r := range msg.GetResources() {
-		rows = append(rows, cols(r))
+		if lastKind != "" && r.GetKind() != lastKind {
+			table.Break()
+		}
+		lastKind = r.GetKind()
+		table.Row(cols(r)...)
 	}
-	return cmdutil.Table(header, rows)
+	return table.Render(cmdutil.Out, ui.Width())
 }
 
 // emptyListing says what was NOT found, in the words of the question: the
@@ -231,14 +239,37 @@ func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) er
 	if done, err := f.Emit(&managementv1.GetResponse{Resource: r}); done || err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(cmdutil.Out, "ref:    %s\nphase:  %s\nowner:  %s\nlabels: %s\n",
-		r.GetRef(), r.GetPhase(), r.GetOwner(), cmdutil.LabelsCell(r.GetLabels())); err != nil {
+	deleting := ""
+	if r.GetMarkedForDeletion() {
+		deleting = ui.Purple("marked — finalize is on its way")
+	}
+	pending := ""
+	if n := r.GetPendingCommands(); n > 0 {
+		pending = fmt.Sprint(n)
+	}
+	if err := ui.Fields(cmdutil.Out,
+		[2]string{"ref", ui.Bold(r.GetRef())},
+		[2]string{"phase", ui.Phase(r.GetPhase())},
+		[2]string{"owner", ui.Ref(r.GetOwner())},
+		[2]string{"age", cmdutil.Age(r.GetStartedAt())},
+		[2]string{"labels", cmdutil.LabelsCell(r.GetLabels())},
+		[2]string{"pending", pending},
+		[2]string{"deletion", deleting},
+	); err != nil {
 		return err
 	}
-	if err := cmdutil.PrintJSONBlock("spec", r.GetSpec()); err != nil {
+	specFolded, err := ui.Block(cmdutil.Out, "spec", r.GetSpec())
+	if err != nil {
 		return err
 	}
-	return cmdutil.PrintJSONBlock("state", r.GetState())
+	stateFolded, err := ui.Block(cmdutil.Out, "state", r.GetState())
+	if err != nil {
+		return err
+	}
+	if specFolded || stateFolded {
+		fmt.Fprintln(os.Stderr, ui.Gray("… long parts are folded; -o yaml shows the whole record"))
+	}
+	return nil
 }
 
 // runGetOne reads one run as its listing row sees it — pipeline, status,
@@ -261,12 +292,16 @@ func runGetOne(ctx context.Context, f *cmdutil.Factory, runId string) error {
 	if done, err := f.Emit(r); done || err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmdutil.Out, "run:      %s\npipeline: %s\nstatus:   %s\nstarted:  %s\ntook:     %s\nimage:    %s\ntrigger:  %s\nlabels:   %s\n",
-		runId, pipelineOf(r), r.GetPhase(), cmdutil.When(r.GetStartedAt()),
-		cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt()),
-		r.GetLabels()["graphene.io/image"], r.GetLabels()["graphene.io/trigger"],
-		cmdutil.LabelsCell(cmdutil.UserLabels(r.GetLabels())))
-	return err
+	return ui.Fields(cmdutil.Out,
+		[2]string{"run", ui.Bold(runId)},
+		[2]string{"pipeline", pipelineOf(r)},
+		[2]string{"status", ui.Phase(r.GetPhase())},
+		[2]string{"started", cmdutil.When(r.GetStartedAt())},
+		[2]string{"took", cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt())},
+		[2]string{"image", r.GetLabels()["graphene.io/image"]},
+		[2]string{"trigger", r.GetLabels()["graphene.io/trigger"]},
+		[2]string{"labels", cmdutil.LabelsCell(cmdutil.UserLabels(r.GetLabels()))},
+	)
 }
 
 const pipelineLabel = "graphene.io/pipeline"
@@ -333,7 +368,7 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 			rows := make(map[string]cmdutil.WatchRow, len(msg.GetResources()))
 			for _, r := range msg.GetResources() {
 				rows[runId(r)] = cmdutil.WatchRow{
-					Cols: []string{runId(r), pipelineOf(r), r.GetPhase(), labelsOf(r)},
+					Cols: []string{runId(r), pipelineOf(r), ui.Phase(r.GetPhase()), ui.Dim(labelsOf(r))},
 					Msg:  r,
 				}
 			}
@@ -357,11 +392,10 @@ func RunList(ctx context.Context, f *cmdutil.Factory, status string, labels map[
 		fmt.Fprintln(os.Stderr, "No runs found.")
 		return nil
 	}
-	header = []string{"RUN", "PIPELINE", "STATUS", "STARTED", "TOOK", "LABELS"}
-	rows := make([][]string, 0, len(msg.GetResources()))
+	table := ui.NewTable("RUN", "PIPELINE", "STATUS", "STARTED", "TOOK", "LABELS").Right(3, 4).Flex(5)
 	for _, r := range msg.GetResources() {
-		rows = append(rows, []string{runId(r), pipelineOf(r), r.GetPhase(),
-			cmdutil.Age(r.GetStartedAt()) + " ago", cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt()), labelsOf(r)})
+		table.Row(runId(r), pipelineOf(r), ui.Phase(r.GetPhase()),
+			cmdutil.Age(r.GetStartedAt())+" ago", cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt()), ui.Dim(labelsOf(r)))
 	}
-	return cmdutil.Table(header, rows)
+	return table.Render(cmdutil.Out, ui.Width())
 }

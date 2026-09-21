@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/itchyny/gojq"
@@ -16,6 +15,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	yamlpkg "sigs.k8s.io/yaml"
+
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 )
 
 // Out is where data goes; progress goes to stderr.
@@ -175,18 +176,13 @@ func runJQ(query *gojq.Query, v any) error {
 	}
 }
 
-// Table renders rows with aligned columns on stdout.
+// Table renders rows with aligned columns on stdout; cells may be styled.
 func Table(header []string, rows [][]string) error {
-	w := tabwriter.NewWriter(Out, 2, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, strings.Join(header, "\t")); err != nil {
-		return err
-	}
+	t := ui.NewTable(header...)
 	for _, row := range rows {
-		if _, err := fmt.Fprintln(w, strings.Join(row, "\t")); err != nil {
-			return err
-		}
+		t.Row(row...)
 	}
-	return w.Flush()
+	return t.Render(Out, ui.Width())
 }
 
 // PrintJSONBlock renders a raw-JSON field as an indented YAML block
@@ -354,13 +350,17 @@ func (f *Factory) WatchList(ctx context.Context, header []string, fetch func() (
 		if first {
 			for _, row := range cur {
 				for i, c := range row.Cols {
-					if i < len(widths) && len(c) > widths[i] {
-						widths[i] = len(c)
+					if i < len(widths) && ui.Len(c) > widths[i] {
+						widths[i] = ui.Len(c)
 					}
 				}
 			}
 			if f.JQ == "" && f.Output != "json" && f.Output != "yaml" && len(header) > 1 {
-				line(header)
+				styled := make([]string, len(header))
+				for i, h := range header {
+					styled[i] = ui.Bold(ui.Gray(h))
+				}
+				line(styled)
 			}
 			first = false
 		}

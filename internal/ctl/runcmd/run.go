@@ -18,6 +18,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/ctl/cmdutil"
 	"github.com/graphene-ci/graphene/internal/ctl/getcmd"
+	"github.com/graphene-ci/graphene/internal/ctl/ui"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
 
@@ -174,7 +175,7 @@ func watchToEnd(ctx context.Context, f *cmdutil.Factory, d *cmdutil.Door, runId 
 		fmt.Fprintln(cmdutil.Out, string(result))
 		return nil
 	default:
-		return fmt.Errorf("run %s: %s", runId, strings.ToLower(last))
+		return &cmdutil.RunFailedError{RunId: runId, Status: last}
 	}
 }
 
@@ -269,26 +270,81 @@ func newStatus(f *cmdutil.Factory) *cobra.Command {
 				return cmdutil.OrNoRecord(err, "run/"+args[0])
 			}
 			msg := resp.Msg
-			fmt.Fprintf(cmdutil.Out, "run %s: %s\n", args[0], msg.GetStatus())
+			fmt.Fprintf(cmdutil.Out, "%s %s  %s\n", ui.Gray("run"), ui.Bold(args[0]), ui.Phase(msg.GetStatus()))
+			if msg.GetStatus() != "Running" {
+				// Nothing is in flight in a run that ended: what it has to
+				// say is how it went.
+				return finishedSummary(cmd.Context(), d, args[0])
+			}
 			if len(msg.GetPending()) == 0 {
-				fmt.Fprintln(cmdutil.Out, "  no activity in flight")
+				fmt.Fprintln(cmdutil.Out, ui.Gray("  between steps — no activity in flight"))
 				return nil
 			}
 			for _, p := range msg.GetPending() {
-				fmt.Fprintf(cmdutil.Out, "  %s (%s, attempt %d)\n", p.GetActivityType(), strings.ToLower(strings.TrimPrefix(p.GetState(), "PENDING_ACTIVITY_STATE_")), p.GetAttempt())
+				state := strings.ToLower(strings.TrimPrefix(p.GetState(), "PENDING_ACTIVITY_STATE_"))
+				attempt := ui.Gray(fmt.Sprintf("attempt %d", p.GetAttempt()))
+				if p.GetAttempt() > 1 {
+					attempt = ui.Yellow(fmt.Sprintf("attempt %d", p.GetAttempt()))
+				}
+				fmt.Fprintf(cmdutil.Out, "  %s  %s  %s\n", ui.Bold(p.GetActivityType()), ui.Phase(state), attempt)
 				if d := p.GetHeartbeatDetail(); d != "" {
-					fmt.Fprintf(cmdutil.Out, "    doing: %s\n", d)
+					fmt.Fprintf(cmdutil.Out, "    %s %s\n", ui.Gray("doing:"), d)
 				}
 				if lf := p.GetLastFailure(); lf != "" {
-					fmt.Fprintf(cmdutil.Out, "    last failure: %s\n", lf)
+					fmt.Fprintf(cmdutil.Out, "    %s %s\n", ui.Gray("last failure:"), ui.Red(lf))
 				}
 				if ms := p.GetLastHeartbeatUnixMs(); ms > 0 {
-					fmt.Fprintf(cmdutil.Out, "    last heartbeat: %s ago\n", time.Since(time.UnixMilli(ms)).Round(time.Second))
+					fmt.Fprintf(cmdutil.Out, "    %s %s ago\n", ui.Gray("last heartbeat:"), time.Since(time.UnixMilli(ms)).Round(time.Second))
 				}
 			}
 			return nil
 		},
 	}
+}
+
+// finishedSummary reads a closed run from what it LEFT: when and how long
+// from its listing row, how its activities went and what failed first from
+// its history.
+func finishedSummary(ctx context.Context, d *cmdutil.Door, runId string) error {
+	if list, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{Query: "kind=run, id=" + runId})); err == nil && len(list.Msg.GetResources()) > 0 {
+		r := list.Msg.GetResources()[0]
+		fmt.Fprintf(cmdutil.Out, "  %s %s  %s %s\n", ui.Gray("started"), cmdutil.When(r.GetStartedAt()),
+			ui.Gray("took"), cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt()))
+	}
+	stream, err := d.Observe.Events(ctx, connect.NewRequest(&managementv1.EventsRequest{Ref: "run/" + runId}))
+	if err != nil {
+		return err
+	}
+	done, failed := 0, 0
+	var failures []string
+	for stream.Receive() {
+		ev := stream.Msg()
+		switch ev.GetKind() {
+		case "activity-completed":
+			done++
+		case "activity-failed", "activity-timed-out":
+			failed++
+			if len(failures) < 3 {
+				failures = append(failures, fmt.Sprintf("%s  %s  %s", ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())), ev.GetSubject(), ui.Red(ev.GetError())))
+			}
+		case "run-failed":
+			if ev.GetError() != "" {
+				failures = append(failures, ui.Red(ev.GetError()))
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return err
+	}
+	line := fmt.Sprintf("  %s %d completed", ui.Gray("activities"), done)
+	if failed > 0 {
+		line += ", " + ui.Red(fmt.Sprintf("%d failed attempts", failed))
+	}
+	fmt.Fprintln(cmdutil.Out, line)
+	for _, f := range failures {
+		fmt.Fprintln(cmdutil.Out, "  "+f)
+	}
+	return nil
 }
 
 func newList(f *cmdutil.Factory) *cobra.Command {
