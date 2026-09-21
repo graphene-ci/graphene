@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -80,11 +81,29 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 			if done, err := f.Emit(resp.Msg); done || err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintln(cmdutil.Out, ref); err != nil {
-				return err
+			indent := ""
+			if ref != "" {
+				if _, err := fmt.Fprintln(cmdutil.Out, ref); err != nil {
+					return err
+				}
+				indent = "  "
 			}
-			for _, root := range resp.Msg.GetRoots() {
-				printTree(root, "  ")
+			shown := 0
+			roots := resp.Msg.GetRoots()
+			sort.SliceStable(roots, func(i, j int) bool {
+				return roots[i].GetResource().GetRef() < roots[j].GetResource().GetRef()
+			})
+			for _, root := range roots {
+				// The forest's roots are the installation's records; the
+				// dictionary of kinds is `kinds`, and would bury them.
+				if ref == "" && root.GetResource().GetKind() == "kind" {
+					continue
+				}
+				printTree(root, indent)
+				shown++
+			}
+			if shown == 0 && ref != "" {
+				fmt.Fprintln(os.Stderr, "  nothing live is owned by "+ref)
 			}
 			return nil
 		},
@@ -94,7 +113,11 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 func printTree(node *managementv1.TreeNode, indent string) {
 	r := node.GetResource()
 	fmt.Fprintf(cmdutil.Out, "%s%s (%s)\n", indent, r.GetRef(), r.GetPhase())
-	for _, child := range node.GetChildren() {
+	children := node.GetChildren()
+	sort.SliceStable(children, func(i, j int) bool {
+		return children[i].GetResource().GetRef() < children[j].GetResource().GetRef()
+	})
+	for _, child := range children {
 		printTree(child, indent+"  ")
 	}
 }
@@ -121,13 +144,35 @@ down, then the record reaches deleted. Owned children die first.`,
 	return cmd
 }
 
+const (
+	phaseDeleted = "deleted"
+	runRunning   = "Running"
+)
+
 func runDelete(ctx context.Context, f *cmdutil.Factory, ref string, wait bool) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
 	}
-	if _, err := d.Resources.Delete(ctx, connect.NewRequest(&managementv1.DeleteRequest{Ref: ref})); err != nil {
+	// The door's delete is idempotent — signalling nothing succeeds. A
+	// person is told the truth instead: there is no such record, or its
+	// life is over already. A run's life is its execution: deleting one
+	// cancels it, and a finished run stays as history.
+	rec, err := d.Lookup(ctx, ref)
+	if err != nil {
 		return err
+	}
+	isRun := strings.HasPrefix(ref, "run/")
+	switch {
+	case isRun && rec.GetPhase() != runRunning:
+		fmt.Fprintf(cmdutil.Out, "%s: already finished (%s) — nothing to cancel, the record stays as history\n", ref, rec.GetPhase())
+		return nil
+	case rec.GetPhase() == phaseDeleted:
+		fmt.Fprintf(cmdutil.Out, "%s: already deleted\n", ref)
+		return nil
+	}
+	if _, err := d.Resources.Delete(ctx, connect.NewRequest(&managementv1.DeleteRequest{Ref: ref})); err != nil {
+		return cmdutil.OrNoRecord(err, ref)
 	}
 	if !wait {
 		fmt.Fprintf(cmdutil.Out, "%s: deletion signaled\n", ref)

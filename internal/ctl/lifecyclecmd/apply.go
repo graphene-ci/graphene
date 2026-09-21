@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -148,13 +149,20 @@ func NewKinds(f *cmdutil.Factory) *cobra.Command {
 			if len(names) == 0 {
 				return fmt.Errorf("the dictionary answered nothing — is the server reachable?")
 			}
-			if _, err := fmt.Fprintf(cmdutil.Out, "KIND\tORIGIN\tAPPLY\tRECORDS\tCOMMANDS\n"); err != nil {
+			w := tabwriter.NewWriter(cmdutil.Out, 2, 0, 2, ' ', 0)
+			// -v adds what each kind is for as one more COLUMN: a line of
+			// its own would end the column block and break the alignment.
+			header := "KIND\tORIGIN\tAPPLY\tRECORDS\tCOMMANDS"
+			if verbose {
+				header += "\tDESCRIPTION"
+			}
+			if _, err := fmt.Fprintln(w, header); err != nil {
 				return err
 			}
 			for _, name := range names {
 				e, err := f.KindEntryOf(cmd.Context(), name)
 				if err != nil {
-					if _, writeErr := fmt.Fprintf(cmdutil.Out, "%s\t?\t\t\t(%v)\n", name, err); writeErr != nil {
+					if _, writeErr := fmt.Fprintf(w, "%s\t?\t\t\t(%v)\n", name, err); writeErr != nil {
 						return writeErr
 					}
 					continue
@@ -167,16 +175,15 @@ func NewKinds(f *cmdutil.Factory) *cobra.Command {
 				for _, c := range e.Commands {
 					cmds = append(cmds, c.Name)
 				}
-				if _, err := fmt.Fprintf(cmdutil.Out, "%s\t%s\t%s\t%d\t%s\n", name, e.Origin, declarable, e.Records, strings.Join(cmds, ", ")); err != nil {
+				row := fmt.Sprintf("%s\t%s\t%s\t%d\t%s", name, e.Origin, declarable, e.Records, strings.Join(cmds, ", "))
+				if verbose {
+					row += "\t" + e.Description
+				}
+				if _, err := fmt.Fprintln(w, row); err != nil {
 					return err
 				}
-				if verbose && e.Description != "" {
-					if _, err := fmt.Fprintf(cmdutil.Out, "  %s\n", e.Description); err != nil {
-						return err
-					}
-				}
 			}
-			return nil
+			return w.Flush()
 		},
 	}
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "print what each kind is for")

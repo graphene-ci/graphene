@@ -97,10 +97,13 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 			fmt.Fprintln(cmdutil.Out, line)
 		}
 		if err := stream.Err(); err != nil {
-			return err
+			return cmdutil.OrNoRecord(err, ref)
 		}
 		if n == 0 && !follow {
-			fmt.Fprintln(os.Stderr, "No events.")
+			if err := d.Exists(ctx, ref); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "%s has no events.\n", ref)
 		}
 		return nil
 	case "logs":
@@ -133,7 +136,10 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 			return err
 		}
 		if n == 0 && !follow {
-			fmt.Fprintln(os.Stderr, "No log records.")
+			if err := d.Exists(ctx, ref); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "%s has no log records.\n", ref)
 		}
 		return nil
 	case "metrics":

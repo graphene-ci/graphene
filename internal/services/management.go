@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
@@ -372,6 +374,11 @@ func (m *Management) RunResult(ctx context.Context, creq *connect.Request[manage
 	}
 	var out json.RawMessage
 	if err := b.Client.GetWorkflow(ctx, "run/"+req.GetRunId(), "").Get(ctx, &out); err != nil {
+		// A run that never was is not a run that did not complete.
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return connect.NewResponse(&managementv1.RunResultResponse{Result: out}), nil
@@ -684,6 +691,17 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	}
 	if protectedRef(req.GetRef()) {
 		return nil, status.Errorf(codes.FailedPrecondition, "%s is protected and cannot be deleted", req.GetRef())
+	}
+	// Deleting what never existed is not a deletion: without this look the
+	// audit note and the "record deleting" log below would be written
+	// about a name — and then answer `logs` for a record that never was.
+	// A record already deleted still has its history, so repeating a
+	// delete stays the no-op it was.
+	if _, err := b.Client.DescribeWorkflowExecution(ctx, req.GetRef(), ""); err != nil {
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			return nil, status.Errorf(codes.NotFound, "no record %s", req.GetRef())
+		}
 	}
 	// The note goes first: after the cascade there is no history left
 	// to write it into.

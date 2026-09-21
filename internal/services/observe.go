@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -150,6 +152,10 @@ func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1
 	for iter.HasNext() {
 		he, err := iter.Next()
 		if err != nil {
+			var notFound *serviceerror.NotFound
+			if errors.As(err, &notFound) {
+				return asConnectError(status.Errorf(codes.NotFound, "no record %s", req.GetRef()))
+			}
 			return asConnectError(status.Error(codes.Internal, err.Error()))
 		}
 		if a := he.GetActivityTaskScheduledEventAttributes(); a != nil {

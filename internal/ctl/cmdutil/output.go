@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/itchyny/gojq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	yamlpkg "sigs.k8s.io/yaml"
 )
 
@@ -209,7 +211,14 @@ func PrintJSONBlock(title string, raw []byte) error {
 	return nil
 }
 
-// LabelsCell renders labels compactly for a table cell.
+// systemLabelPrefix marks the labels the installation stamps itself (the
+// pipeline, the run, the image, the trigger): bookkeeping a table already
+// shows in its own columns, or does not need at all.
+const systemLabelPrefix = "graphene.io/"
+
+// LabelsCell renders labels compactly for a table cell, in key order — a
+// map's own order differs from call to call, and a watch would read that
+// as a change.
 func LabelsCell(labels map[string]string) string {
 	if len(labels) == 0 {
 		return ""
@@ -218,7 +227,30 @@ func LabelsCell(labels map[string]string) string {
 	for k, v := range labels {
 		parts = append(parts, k+"="+v)
 	}
+	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+// UserLabels drops the installation's own labels: the default table shows
+// what a person put there; -o wide (and json/yaml) keep everything.
+func UserLabels(labels map[string]string) map[string]string {
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		if !strings.HasPrefix(k, systemLabelPrefix) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// sortedKeys is the stable walk of a watch snapshot.
+func sortedKeys(rows map[string]WatchRow) []string {
+	keys := make([]string, 0, len(rows))
+	for k := range rows {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Stamp renders a nanosecond timestamp for humans.
@@ -227,6 +259,47 @@ func Stamp(unixNano int64) string {
 		return ""
 	}
 	return time.Unix(0, unixNano).Local().Format("15:04:05.000")
+}
+
+// Age renders how long ago a moment was, in kubectl's coarse units: the
+// two leading ones, never a wall of digits.
+func Age(ts *timestamppb.Timestamp) string {
+	if ts == nil {
+		return ""
+	}
+	return coarse(time.Since(ts.AsTime()))
+}
+
+// Took renders a span; an open end means "so far".
+func Took(start, end *timestamppb.Timestamp) string {
+	if start == nil {
+		return ""
+	}
+	if end == nil {
+		return coarse(time.Since(start.AsTime())) + "+"
+	}
+	return coarse(end.AsTime().Sub(start.AsTime()))
+}
+
+// When renders a moment for humans, in local time.
+func When(ts *timestamppb.Timestamp) string {
+	if ts == nil {
+		return ""
+	}
+	return ts.AsTime().Local().Format("2006-01-02 15:04:05")
+}
+
+func coarse(d time.Duration) string {
+	d = max(d, 0)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
 }
 
 // WatchRow is one list entry under watch: the table cells and the
@@ -291,7 +364,8 @@ func (f *Factory) WatchList(ctx context.Context, header []string, fetch func() (
 			}
 			first = false
 		}
-		for key, row := range cur {
+		for _, key := range sortedKeys(cur) {
+			row := cur[key]
 			old, seen := prev[key]
 			if !seen || strings.Join(old.Cols, "\x00") != strings.Join(row.Cols, "\x00") {
 				if err := emitOrLine(row, ""); err != nil {
@@ -299,7 +373,8 @@ func (f *Factory) WatchList(ctx context.Context, header []string, fetch func() (
 				}
 			}
 		}
-		for key, old := range prev {
+		for _, key := range sortedKeys(prev) {
+			old := prev[key]
 			if _, still := cur[key]; !still {
 				if err := emitOrLine(old, "deleted"); err != nil {
 					return err

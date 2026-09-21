@@ -187,10 +187,14 @@ func fetchResult(ctx context.Context, d *cmdutil.Door, runId string) ([]byte, er
 	}
 	switch connect.CodeOf(err) {
 	case connect.CodeNotFound:
-		return nil, fmt.Errorf("no run %s", runId)
+		return nil, cmdutil.NoRecord("run/" + runId)
 	case connect.CodeFailedPrecondition:
 		msg := err.Error()
 		switch {
+		// The door wraps Temporal's not-found of a run that never was
+		// into the same code as "did not complete".
+		case strings.Contains(msg, "not found"):
+			return nil, cmdutil.NoRecord("run/" + runId)
 		case strings.Contains(msg, "terminated"):
 			return nil, fmt.Errorf("run %s was terminated — no result", runId)
 		case strings.Contains(msg, "canceled"):
@@ -241,7 +245,7 @@ func newCancel(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if _, err := d.Runs.CancelRun(cmd.Context(), connect.NewRequest(&managementv1.CancelRunRequest{RunId: args[0]})); err != nil {
-				return err
+				return cmdutil.OrNoRecord(err, "run/"+args[0])
 			}
 			fmt.Fprintf(cmdutil.Out, "run %s: cancel requested (teardown still runs)\n", args[0])
 			return nil
@@ -262,7 +266,7 @@ func newStatus(f *cmdutil.Factory) *cobra.Command {
 			}
 			resp, err := d.Runs.RunStatus(cmd.Context(), connect.NewRequest(&managementv1.RunStatusRequest{RunId: args[0]}))
 			if err != nil {
-				return err
+				return cmdutil.OrNoRecord(err, "run/"+args[0])
 			}
 			msg := resp.Msg
 			fmt.Fprintf(cmdutil.Out, "run %s: %s\n", args[0], msg.GetStatus())
