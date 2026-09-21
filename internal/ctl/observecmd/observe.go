@@ -218,14 +218,24 @@ func eventLine(ev *managementv1.Event) string {
 	default:
 		styled = ui.Cyan(styled)
 	}
-	line := ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())) + "  " + styled + " " + ev.GetSubject()
+	line := ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())) + "  " + styled
+	if ev.GetSubject() != "" {
+		line += " " + ev.GetSubject()
+	}
 	if ev.GetAgent() != "" {
 		line += "  " + ui.Blue("@"+ev.GetAgent())
 	}
 	if ev.GetError() != "" {
-		line += "  " + ui.Red(ev.GetError())
+		// With no subject the error takes the subject's column.
+		gap := "  "
+		if ev.GetSubject() == "" && ev.GetAgent() == "" {
+			gap = " "
+		}
+		line += gap + ui.Red(ev.GetError())
 	}
-	return line
+	// The kind is padded to a column; with nothing after it the padding is
+	// trailing whitespace.
+	return strings.TrimRight(line, " ")
 }
 
 // logLine renders one log record: time, a three-letter level colored by
