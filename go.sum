@@ -103,8 +103,8 @@ github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db h1:097atOisP2aRj7vFgY
 github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db/go.mod h1:vavhavw2zAxS5dIdcRluK6cSGGPlZynqzFM8NdvU144=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/gopherex/schemapb/go v0.0.0-20260904155309-67a92c03b7e6 h1:oyKeKn5vdLuTODU9XX6m6n9cUXJnmKm1Tdf2/jPZoBg=
-github.com/gopherex/schemapb/go v0.0.0-20260904155309-67a92c03b7e6/go.mod h1:g9W8TC7ZZyPXKp+eQuPv612T2d0ZGs/Y+AIR2RA8KYw=
+github.com/gopherex/schemapb/go v0.0.0-20260923103231-06c47e842fa3 h1:Zc4Gk38BYziZTC1p2afYZqwcG468zrlfDI8QFoMOhoU=
+github.com/gopherex/schemapb/go v0.0.0-20260923103231-06c47e842fa3/go.mod h1:g9W8TC7ZZyPXKp+eQuPv612T2d0ZGs/Y+AIR2RA8KYw=
 github.com/gopherex/xconf v1.1.1 h1:qJryp5TIt2Jp37i7nSeX/vUKmH2emhNjlO4xApPq+QU=
 github.com/gopherex/xconf v1.1.1/go.mod h1:m1SmVHeOkFCuNHkIUCbTABsIGObgW0v5IqLntH5Ia+Q=
 github.com/gopherex/xlog v1.0.0 h1:+551tBqBWFhuqpn0yN1LGG8JvozU38dOv5Q1OQXn8mg=

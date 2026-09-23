@@ -8,7 +8,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/go-chi/cors v1.2.2
 	github.com/google/uuid v1.6.0
-	github.com/gopherex/schemapb/go v0.0.0-20260904155309-67a92c03b7e6
+	github.com/gopherex/schemapb/go v0.0.0-20260923103231-06c47e842fa3
 	github.com/gopherex/xconf v1.1.1
 	github.com/gopherex/xlog v1.0.0
 	github.com/gopherex/xprobe v1.0.0
