@@ -691,34 +691,19 @@ func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv
 	// A run's tree is ALWAYS whole: a finished run is history, and its
 	// topology after the teardown is what one comes to see.
 	withPast := req.GetIncludeDeleted() || strings.HasPrefix(req.GetOwner(), "run/")
-	roots, err := m.subtree(ctx, b, ref.OwnerRef(req.GetOwner()), withPast)
+	// Names are reused run after run (every run declares its agent/db-1),
+	// so among the DELETED records a name alone is ambiguous: the past is
+	// walked within one run — the root's, then each node's own.
+	runScope, _ := strings.CutPrefix(req.GetOwner(), "run/")
+	roots, err := m.subtree(ctx, b, ref.OwnerRef(req.GetOwner()), withPast, runScope)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return connect.NewResponse(&managementv1.TreeResponse{Roots: roots}), nil
 }
 
-func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef, withPast bool) ([]*managementv1.TreeNode, error) {
-	// An EMPTY owner asks for the forest's ROOTS: records nobody owns —
-	// agents, stands, pipelines. Ownerless is spelled BOTH ways in
-	// visibility (an absent attribute or an empty value, depending on
-	// which path upserted it), so the root query covers both.
-	query := fmt.Sprintf("(%s IS NULL OR %s = '') AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
-		wire.SearchAttrOwner.GetName(), wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
-	if owner != "" {
-		// Entity children are shown while LIVE (a closed entity workflow
-		// is a deleted record), but a run is shown at ANY status — a
-		// finished run is history, not death, and the tree is where a
-		// developer finds it under its pipeline.
-		query = fmt.Sprintf("%s = '%s' AND (ExecutionStatus = 'Running' OR %s = 'run')",
-			wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrKind.GetName())
-		if withPast {
-			// Closed entity workflows are deleted records; visibility keeps
-			// them as long as their history lives (retention), owner and
-			// phase as they were at the end.
-			query = fmt.Sprintf("%s = '%s'", wire.SearchAttrOwner.GetName(), string(owner))
-		}
-	}
+func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef, withPast bool, runScope string) ([]*managementv1.TreeNode, error) {
+	query := subtreeQuery(owner, withPast, runScope)
 	// Visibility carries everything a tree node shows; a describe per
 	// node would wake every record's worker.
 	page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
@@ -740,7 +725,11 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 			out = append(out, node)
 			continue
 		}
-		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()), withPast)
+		scope := runScope
+		if r := node.Resource.GetLabels()[syslabels.Run]; r != "" {
+			scope = r
+		}
+		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()), withPast, scope)
 		if err != nil {
 			return nil, err
 		}
@@ -748,6 +737,37 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 		out = append(out, node)
 	}
 	return out, nil
+}
+
+// subtreeQuery is the visibility query for one level of the tree.
+//
+// An EMPTY owner asks for the forest's ROOTS: records nobody owns —
+// agents, stands, pipelines. Ownerless is spelled BOTH ways in visibility
+// (an absent attribute or an empty value, depending on which path
+// upserted it), so the root query covers both.
+//
+// Under an owner, entity children are shown while LIVE (a closed entity
+// workflow is a deleted record), but a run at ANY status — a finished run
+// is history, not death, and the tree is where a developer finds it under
+// its pipeline. With the past included, closed entity workflows come too:
+// visibility keeps them as long as their history lives, owner and phase as
+// they were at the end. Names are reused run after run (every run declares
+// its agent/db-1), so among the deleted a name alone is ambiguous: the run
+// label pins the walk to one run's records.
+func subtreeQuery(owner ref.OwnerRef, withPast bool, runScope string) string {
+	if owner == "" {
+		return fmt.Sprintf("(%s IS NULL OR %s = '') AND %s IS NOT NULL AND ExecutionStatus = 'Running'",
+			wire.SearchAttrOwner.GetName(), wire.SearchAttrOwner.GetName(), entdefine.SearchAttrKind.GetName())
+	}
+	if !withPast {
+		return fmt.Sprintf("%s = '%s' AND (ExecutionStatus = 'Running' OR %s = 'run')",
+			wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrKind.GetName())
+	}
+	query := fmt.Sprintf("%s = '%s'", wire.SearchAttrOwner.GetName(), string(owner))
+	if runScope != "" {
+		query += fmt.Sprintf(" AND %s IN ('%s=%s')", entdefine.SearchAttrLabels.GetName(), syslabels.Run, runScope)
+	}
+	return query
 }
 
 // Delete tears the resource down with its subtree, deepest first.

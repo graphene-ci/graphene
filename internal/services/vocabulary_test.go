@@ -105,3 +105,15 @@ func TestListQueryDeletedLiftsTheLiveFilter(t *testing.T) {
 func selectorOf(kind, phase string) *managementv1.Selector {
 	return &managementv1.Selector{Kind: kind, Phase: phase}
 }
+
+// The tree's past is walked within one run: names are reused run after run,
+// and among the deleted a name alone would gather every run's leftovers.
+func TestSubtreeQueryScopesThePastToOneRun(t *testing.T) {
+	require.Equal(t, "EntityOwner = 'agent/db-1' AND (ExecutionStatus = 'Running' OR EntityKind = 'run')",
+		subtreeQuery("agent/db-1", false, ""), "live trees need no scope: one live record per name")
+	require.Equal(t, "EntityOwner = 'agent/db-1' AND EntityLabels IN ('graphene.io/run=nightly-1')",
+		subtreeQuery("agent/db-1", true, "nightly-1"))
+	require.Equal(t, "EntityOwner = 'stand/perf'", subtreeQuery("stand/perf", true, ""),
+		"a stand's past has no one run to pin to")
+	require.Contains(t, subtreeQuery("", true, "x"), "ExecutionStatus = 'Running'", "the forest's roots are live")
+}

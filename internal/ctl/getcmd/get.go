@@ -272,27 +272,22 @@ func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) er
 	return nil
 }
 
-// runGetOne reads one run as its listing row sees it — pipeline, status,
-// when and how long, labels. GetRun alone answers one word.
+// runGetOne reads one run as a RECORD: its row's facts and its state —
+// the result of a completed run, the error and the partial result of one
+// that did not complete.
 func runGetOne(ctx context.Context, f *cmdutil.Factory, runId string) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
 	}
-	resp, err := d.Resources.List(ctx, connect.NewRequest(&managementv1.ListRequest{
-		Query: "kind=run, id=" + runId,
-	}))
+	r, err := d.Lookup(ctx, "run/"+runId)
 	if err != nil {
 		return err
 	}
-	if len(resp.Msg.GetResources()) == 0 {
-		return cmdutil.NoRecord("run/" + runId)
-	}
-	r := resp.Msg.GetResources()[0]
-	if done, err := f.Emit(r); done || err != nil {
+	if done, err := f.Emit(&managementv1.GetResponse{Resource: r}); done || err != nil {
 		return err
 	}
-	return ui.Fields(cmdutil.Out,
+	if err := ui.Fields(cmdutil.Out,
 		[2]string{"run", ui.Bold(runId)},
 		[2]string{"pipeline", pipelineOf(r)},
 		[2]string{"status", ui.Phase(r.GetPhase())},
@@ -301,7 +296,17 @@ func runGetOne(ctx context.Context, f *cmdutil.Factory, runId string) error {
 		[2]string{"image", r.GetLabels()["graphene.io/image"]},
 		[2]string{"trigger", r.GetLabels()["graphene.io/trigger"]},
 		[2]string{"labels", cmdutil.LabelsCell(cmdutil.UserLabels(r.GetLabels()))},
-	)
+	); err != nil {
+		return err
+	}
+	folded, err := ui.Block(cmdutil.Out, "state", r.GetState())
+	if err != nil {
+		return err
+	}
+	if folded {
+		fmt.Fprintln(os.Stderr, ui.Gray("… long parts are folded; -o yaml shows the whole record"))
+	}
+	return nil
 }
 
 const pipelineLabel = "graphene.io/pipeline"

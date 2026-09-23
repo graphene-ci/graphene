@@ -6,6 +6,7 @@
 package ctl
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -126,7 +127,10 @@ func Main(args []string) int {
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, ui.Red("graphenectl:"), err)
-		if hint := hintFor(err); hint != "" {
+		// A run's own failure is the pipeline's text, not the CLI's: its
+		// "failed to connect" is about the database, not about the door.
+		var runFailed *cmdutil.RunFailedError
+		if hint := hintFor(err); hint != "" && !errors.As(err, &runFailed) {
 			fmt.Fprintln(os.Stderr, ui.Gray("  hint: "+hint))
 		}
 		return cmdutil.ExitCode(err)
