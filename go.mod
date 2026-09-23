@@ -16,7 +16,7 @@ require (
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260902105042-dd9da8e074b6
 	github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee
-	github.com/graphene-ci/pipeline v0.2.7
+	github.com/graphene-ci/pipeline v0.2.8
 	github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0
@@ -24,6 +24,7 @@ require (
 	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/cobra v1.10.2
+	github.com/stretchr/testify v1.12.0
 	go.opentelemetry.io/proto/otlp v1.11.0
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.47.0
@@ -110,7 +111,6 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
-	github.com/stretchr/testify v1.12.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
