@@ -41,6 +41,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
+	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/obs"
 	"github.com/graphene-ci/pipeline/pkg/ref"
@@ -1001,6 +1002,26 @@ func runClose(ctx context.Context, b *nsbundle.Bundle, workflowId string) (runCl
 	return out, nil
 }
 
+// flowsFromMirror reads the edges a record mirrored into visibility.
+func flowsFromMirror(keywords []string) []*managementv1.Flow {
+	return flowsOf(ownership.FlowsFromMirror(keywords))
+}
+
+// flowsOf renders ownership flows on the wire.
+func flowsOf(flows []ownership.Flow) []*managementv1.Flow {
+	if len(flows) == 0 {
+		return nil
+	}
+	out := make([]*managementv1.Flow, 0, len(flows))
+	for _, f := range flows {
+		out = append(out, &managementv1.Flow{
+			To: f.To, Protocol: string(f.Protocol), Port: int32(f.Port), //nolint:gosec // a port
+			Label: f.Label, Virtual: f.Virtual,
+		})
+	}
+	return out
+}
+
 // labelsFromPairs turns the "k=v" keyword list back into labels.
 func labelsFromPairs(pairs []string) map[string]string {
 	out := make(map[string]string, len(pairs))
@@ -1091,7 +1112,8 @@ func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowI
 		return nil, err
 	}
 	var state struct {
-		Owner string `json:"owner"`
+		Owner string           `json:"owner"`
+		Flows []ownership.Flow `json:"flows"`
 	}
 	_ = json.Unmarshal(out.State, &state)
 	kind, _, _ := strings.Cut(workflowId, "/")
@@ -1100,6 +1122,7 @@ func (m *Management) describe(ctx context.Context, b *nsbundle.Bundle, workflowI
 		Kind:              kind,
 		Phase:             out.Phase,
 		Owner:             state.Owner,
+		Flows:             flowsOf(state.Flows),
 		Spec:              out.Spec,
 		State:             out.State,
 		Labels:            out.Labels,
@@ -1172,6 +1195,11 @@ func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.R
 	}
 	res.Phase = str(entdefine.SearchAttrPhase.GetName())
 	res.Owner = str(wire.SearchAttrOwner.GetName())
+	if p, ok := fields[wire.SearchAttrFlows.GetName()]; ok {
+		var keywords []string
+		_ = dc.FromPayload(p, &keywords)
+		res.Flows = flowsFromMirror(keywords)
+	}
 	if p, ok := fields[entdefine.SearchAttrLabels.GetName()]; ok {
 		var pairs []string
 		_ = dc.FromPayload(p, &pairs)

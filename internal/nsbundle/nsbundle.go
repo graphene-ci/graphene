@@ -302,6 +302,7 @@ func (m *Manager) CreateNamespace(ctx context.Context, base client.Client, name 
 			"EntityOwner":     enums.INDEXED_VALUE_TYPE_KEYWORD,
 			"EntityLabels":    enums.INDEXED_VALUE_TYPE_KEYWORD_LIST,
 			"EntityKeepUntil": enums.INDEXED_VALUE_TYPE_DATETIME,
+			"EntityFlows":     enums.INDEXED_VALUE_TYPE_KEYWORD_LIST,
 		},
 	})
 	var alreadySA *serviceerror.AlreadyExists

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,7 +54,7 @@ func commandCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string
 
 // NewTree builds `tree`.
 func NewTree(f *cmdutil.Factory) *cobra.Command {
-	var includeDeleted bool
+	var includeDeleted, withFlows bool
 	cmd := &cobra.Command{
 		Use:   "tree [owner-ref]",
 		Short: "The ownership tree under an owner; no owner — the forest's roots",
@@ -113,7 +114,7 @@ is history. --include-deleted does the same for any other owner.`,
 			}
 			var lines []treeLine
 			for i, root := range roots {
-				lines = collectTree(lines, root, "", i == len(roots)-1, ref != "")
+				lines = collectTree(lines, root, "", i == len(roots)-1, ref != "", withFlows)
 			}
 			width := 0
 			for _, l := range lines {
@@ -128,6 +129,7 @@ is history. --include-deleted does the same for any other owner.`,
 		},
 	}
 	cmd.Flags().BoolVar(&includeDeleted, "include-deleted", false, "keep records that finished their life (phase deleted); a run's tree always has them")
+	cmd.Flags().BoolVar(&withFlows, "flows", false, "draw each record's declared edges (→ target  protocol:port  label) under it — the topology")
 	return cmd
 }
 
@@ -143,7 +145,7 @@ type treeLine struct{ name, phase, age string }
 
 // collectTree walks a node and its subtree into lines. A root of the
 // forest stands without a branch; everything under an owner hangs off one.
-func collectTree(lines []treeLine, node *managementv1.TreeNode, prefix string, last, branch bool) []treeLine {
+func collectTree(lines []treeLine, node *managementv1.TreeNode, prefix string, last, branch, withFlows bool) []treeLine {
 	r := node.GetResource()
 	own, inherit := "", ""
 	if branch {
@@ -154,12 +156,32 @@ func collectTree(lines []treeLine, node *managementv1.TreeNode, prefix string, l
 		phase: r.GetPhase(),
 		age:   cmdutil.Age(r.GetStartedAt()),
 	})
+	if withFlows {
+		// The edges hang under their source, arrows in place of branches:
+		// the protocol takes the phase column, the label the age column.
+		for _, f := range r.GetFlows() {
+			lines = append(lines, flowLine(prefix+inherit, f))
+		}
+	}
 	children := node.GetChildren()
 	sortNodes(children)
 	for i, child := range children {
-		lines = collectTree(lines, child, prefix+inherit, i == len(children)-1, true)
+		lines = collectTree(lines, child, prefix+inherit, i == len(children)-1, true, withFlows)
 	}
 	return lines
+}
+
+// flowLine renders one edge as a line of the tree.
+func flowLine(prefix string, f *managementv1.Flow) treeLine {
+	proto := f.GetProtocol()
+	if f.GetPort() > 0 {
+		proto += ":" + strconv.Itoa(int(f.GetPort()))
+	}
+	arrow := ui.Cyan("→ ")
+	if f.GetVirtual() {
+		arrow = ui.Gray("⇢ ")
+	}
+	return treeLine{name: ui.Gray(prefix) + arrow + f.GetTo(), phase: proto, age: f.GetLabel()}
 }
 
 // NewDelete builds `delete`.

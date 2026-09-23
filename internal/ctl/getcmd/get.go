@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -257,6 +258,20 @@ func (o *options) getOne(ctx context.Context, f *cmdutil.Factory, ref string) er
 		[2]string{"deletion", deleting},
 	); err != nil {
 		return err
+	}
+	if flows := r.GetFlows(); len(flows) > 0 {
+		fmt.Fprintln(cmdutil.Out, ui.Bold(ui.Gray("flows:")))
+		for _, f := range flows {
+			proto := f.GetProtocol()
+			if f.GetPort() > 0 {
+				proto += ":" + strconv.Itoa(int(f.GetPort()))
+			}
+			arrow := ui.Cyan("→")
+			if f.GetVirtual() {
+				arrow = ui.Gray("⇢")
+			}
+			fmt.Fprintf(cmdutil.Out, "  %s %s  %s  %s\n", arrow, ui.Ref(f.GetTo()), ui.Cyan(proto), ui.Gray(f.GetLabel()))
+		}
 	}
 	specFolded, err := ui.Block(cmdutil.Out, "spec", r.GetSpec())
 	if err != nil {

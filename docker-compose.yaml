@@ -37,6 +37,8 @@ services:
       - EntityLabels=KeywordList
       - --search-attribute
       - EntityKeepUntil=Datetime
+      - --search-attribute
+      - EntityFlows=KeywordList
     volumes:
       - temporal-data:/data
     # The named volume is root-owned; the dev server just needs to

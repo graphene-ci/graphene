@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/sdk/converter"
 
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 func visibilityRow(t *testing.T, workflowId string, status enums.WorkflowExecutionStatus, attrs map[string]any) *workflowpb.WorkflowExecutionInfo {
@@ -116,4 +117,18 @@ func TestSubtreeQueryScopesThePastToOneRun(t *testing.T) {
 	require.Equal(t, "EntityOwner = 'stand/perf'", subtreeQuery("stand/perf", true, ""),
 		"a stand's past has no one run to pin to")
 	require.Contains(t, subtreeQuery("", true, "x"), "ExecutionStatus = 'Running'", "the forest's roots are live")
+}
+
+// A record's edges ride in visibility: a row carries them, deleted or not.
+func TestVisibilityRowCarriesFlows(t *testing.T) {
+	row := resourceFromVisibility(visibilityRow(t, "docker/vmagent", enums.WORKFLOW_EXECUTION_STATUS_COMPLETED, map[string]any{
+		entdefine.SearchAttrPhase.GetName(): "deleted",
+		wire.SearchAttrFlows.GetName():      []string{"agent/db-1|prometheus_pull|9100|node metrics|", "graphene-server|remote_write|||1", "junk"},
+	}))
+	require.Len(t, row.GetFlows(), 2)
+	require.Equal(t, "agent/db-1", row.GetFlows()[0].GetTo())
+	require.Equal(t, int32(9100), row.GetFlows()[0].GetPort())
+	require.Equal(t, "node metrics", row.GetFlows()[0].GetLabel())
+	require.True(t, row.GetFlows()[1].GetVirtual())
+	require.Equal(t, "deleted", row.GetPhase())
 }

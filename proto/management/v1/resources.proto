@@ -140,6 +140,28 @@ message Resource {
   // while the workflow is open.
   google.protobuf.Timestamp started_at = 10;
   google.protobuf.Timestamp finished_at = 11;
+  // Flows are the record's declared OUTGOING edges — who it talks to and
+  // how — mirrored from its state into visibility, so a listing or a tree
+  // carries them for live and deleted records alike: the topology of a
+  // finished run is drawn from its tree. Declared intent, not verified
+  // traffic.
+  repeated Flow flows = 13;
+}
+
+// Flow is one declared edge from a record to a target.
+message Flow {
+  // To is a record ref ("agent/db-1") or an external endpoint.
+  string to = 1;
+  // Protocol names how: tcp, http, grpc, otlp, prometheus_pull, ... —
+  // an open vocabulary.
+  string protocol = 2;
+  // Port on the target; 0 when the protocol needs none.
+  int32 port = 3;
+  // Label is the human note on the edge ("logs", "postgres").
+  string label = 4;
+  // Virtual marks a system edge that always exists (agent↔server), not
+  // one the user declared.
+  bool virtual = 5;
 }
 
 message ListResponse {
