@@ -26,6 +26,7 @@ import (
 // New builds one observe verb.
 func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 	var follow bool
+	var kinds []string
 	cmd := &cobra.Command{
 		Use:   dim + " <kind> <id>",
 		Short: short,
@@ -54,10 +55,13 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			if err != nil || len(rest) != 0 {
 				return fmt.Errorf("usage: %s <kind> <id>, or %s '<backend query>'", dim, dim)
 			}
-			return Run(cmd.Context(), f, dim, ref, follow, window)
+			return Run(cmd.Context(), f, dim, ref, follow, window, kinds...)
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep streaming live entries (push from the collector, no polling)")
+	if dim == "events" {
+		cmd.Flags().StringSliceVar(&kinds, "kind", nil, "only these event kinds (repeatable): note, activity-failed, run-failed, ...")
+	}
 	if dim == "metrics" {
 		BindWindowFlags(cmd)
 	}
@@ -67,7 +71,7 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 // Run executes one dimension read — the shared engine of the verb
 // form ("gctl logs pipeline/x") and the resource-first form
 // ("gctl pipeline/x logs").
-func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, window Window) error {
+func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, window Window, kinds ...string) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
@@ -75,7 +79,7 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 	switch dim {
 	case "events":
 		stream, err := d.Observe.Events(ctx, connect.NewRequest(&managementv1.EventsRequest{
-			Ref: ref, Follow: follow,
+			Ref: ref, Follow: follow, Kinds: kinds,
 		}))
 		if err != nil {
 			return err
@@ -215,12 +219,23 @@ func eventLine(ev *managementv1.Event) string {
 		styled = ui.Purple(styled)
 	case strings.HasPrefix(kind, "internal-"):
 		styled = ui.Gray(styled)
+	case kind == "note":
+		// A milestone the pipeline chose to say: the one line in a
+		// history written by a person, not the machinery.
+		styled = ui.Bold(ui.Cyan(styled))
 	default:
 		styled = ui.Cyan(styled)
 	}
 	line := ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())) + "  " + styled
 	if ev.GetSubject() != "" {
-		line += " " + ev.GetSubject()
+		subject := ev.GetSubject()
+		if kind == "note" {
+			subject = ui.Bold(subject)
+		}
+		line += " " + subject
+	}
+	if kind == "note" && len(ev.GetInput()) > 0 && string(ev.GetInput()) != "null" {
+		line += "  " + ui.Gray(ui.Cut(string(ev.GetInput()), 120))
 	}
 	if ev.GetAgent() != "" {
 		line += "  " + ui.Blue("@"+ev.GetAgent())

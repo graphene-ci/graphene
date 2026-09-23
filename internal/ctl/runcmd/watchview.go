@@ -121,7 +121,7 @@ func richWatch(ctx context.Context, d *cmdutil.Door, runId string, opts watchOpt
 
 func terminalStatus(s string) bool {
 	switch s {
-	case "", "Running":
+	case "", "running":
 		return false
 	}
 	return true

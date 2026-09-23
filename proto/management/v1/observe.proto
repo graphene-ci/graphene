@@ -51,6 +51,9 @@ message EventsRequest {
   bool follow = 3;
   // ActivityId slices the stream to one activity execution.
   string activity_id = 4;
+  // Kinds keeps only events of these kinds ("note", "activity-failed",
+  // ...); empty keeps everything.
+  repeated string kinds = 5;
 }
 
 message Event {
@@ -58,11 +61,12 @@ message Event {
   int64 event_id = 1;
   int64 time_unix_nano = 2;
   // Kind classifies for rendering: run-started, activity-scheduled,
-  // activity-completed, activity-failed, command-received,
-  // internal-<type>, ... Nothing is omitted — unclassified history
-  // events pass through as internal-*.
+  // activity-completed, activity-failed, command-received, note (a
+  // milestone the pipeline emitted), internal-<type>, ... Nothing is
+  // omitted — unclassified history events pass through as internal-*.
   string kind = 3;
-  // Subject: the activity/command name the event is about.
+  // Subject: the activity/command name the event is about; a note's
+  // own name.
   string subject = 4;
   // Agent executing it, when the task queue names one.
   string agent = 5;

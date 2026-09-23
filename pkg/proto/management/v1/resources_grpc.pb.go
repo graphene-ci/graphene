@@ -28,6 +28,7 @@ const (
 	ResourcesAPI_Count_FullMethodName      = "/graphene.management.v1.ResourcesAPI/Count"
 	ResourcesAPI_CountOwned_FullMethodName = "/graphene.management.v1.ResourcesAPI/CountOwned"
 	ResourcesAPI_Get_FullMethodName        = "/graphene.management.v1.ResourcesAPI/Get"
+	ResourcesAPI_GetMany_FullMethodName    = "/graphene.management.v1.ResourcesAPI/GetMany"
 	ResourcesAPI_Tree_FullMethodName       = "/graphene.management.v1.ResourcesAPI/Tree"
 	ResourcesAPI_Delete_FullMethodName     = "/graphene.management.v1.ResourcesAPI/Delete"
 	ResourcesAPI_Transfer_FullMethodName   = "/graphene.management.v1.ResourcesAPI/Transfer"
@@ -55,6 +56,10 @@ type ResourcesAPIClient interface {
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
+	// GetMany describes several records in one call — the full records
+	// (spec and state) a listing does not carry. Refs that do not exist
+	// are left out of the answer and named in `missing`.
+	GetMany(ctx context.Context, in *GetManyRequest, opts ...grpc.CallOption) (*GetManyResponse, error)
 	// Tree returns the ownership subtree under an owner, parents before
 	// children.
 	Tree(ctx context.Context, in *TreeRequest, opts ...grpc.CallOption) (*TreeResponse, error)
@@ -119,6 +124,16 @@ func (c *resourcesAPIClient) Get(ctx context.Context, in *GetRequest, opts ...gr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetResponse)
 	err := c.cc.Invoke(ctx, ResourcesAPI_Get_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcesAPIClient) GetMany(ctx context.Context, in *GetManyRequest, opts ...grpc.CallOption) (*GetManyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetManyResponse)
+	err := c.cc.Invoke(ctx, ResourcesAPI_GetMany_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +228,10 @@ type ResourcesAPIServer interface {
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *GetRequest) (*GetResponse, error)
+	// GetMany describes several records in one call — the full records
+	// (spec and state) a listing does not carry. Refs that do not exist
+	// are left out of the answer and named in `missing`.
+	GetMany(context.Context, *GetManyRequest) (*GetManyResponse, error)
 	// Tree returns the ownership subtree under an owner, parents before
 	// children.
 	Tree(context.Context, *TreeRequest) (*TreeResponse, error)
@@ -254,6 +273,9 @@ func (UnimplementedResourcesAPIServer) CountOwned(context.Context, *CountOwnedRe
 }
 func (UnimplementedResourcesAPIServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedResourcesAPIServer) GetMany(context.Context, *GetManyRequest) (*GetManyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMany not implemented")
 }
 func (UnimplementedResourcesAPIServer) Tree(context.Context, *TreeRequest) (*TreeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Tree not implemented")
@@ -362,6 +384,24 @@ func _ResourcesAPI_Get_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ResourcesAPIServer).Get(ctx, req.(*GetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcesAPI_GetMany_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetManyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesAPIServer).GetMany(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcesAPI_GetMany_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesAPIServer).GetMany(ctx, req.(*GetManyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -489,6 +529,10 @@ var ResourcesAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _ResourcesAPI_Get_Handler,
+		},
+		{
+			MethodName: "GetMany",
+			Handler:    _ResourcesAPI_GetMany_Handler,
 		},
 		{
 			MethodName: "Tree",

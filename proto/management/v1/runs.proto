@@ -69,8 +69,14 @@ message RunResultRequest {
 }
 
 message RunResultResponse {
-  // Result is the run's typed Result as JSON.
+  // Result is the run's typed Result as JSON. For a run that did not
+  // complete it is the PARTIAL result the pipeline collected before it
+  // failed — empty when it collected nothing.
   bytes result = 1;
+  // Error is the failure message of a run that did not complete; empty
+  // for a completed run. Both fields are the run's state, read here as
+  // a shortcut.
+  string error = 2;
 }
 
 message CancelRunRequest {
@@ -84,7 +90,8 @@ message RunStatusRequest {
 }
 
 message RunStatusResponse {
-  // Status is the workflow's execution status (Running, Completed, ...).
+  // Status is the run's phase, lowercase like every record's: running,
+  // completed, failed, canceled, terminated, timed-out.
   string status = 1;
   // Pending are the activities the run is currently waiting on — empty
   // when nothing is in flight (between steps, or terminal).

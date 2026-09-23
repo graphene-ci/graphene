@@ -53,12 +53,15 @@ func commandCompletion(f *cmdutil.Factory) func(*cobra.Command, []string, string
 
 // NewTree builds `tree`.
 func NewTree(f *cmdutil.Factory) *cobra.Command {
-	return &cobra.Command{
+	var includeDeleted bool
+	cmd := &cobra.Command{
 		Use:   "tree [owner-ref]",
 		Short: "The ownership tree under an owner; no owner — the forest's roots",
 		Long: `The ownership tree under one owner: the recursive walk cascade
 deletion uses, read-only — what dies with this owner. With no owner,
-the roots of the forest: every record nobody owns, with its subtree.`,
+the roots of the forest: every record nobody owns, with its subtree.
+A run's tree is always whole, deleted records included: a finished run
+is history. --include-deleted does the same for any other owner.`,
 		Args:              cobra.RangeArgs(0, 2),
 		ValidArgsFunction: targetCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,7 +78,7 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 			if err != nil {
 				return err
 			}
-			resp, err := d.Resources.Tree(cmd.Context(), connect.NewRequest(&managementv1.TreeRequest{Owner: ref}))
+			resp, err := d.Resources.Tree(cmd.Context(), connect.NewRequest(&managementv1.TreeRequest{Owner: ref, IncludeDeleted: includeDeleted}))
 			if err != nil {
 				return err
 			}
@@ -100,7 +103,11 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 					return err
 				}
 				if len(roots) == 0 {
-					fmt.Fprintln(os.Stderr, ui.Gray("└─ nothing live is owned by "+ref))
+					what := "nothing live is owned by " + ref
+					if includeDeleted || strings.HasPrefix(ref, "run/") {
+						what = "nothing was ever owned by " + ref
+					}
+					fmt.Fprintln(os.Stderr, ui.Gray("└─ "+what))
 					return nil
 				}
 			}
@@ -120,6 +127,8 @@ the roots of the forest: every record nobody owns, with its subtree.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&includeDeleted, "include-deleted", false, "keep records that finished their life (phase deleted); a run's tree always has them")
+	return cmd
 }
 
 func sortNodes(nodes []*managementv1.TreeNode) {
@@ -177,7 +186,7 @@ down, then the record reaches deleted. Owned children die first.`,
 
 const (
 	phaseDeleted = "deleted"
-	runRunning   = "Running"
+	runRunning   = "running"
 )
 
 func runDelete(ctx context.Context, f *cmdutil.Factory, ref string, wait bool) error {

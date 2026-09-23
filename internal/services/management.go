@@ -276,7 +276,7 @@ func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managemen
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 	return connect.NewResponse(&managementv1.GetRunResponse{
-		Status: desc.GetWorkflowExecutionInfo().GetStatus().String(),
+		Status: selector.RunPhase(desc.GetWorkflowExecutionInfo().GetStatus()),
 	}), nil
 }
 
@@ -295,7 +295,7 @@ func (m *Management) RunStatus(ctx context.Context, creq *connect.Request[manage
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 	out := &managementv1.RunStatusResponse{
-		Status: desc.GetWorkflowExecutionInfo().GetStatus().String(),
+		Status: selector.RunPhase(desc.GetWorkflowExecutionInfo().GetStatus()),
 	}
 	// Pending activities are only meaningful while the run is RUNNING. A
 	// closed run (Completed/Failed/Canceled/Terminated) can still carry a
@@ -334,26 +334,26 @@ func (m *Management) WatchRun(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return err
 	}
-	return watchRunCore(ctx, b, creq.Msg.GetRunId(), func(s string) error {
-		return stream.Send(&managementv1.WatchRunEvent{Status: s})
+	return watchRunCore(ctx, b, creq.Msg.GetRunId(), func(s enums.WorkflowExecutionStatus) error {
+		return stream.Send(&managementv1.WatchRunEvent{Status: selector.RunPhase(s)})
 	})
 }
 
 // watchRunCore polls the run's status and pushes every transition into
 // send, ending on a terminal status. Shared by both doors.
-func watchRunCore(ctx context.Context, b *nsbundle.Bundle, runId string, send func(status string) error) error {
-	last := ""
+func watchRunCore(ctx context.Context, b *nsbundle.Bundle, runId string, send func(enums.WorkflowExecutionStatus) error) error {
+	last := enums.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED
 	for {
 		desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
 		if err != nil {
 			return status.Error(codes.NotFound, err.Error())
 		}
 		s := desc.GetWorkflowExecutionInfo().GetStatus()
-		if name := s.String(); name != last {
-			if err := send(name); err != nil {
+		if s != last {
+			if err := send(s); err != nil {
 				return err
 			}
-			last = name
+			last = s
 		}
 		if s != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
 			return nil
@@ -373,16 +373,11 @@ func (m *Management) RunResult(ctx context.Context, creq *connect.Request[manage
 	if err != nil {
 		return nil, err
 	}
-	var out json.RawMessage
-	if err := b.Client.GetWorkflow(ctx, "run/"+req.GetRunId(), "").Get(ctx, &out); err != nil {
-		// A run that never was is not a run that did not complete.
-		var notFound *serviceerror.NotFound
-		if errors.As(err, &notFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	close, err := runClose(ctx, b, "run/"+req.GetRunId())
+	if err != nil {
+		return nil, err
 	}
-	return connect.NewResponse(&managementv1.RunResultResponse{Result: out}), nil
+	return connect.NewResponse(&managementv1.RunResultResponse{Result: close.Result, Error: close.Error}), nil
 }
 
 // CancelRun asks the run to stop; the guaranteed-teardown path runs.
@@ -443,7 +438,11 @@ func listQuery(query string, sel *managementv1.Selector) (string, error) {
 	// runs are filtered by status, and never hidden once closed.
 	if sel.GetKind() == "run" {
 		if sel.GetPhase() != "" {
-			out += fmt.Sprintf(" AND ExecutionStatus = '%s'", sel.GetPhase())
+			execStatus, err := selector.ExecutionStatus(sel.GetPhase())
+			if err != nil {
+				return "", err
+			}
+			out += fmt.Sprintf(" AND ExecutionStatus = '%s'", execStatus)
 		}
 		if owner := sel.GetOwner(); owner != "" {
 			out += fmt.Sprintf(" AND %s = '%s'", wire.SearchAttrOwner.GetName(), owner)
@@ -465,7 +464,10 @@ func listQuery(query string, sel *managementv1.Selector) (string, error) {
 		return "", err
 	}
 	out += labelTerms
-	out += ` AND ExecutionStatus = 'Running'`
+	// Live records — unless the deleted ones were asked for by name.
+	if sel.GetPhase() != selector.PhaseDeleted {
+		out += ` AND ExecutionStatus = 'Running'`
+	}
 	return out, nil
 }
 
@@ -631,6 +633,54 @@ func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1
 	return connect.NewResponse(&managementv1.GetResponse{Resource: res}), nil
 }
 
+// GetMany describes several records in one call: the full records a
+// listing does not carry, without a round trip per ref. Refs that do not
+// exist are named in the answer, not failed on.
+func (m *Management) GetMany(ctx context.Context, creq *connect.Request[managementv1.GetManyRequest]) (*connect.Response[managementv1.GetManyResponse], error) {
+	refs := creq.Msg.GetRefs()
+	if len(refs) > 100 {
+		return nil, status.Error(codes.InvalidArgument, "at most 100 refs per call")
+	}
+	// Every ref is authorized on its own kind before anything is read.
+	var b *nsbundle.Bundle
+	for _, r := range refs {
+		bundle, err := m.allow(ctx, authz.VerbGet, authz.KindOf(r))
+		if err != nil {
+			return nil, err
+		}
+		b = bundle
+	}
+	found := make([]*managementv1.Resource, len(refs))
+	var mu sync.Mutex
+	var missing []string
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+	for i, r := range refs {
+		g.Go(func() error {
+			res, err := m.describe(gctx, b, r)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				missing = append(missing, r)
+				return nil
+			}
+			found[i] = res
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &managementv1.GetManyResponse{Missing: missing}
+	for _, res := range found {
+		if res != nil {
+			out.Resources = append(out.Resources, res)
+		}
+	}
+	sort.Strings(out.Missing)
+	return connect.NewResponse(out), nil
+}
+
 // Tree returns the ownership subtree under an owner.
 func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv1.TreeRequest]) (*connect.Response[managementv1.TreeResponse], error) {
 	req := creq.Msg
@@ -638,14 +688,17 @@ func (m *Management) Tree(ctx context.Context, creq *connect.Request[managementv
 	if err != nil {
 		return nil, err
 	}
-	roots, err := m.subtree(ctx, b, ref.OwnerRef(req.GetOwner()))
+	// A run's tree is ALWAYS whole: a finished run is history, and its
+	// topology after the teardown is what one comes to see.
+	withPast := req.GetIncludeDeleted() || strings.HasPrefix(req.GetOwner(), "run/")
+	roots, err := m.subtree(ctx, b, ref.OwnerRef(req.GetOwner()), withPast)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return connect.NewResponse(&managementv1.TreeResponse{Roots: roots}), nil
 }
 
-func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef) ([]*managementv1.TreeNode, error) {
+func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.OwnerRef, withPast bool) ([]*managementv1.TreeNode, error) {
 	// An EMPTY owner asks for the forest's ROOTS: records nobody owns —
 	// agents, stands, pipelines. Ownerless is spelled BOTH ways in
 	// visibility (an absent attribute or an empty value, depending on
@@ -659,6 +712,12 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 		// developer finds it under its pipeline.
 		query = fmt.Sprintf("%s = '%s' AND (ExecutionStatus = 'Running' OR %s = 'run')",
 			wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrKind.GetName())
+		if withPast {
+			// Closed entity workflows are deleted records; visibility keeps
+			// them as long as their history lives (retention), owner and
+			// phase as they were at the end.
+			query = fmt.Sprintf("%s = '%s'", wire.SearchAttrOwner.GetName(), string(owner))
+		}
 	}
 	// Visibility carries everything a tree node shows; a describe per
 	// node would wake every record's worker.
@@ -681,7 +740,7 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 			out = append(out, node)
 			continue
 		}
-		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()))
+		grand, err := m.subtree(ctx, b, ref.OwnerRef(node.Resource.GetRef()), withPast)
 		if err != nil {
 			return nil, err
 		}
@@ -834,11 +893,12 @@ func (m *Management) describeRun(ctx context.Context, b *nsbundle.Bundle, workfl
 	}
 	info := desc.GetWorkflowExecutionInfo()
 	res := &managementv1.Resource{
-		Ref:       workflowId,
-		Kind:      "run",
-		Phase:     info.GetStatus().String(),
-		Owner:     "pipeline/" + info.GetType().GetName(),
-		StartedAt: info.GetStartTime(),
+		Ref:        workflowId,
+		Kind:       "run",
+		Phase:      selector.RunPhase(info.GetStatus()),
+		Owner:      "pipeline/" + info.GetType().GetName(),
+		StartedAt:  info.GetStartTime(),
+		FinishedAt: info.GetCloseTime(),
 	}
 	if fields := info.GetSearchAttributes().GetIndexedFields(); fields != nil {
 		dc := converter.GetDefaultDataConverter()
@@ -866,13 +926,59 @@ func (m *Management) describeRun(ctx context.Context, b *nsbundle.Bundle, workfl
 		}
 		return res, nil
 	}
-	// A finished run left its result in its history; reading it needs
-	// no worker.
-	var result json.RawMessage
-	if err := b.Client.GetWorkflow(ctx, workflowId, "").Get(ctx, &result); err == nil && len(result) > 0 {
-		res.State = result
+	// A finished run's state is what its close left: the result, or the
+	// error with the partial result. Reading it needs no worker.
+	if close, err := runClose(ctx, b, workflowId); err == nil {
+		res.State, _ = json.Marshal(close)
 	}
 	return res, nil
+}
+
+// runCloseState is the state dimension of a closed run.
+type runCloseState struct {
+	// Result is the run's typed result — whole for a completed run, what
+	// the pipeline had collected for one that failed.
+	Result json.RawMessage `json:"result,omitempty"`
+	// Error is why the run did not complete; empty for a completed one.
+	Error string `json:"error,omitempty"`
+}
+
+// runClose reads a closed run from its close event. A failed run closes
+// with the pipeline's ApplicationError whose details are the partial
+// result; a canceled or terminated one leaves only the word.
+func runClose(ctx context.Context, b *nsbundle.Bundle, workflowId string) (runCloseState, error) {
+	var out runCloseState
+	err := b.Client.GetWorkflow(ctx, workflowId, "").Get(ctx, &out.Result)
+	if err == nil {
+		return out, nil
+	}
+	var notFound *serviceerror.NotFound
+	if errors.As(err, &notFound) {
+		return out, status.Error(codes.NotFound, err.Error())
+	}
+	var app *temporal.ApplicationError
+	var canceled *temporal.CanceledError
+	var terminated *temporal.TerminatedError
+	var timedOut *temporal.TimeoutError
+	switch {
+	case errors.As(err, &app):
+		out.Error = app.Message()
+		if app.HasDetails() {
+			var partial json.RawMessage
+			if app.Details(&partial) == nil && len(partial) > 0 && string(partial) != "null" {
+				out.Result = partial
+			}
+		}
+	case errors.As(err, &canceled):
+		out.Error = "run canceled"
+	case errors.As(err, &terminated):
+		out.Error = "run terminated"
+	case errors.As(err, &timedOut):
+		out.Error = "run timed out"
+	default:
+		out.Error = err.Error()
+	}
+	return out, nil
 }
 
 // labelsFromPairs turns the "k=v" keyword list back into labels.
@@ -1062,11 +1168,15 @@ func resourceFromVisibility(e *workflowpb.WorkflowExecutionInfo) *managementv1.R
 	// A run row is a workflow, not an entity record: its phase is the
 	// execution status and the pipeline rides as a synthetic label.
 	if kind == selector.KindRun {
-		res.Phase = e.GetStatus().String()
+		res.Phase = selector.RunPhase(e.GetStatus())
 		if res.Labels == nil {
 			res.Labels = map[string]string{}
 		}
 		res.Labels["graphene.io/pipeline"] = e.GetType().GetName()
+	} else if e.GetStatus() != enums.WORKFLOW_EXECUTION_STATUS_RUNNING && res.Phase != selector.PhaseDeleted && res.Phase != "delete-failed" {
+		// A closed entity workflow IS a deleted record, whatever phase its
+		// last upsert managed to leave behind.
+		res.Phase = selector.PhaseDeleted
 	}
 	return res
 }

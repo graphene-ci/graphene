@@ -25,6 +25,10 @@ service ResourcesAPI {
   // Get describes one resource: phase, spec, state — works even after
   // the record closed.
   rpc Get(GetRequest) returns (GetResponse);
+  // GetMany describes several records in one call — the full records
+  // (spec and state) a listing does not carry. Refs that do not exist
+  // are left out of the answer and named in `missing`.
+  rpc GetMany(GetManyRequest) returns (GetManyResponse);
   // Tree returns the ownership subtree under an owner, parents before
   // children.
   rpc Tree(TreeRequest) returns (TreeResponse);
@@ -155,6 +159,21 @@ message GetResponse {
 message TreeRequest {
   // Owner to start from: "run/x", "stand/p", or a resource ref.
   string owner = 1;
+  // IncludeDeleted keeps records that finished their life in the tree,
+  // with phase "deleted", as far back as the namespace's retention. The
+  // tree of a RUN always includes them: a finished run is history, and
+  // its topology is what one comes to see.
+  bool include_deleted = 2;
+}
+
+message GetManyRequest {
+  repeated string refs = 1;
+}
+
+message GetManyResponse {
+  repeated Resource resources = 1;
+  // Missing names the refs that answered "no record".
+  repeated string missing = 2;
 }
 
 // TreeNode is one resource with its children.

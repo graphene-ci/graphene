@@ -55,7 +55,7 @@ other (get run); the listing then shows run columns.`,
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVarP(&o.phase, "phase", "p", "", "lifecycle filter: a record phase (creating, ready, ...) or a run status (Running, Completed, ...)")
+	fl.StringVarP(&o.phase, "phase", "p", "", "phase filter: creating, ready, deleted, ... for records; running, completed, failed, canceled, terminated, timed-out for runs")
 	fl.StringVar(&o.owner, "owner", "", "owner ref filter (run/x, stand/p, agent/vm-1)")
 	fl.StringToStringVarP(&o.labels, "selector", "l", nil, "label selector k=v (repeatable)")
 	fl.BoolVarP(&o.watch, "watch", "w", false, "watch: print the snapshot, then only changes")

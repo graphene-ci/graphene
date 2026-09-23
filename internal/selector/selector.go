@@ -193,8 +193,12 @@ func Compile(q Query, now time.Time) (string, error) {
 		default:
 			terms = append(terms, fmt.Sprintf("EntityKind IN (%s)", quoteList(kinds)))
 		}
-		// Entity listings see LIVE records, same as the structural path.
-		terms = append(terms, `ExecutionStatus = 'Running'`)
+		// Entity listings see LIVE records, same as the structural path —
+		// unless the selector asks for the deleted ones by name: then
+		// EntityPhase alone decides, and the closed workflows come back.
+		if !asksDeleted(q) {
+			terms = append(terms, `ExecutionStatus = 'Running'`)
+		}
 	}
 	for _, t := range q.Terms {
 		if t.Field == fieldKind {
@@ -263,11 +267,20 @@ func compileTerm(t Term, runMode bool, now time.Time) (string, error) {
 			return "", fmt.Errorf("id supports =, =^, in")
 		}
 	case fieldPhase:
-		field := "EntityPhase"
-		if runMode {
-			field = "ExecutionStatus"
+		if !runMode {
+			return equality("EntityPhase", t)
 		}
-		return equality(field, t)
+		// A run's phase is spoken in the one vocabulary and indexed in
+		// Temporal's: translate every value.
+		translated := Term{Field: t.Field, Op: t.Op, Values: make([]string, len(t.Values))}
+		for i, v := range t.Values {
+			status, err := ExecutionStatus(v)
+			if err != nil {
+				return "", err
+			}
+			translated.Values[i] = status
+		}
+		return equality("ExecutionStatus", translated)
 	case fieldOwner:
 		if runMode {
 			return "", fmt.Errorf("owner does not apply to kind=run")
@@ -300,6 +313,22 @@ func compileTerm(t Term, runMode bool, now time.Time) (string, error) {
 		return fmt.Sprintf("%s %s '%s'", field, t.Op, at.Format(time.RFC3339)), nil
 	}
 	return "", fmt.Errorf("unknown field %q", t.Field)
+}
+
+// asksDeleted reports whether a phase term names deleted records: a
+// listing that asks for them must not filter them out as closed.
+func asksDeleted(q Query) bool {
+	for _, t := range q.Terms {
+		if t.Field != fieldPhase {
+			continue
+		}
+		for _, v := range t.Values {
+			if v == PhaseDeleted {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func equality(field string, t Term) (string, error) {

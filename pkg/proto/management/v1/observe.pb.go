@@ -137,7 +137,10 @@ type EventsRequest struct {
 	// closes (or forever, for a living entity).
 	Follow bool `protobuf:"varint,3,opt,name=follow,proto3" json:"follow,omitempty"`
 	// ActivityId slices the stream to one activity execution.
-	ActivityId    string `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
+	ActivityId string `protobuf:"bytes,4,opt,name=activity_id,json=activityId,proto3" json:"activity_id,omitempty"`
+	// Kinds keeps only events of these kinds ("note", "activity-failed",
+	// ...); empty keeps everything.
+	Kinds         []string `protobuf:"bytes,5,rep,name=kinds,proto3" json:"kinds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,17 +203,25 @@ func (x *EventsRequest) GetActivityId() string {
 	return ""
 }
 
+func (x *EventsRequest) GetKinds() []string {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
 type Event struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// EventId is the stable cursor: the Temporal history event id.
 	EventId      int64 `protobuf:"varint,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	TimeUnixNano int64 `protobuf:"varint,2,opt,name=time_unix_nano,json=timeUnixNano,proto3" json:"time_unix_nano,omitempty"`
 	// Kind classifies for rendering: run-started, activity-scheduled,
-	// activity-completed, activity-failed, command-received,
-	// internal-<type>, ... Nothing is omitted — unclassified history
-	// events pass through as internal-*.
+	// activity-completed, activity-failed, command-received, note (a
+	// milestone the pipeline emitted), internal-<type>, ... Nothing is
+	// omitted — unclassified history events pass through as internal-*.
 	Kind string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	// Subject: the activity/command name the event is about.
+	// Subject: the activity/command name the event is about; a note's
+	// own name.
 	Subject string `protobuf:"bytes,4,opt,name=subject,proto3" json:"subject,omitempty"`
 	// Agent executing it, when the task queue names one.
 	Agent   string `protobuf:"bytes,5,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -926,13 +937,14 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"l\n" +
 	"\x14ObserveStateResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12<\n" +
-	"\bresource\x18\x02 \x01(\v2 .graphene.management.v1.ResourceR\bresource\"\x80\x01\n" +
+	"\bresource\x18\x02 \x01(\v2 .graphene.management.v1.ResourceR\bresource\"\x96\x01\n" +
 	"\rEventsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12$\n" +
 	"\x0eafter_event_id\x18\x02 \x01(\x03R\fafterEventId\x12\x16\n" +
 	"\x06follow\x18\x03 \x01(\bR\x06follow\x12\x1f\n" +
 	"\vactivity_id\x18\x04 \x01(\tR\n" +
-	"activityId\"\xb5\x02\n" +
+	"activityId\x12\x14\n" +
+	"\x05kinds\x18\x05 \x03(\tR\x05kinds\"\xb5\x02\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x03R\aeventId\x12$\n" +
 	"\x0etime_unix_nano\x18\x02 \x01(\x03R\ftimeUnixNano\x12\x12\n" +

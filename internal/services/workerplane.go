@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.temporal.io/api/enums/v1"
 	"io"
 	"os"
 	"strings"
@@ -280,8 +281,11 @@ func (w *WorkerPlane) WatchRun(req *workerplanev1.WatchRunRequest, stream worker
 	if err != nil {
 		return err
 	}
-	return watchRunCore(stream.Context(), b, req.GetRunId(), func(s string) error {
-		return stream.Send(&workerplanev1.WatchRunEvent{Status: s})
+	// The worker plane keeps Temporal's own names: the pipeline binary's
+	// `run` command reads them, and binaries in the field predate the
+	// management vocabulary.
+	return watchRunCore(stream.Context(), b, req.GetRunId(), func(s enums.WorkflowExecutionStatus) error {
+		return stream.Send(&workerplanev1.WatchRunEvent{Status: s.String()})
 	})
 }
 

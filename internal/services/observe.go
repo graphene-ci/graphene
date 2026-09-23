@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +23,12 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/graphene-ci/temporal-entity/pkg/entity"
+
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/graphene/internal/selector"
 	"github.com/graphene-ci/graphene/internal/telemetry"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 )
@@ -166,6 +170,9 @@ func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1
 			continue
 		}
 		if req.GetActivityId() != "" && !belongsTo(he, sched, req.GetActivityId()) {
+			continue
+		}
+		if len(req.GetKinds()) > 0 && !slices.Contains(req.GetKinds(), ev.GetKind()) {
 			continue
 		}
 		if err := stream.Send(ev); err != nil {
@@ -442,18 +449,18 @@ func translate(he *historypb.HistoryEvent, sched map[int64]*historypb.ActivityTa
 		ev.Input = payloadsJSON(he.GetWorkflowExecutionStartedEventAttributes().GetInput())
 	case he.GetWorkflowExecutionCompletedEventAttributes() != nil:
 		ev.Kind = "run-completed"
-		ev.Status = "Completed"
+		ev.Status = selector.PhaseCompleted
 		ev.Result = payloadsJSON(he.GetWorkflowExecutionCompletedEventAttributes().GetResult())
 	case he.GetWorkflowExecutionFailedEventAttributes() != nil:
 		ev.Kind = "run-failed"
-		ev.Status = "Failed"
+		ev.Status = selector.PhaseFailed
 		ev.Error = he.GetWorkflowExecutionFailedEventAttributes().GetFailure().GetMessage()
 	case he.GetWorkflowExecutionCanceledEventAttributes() != nil:
 		ev.Kind = "run-canceled"
-		ev.Status = "Canceled"
+		ev.Status = selector.PhaseCanceled
 	case he.GetWorkflowExecutionTerminatedEventAttributes() != nil:
 		ev.Kind = "run-terminated"
-		ev.Status = "Terminated"
+		ev.Status = selector.PhaseTerminated
 	case he.GetWorkflowExecutionContinuedAsNewEventAttributes() != nil:
 		ev.Kind = "run-continued-as-new"
 	case he.GetActivityTaskScheduledEventAttributes() != nil:
@@ -504,6 +511,19 @@ func translate(he *historypb.HistoryEvent, sched map[int64]*historypb.ActivityTa
 		ev.Kind = "signal-received"
 		ev.Subject = a.GetSignalName()
 		ev.Input = payloadsJSON(a.GetInput())
+		if a.GetSignalName() == entity.NoteSignalName {
+			// A milestone the pipeline emitted: its own kind, its own
+			// name as the subject, its payload as the input — not the
+			// envelope the signal carried it in.
+			ev.Kind = "note"
+			var note struct {
+				Name    string          `json:"name"`
+				Payload json.RawMessage `json:"payload"`
+			}
+			if json.Unmarshal(ev.Input, &note) == nil && note.Name != "" {
+				ev.Subject, ev.Input = note.Name, note.Payload
+			}
+		}
 	default:
 		ev.Kind = "internal-" + strings.TrimPrefix(he.GetEventType().String(), "EVENT_TYPE_")
 	}

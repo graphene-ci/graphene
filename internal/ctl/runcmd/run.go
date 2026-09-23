@@ -162,61 +162,46 @@ func watchToEnd(ctx context.Context, f *cmdutil.Factory, d *cmdutil.Door, runId 
 	if !cmdutil.StdoutIsTerminal() {
 		opts.plain = true
 	}
-	last, err := richWatch(ctx, d, runId, opts)
+	if _, err := richWatch(ctx, d, runId, opts); err != nil {
+		return err
+	}
+	return printResult(ctx, d, runId)
+}
+
+// printResult prints a closed run's result — whole for a completed run,
+// what it collected for one that did not — and mirrors a failure in the
+// error: the result on stdout, the reason on stderr, exit code 3.
+func printResult(ctx context.Context, d *cmdutil.Door, runId string) error {
+	res, err := fetchResult(ctx, d, runId)
 	if err != nil {
 		return err
 	}
-	switch last {
-	case "Completed":
-		result, err := fetchResult(ctx, d, runId)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(cmdutil.Out, string(result))
-		return nil
-	default:
-		return &cmdutil.RunFailedError{RunId: runId, Status: last}
+	if len(res.GetResult()) > 0 && string(res.GetResult()) != "null" {
+		fmt.Fprintln(cmdutil.Out, string(res.GetResult()))
 	}
+	if res.GetError() != "" {
+		if len(res.GetResult()) > 0 && string(res.GetResult()) != "null" {
+			fmt.Fprintln(os.Stderr, ui.Gray("(the result above is what the run collected before it failed)"))
+		}
+		return &cmdutil.RunFailedError{RunId: runId, Status: res.GetError()}
+	}
+	return nil
 }
 
-// fetchResult wraps RunResult's failure modes into plain words — the
-// raw error is Temporal's workflow-execution phrasing.
-func fetchResult(ctx context.Context, d *cmdutil.Door, runId string) ([]byte, error) {
+// fetchResult reads the run's state as RunResult answers it; a run that
+// never was is said so.
+func fetchResult(ctx context.Context, d *cmdutil.Door, runId string) (*managementv1.RunResultResponse, error) {
 	resp, err := d.Runs.RunResult(ctx, connect.NewRequest(&managementv1.RunResultRequest{RunId: runId}))
-	if err == nil {
-		return resp.Msg.GetResult(), nil
+	if err != nil {
+		return nil, cmdutil.OrNoRecord(err, "run/"+runId)
 	}
-	switch connect.CodeOf(err) {
-	case connect.CodeNotFound:
-		return nil, cmdutil.NoRecord("run/" + runId)
-	case connect.CodeFailedPrecondition:
-		msg := err.Error()
-		switch {
-		// The door wraps Temporal's not-found of a run that never was
-		// into the same code as "did not complete".
-		case strings.Contains(msg, "not found"):
-			return nil, cmdutil.NoRecord("run/" + runId)
-		case strings.Contains(msg, "terminated"):
-			return nil, fmt.Errorf("run %s was terminated — no result", runId)
-		case strings.Contains(msg, "canceled"):
-			return nil, fmt.Errorf("run %s was canceled — no result", runId)
-		}
-		return nil, fmt.Errorf("run %s did not complete — no result", runId)
-	case connect.CodeCanceled, connect.CodeUnknown, connect.CodeInvalidArgument,
-		connect.CodeDeadlineExceeded, connect.CodeAlreadyExists,
-		connect.CodePermissionDenied, connect.CodeResourceExhausted,
-		connect.CodeAborted, connect.CodeOutOfRange, connect.CodeUnimplemented,
-		connect.CodeInternal, connect.CodeUnavailable, connect.CodeDataLoss,
-		connect.CodeUnauthenticated:
-		return nil, err
-	}
-	return nil, err
+	return resp.Msg, nil
 }
 
 func newResult(f *cmdutil.Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:               "result <run-id>",
-		Short:             "Wait for a run and print its typed result",
+		Short:             "Wait for a run and print its typed result (a failed run's partial one, with its error)",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: runIdCompletion(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -224,12 +209,7 @@ func newResult(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := fetchResult(cmd.Context(), d, args[0])
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmdutil.Out, string(result))
-			return nil
+			return printResult(cmd.Context(), d, args[0])
 		},
 	}
 }
@@ -271,7 +251,7 @@ func newStatus(f *cmdutil.Factory) *cobra.Command {
 			}
 			msg := resp.Msg
 			fmt.Fprintf(cmdutil.Out, "%s %s  %s\n", ui.Gray("run"), ui.Bold(args[0]), ui.Phase(msg.GetStatus()))
-			if msg.GetStatus() != "Running" {
+			if msg.GetStatus() != "running" {
 				// Nothing is in flight in a run that ended: what it has to
 				// say is how it went.
 				return finishedSummary(cmd.Context(), d, args[0])
@@ -311,7 +291,16 @@ func finishedSummary(ctx context.Context, d *cmdutil.Door, runId string) error {
 		fmt.Fprintf(cmdutil.Out, "  %s %s  %s %s\n", ui.Gray("started"), cmdutil.When(r.GetStartedAt()),
 			ui.Gray("took"), cmdutil.Took(r.GetStartedAt(), r.GetFinishedAt()))
 	}
-	stream, err := d.Observe.Events(ctx, connect.NewRequest(&managementv1.EventsRequest{Ref: "run/" + runId}))
+	// Why it ended is the run's own state; the tally below is its history.
+	if res, err := fetchResult(ctx, d, runId); err == nil && res.GetError() != "" {
+		fmt.Fprintf(cmdutil.Out, "  %s\n", ui.Red(res.GetError()))
+		if len(res.GetResult()) > 0 && string(res.GetResult()) != "null" {
+			fmt.Fprintln(cmdutil.Out, ui.Gray("  a partial result was kept: run result "+runId))
+		}
+	}
+	stream, err := d.Observe.Events(ctx, connect.NewRequest(&managementv1.EventsRequest{
+		Ref: "run/" + runId, Kinds: []string{"activity-completed", "activity-failed", "activity-timed-out"},
+	}))
 	if err != nil {
 		return err
 	}
@@ -326,10 +315,6 @@ func finishedSummary(ctx context.Context, d *cmdutil.Door, runId string) error {
 			failed++
 			if len(failures) < 3 {
 				failures = append(failures, fmt.Sprintf("%s  %s  %s", ui.Gray(cmdutil.Stamp(ev.GetTimeUnixNano())), ev.GetSubject(), ui.Red(ev.GetError())))
-			}
-		case "run-failed":
-			if ev.GetError() != "" {
-				failures = append(failures, ui.Red(ev.GetError()))
 			}
 		}
 	}
@@ -363,7 +348,7 @@ func newList(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVarP(&status, "phase", "p", "", "status filter (Running, Completed, ...)")
+	fl.StringVarP(&status, "phase", "p", "", "phase filter: running, completed, failed, canceled, terminated, timed-out")
 	fl.StringToStringVarP(&labels, "selector", "l", nil, "label selector k=v (repeatable)")
 	fl.BoolVarP(&watch, "watch", "w", false, "watch: print the snapshot, then only changes")
 	fl.IntVar(&chunk, "chunk-size", 500, "list page size (0 — one unpaginated request)")

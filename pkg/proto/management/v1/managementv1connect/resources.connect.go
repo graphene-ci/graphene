@@ -46,6 +46,8 @@ const (
 	ResourcesAPICountOwnedProcedure = "/graphene.management.v1.ResourcesAPI/CountOwned"
 	// ResourcesAPIGetProcedure is the fully-qualified name of the ResourcesAPI's Get RPC.
 	ResourcesAPIGetProcedure = "/graphene.management.v1.ResourcesAPI/Get"
+	// ResourcesAPIGetManyProcedure is the fully-qualified name of the ResourcesAPI's GetMany RPC.
+	ResourcesAPIGetManyProcedure = "/graphene.management.v1.ResourcesAPI/GetMany"
 	// ResourcesAPITreeProcedure is the fully-qualified name of the ResourcesAPI's Tree RPC.
 	ResourcesAPITreeProcedure = "/graphene.management.v1.ResourcesAPI/Tree"
 	// ResourcesAPIDeleteProcedure is the fully-qualified name of the ResourcesAPI's Delete RPC.
@@ -74,6 +76,10 @@ type ResourcesAPIClient interface {
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
+	// GetMany describes several records in one call — the full records
+	// (spec and state) a listing does not carry. Refs that do not exist
+	// are left out of the answer and named in `missing`.
+	GetMany(context.Context, *connect.Request[v1.GetManyRequest]) (*connect.Response[v1.GetManyResponse], error)
 	// Tree returns the ownership subtree under an owner, parents before
 	// children.
 	Tree(context.Context, *connect.Request[v1.TreeRequest]) (*connect.Response[v1.TreeResponse], error)
@@ -131,6 +137,12 @@ func NewResourcesAPIClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(resourcesAPIMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
+		getMany: connect.NewClient[v1.GetManyRequest, v1.GetManyResponse](
+			httpClient,
+			baseURL+ResourcesAPIGetManyProcedure,
+			connect.WithSchema(resourcesAPIMethods.ByName("GetMany")),
+			connect.WithClientOptions(opts...),
+		),
 		tree: connect.NewClient[v1.TreeRequest, v1.TreeResponse](
 			httpClient,
 			baseURL+ResourcesAPITreeProcedure,
@@ -176,6 +188,7 @@ type resourcesAPIClient struct {
 	count      *connect.Client[v1.CountRequest, v1.CountResponse]
 	countOwned *connect.Client[v1.CountOwnedRequest, v1.CountOwnedResponse]
 	get        *connect.Client[v1.GetRequest, v1.GetResponse]
+	getMany    *connect.Client[v1.GetManyRequest, v1.GetManyResponse]
 	tree       *connect.Client[v1.TreeRequest, v1.TreeResponse]
 	delete     *connect.Client[v1.DeleteRequest, v1.DeleteResponse]
 	transfer   *connect.Client[v1.TransferRequest, v1.TransferResponse]
@@ -202,6 +215,11 @@ func (c *resourcesAPIClient) CountOwned(ctx context.Context, req *connect.Reques
 // Get calls graphene.management.v1.ResourcesAPI.Get.
 func (c *resourcesAPIClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// GetMany calls graphene.management.v1.ResourcesAPI.GetMany.
+func (c *resourcesAPIClient) GetMany(ctx context.Context, req *connect.Request[v1.GetManyRequest]) (*connect.Response[v1.GetManyResponse], error) {
+	return c.getMany.CallUnary(ctx, req)
 }
 
 // Tree calls graphene.management.v1.ResourcesAPI.Tree.
@@ -248,6 +266,10 @@ type ResourcesAPIHandler interface {
 	// Get describes one resource: phase, spec, state — works even after
 	// the record closed.
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error)
+	// GetMany describes several records in one call — the full records
+	// (spec and state) a listing does not carry. Refs that do not exist
+	// are left out of the answer and named in `missing`.
+	GetMany(context.Context, *connect.Request[v1.GetManyRequest]) (*connect.Response[v1.GetManyResponse], error)
 	// Tree returns the ownership subtree under an owner, parents before
 	// children.
 	Tree(context.Context, *connect.Request[v1.TreeRequest]) (*connect.Response[v1.TreeResponse], error)
@@ -301,6 +323,12 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(resourcesAPIMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
+	resourcesAPIGetManyHandler := connect.NewUnaryHandler(
+		ResourcesAPIGetManyProcedure,
+		svc.GetMany,
+		connect.WithSchema(resourcesAPIMethods.ByName("GetMany")),
+		connect.WithHandlerOptions(opts...),
+	)
 	resourcesAPITreeHandler := connect.NewUnaryHandler(
 		ResourcesAPITreeProcedure,
 		svc.Tree,
@@ -347,6 +375,8 @@ func NewResourcesAPIHandler(svc ResourcesAPIHandler, opts ...connect.HandlerOpti
 			resourcesAPICountOwnedHandler.ServeHTTP(w, r)
 		case ResourcesAPIGetProcedure:
 			resourcesAPIGetHandler.ServeHTTP(w, r)
+		case ResourcesAPIGetManyProcedure:
+			resourcesAPIGetManyHandler.ServeHTTP(w, r)
 		case ResourcesAPITreeProcedure:
 			resourcesAPITreeHandler.ServeHTTP(w, r)
 		case ResourcesAPIDeleteProcedure:
@@ -382,6 +412,10 @@ func (UnimplementedResourcesAPIHandler) CountOwned(context.Context, *connect.Req
 
 func (UnimplementedResourcesAPIHandler) Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.Response[v1.GetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.Get is not implemented"))
+}
+
+func (UnimplementedResourcesAPIHandler) GetMany(context.Context, *connect.Request[v1.GetManyRequest]) (*connect.Response[v1.GetManyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ResourcesAPI.GetMany is not implemented"))
 }
 
 func (UnimplementedResourcesAPIHandler) Tree(context.Context, *connect.Request[v1.TreeRequest]) (*connect.Response[v1.TreeResponse], error) {

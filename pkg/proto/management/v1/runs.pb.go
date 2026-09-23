@@ -377,8 +377,14 @@ func (x *RunResultRequest) GetRunId() string {
 
 type RunResultResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Result is the run's typed Result as JSON.
-	Result        []byte `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	// Result is the run's typed Result as JSON. For a run that did not
+	// complete it is the PARTIAL result the pipeline collected before it
+	// failed — empty when it collected nothing.
+	Result []byte `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	// Error is the failure message of a run that did not complete; empty
+	// for a completed run. Both fields are the run's state, read here as
+	// a shortcut.
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -418,6 +424,13 @@ func (x *RunResultResponse) GetResult() []byte {
 		return x.Result
 	}
 	return nil
+}
+
+func (x *RunResultResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 type CancelRunRequest struct {
@@ -546,7 +559,8 @@ func (x *RunStatusRequest) GetRunId() string {
 
 type RunStatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Status is the workflow's execution status (Running, Completed, ...).
+	// Status is the run's phase, lowercase like every record's: running,
+	// completed, failed, canceled, terminated, timed-out.
 	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	// Pending are the activities the run is currently waiting on — empty
 	// when nothing is in flight (between steps, or terminal).
@@ -718,9 +732,10 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\rWatchRunEvent\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\")\n" +
 	"\x10RunResultRequest\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\"+\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\"A\n" +
 	"\x11RunResultResponse\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\fR\x06result\")\n" +
+	"\x06result\x18\x01 \x01(\fR\x06result\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\")\n" +
 	"\x10CancelRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x13\n" +
 	"\x11CancelRunResponse\")\n" +

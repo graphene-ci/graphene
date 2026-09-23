@@ -91,11 +91,11 @@ func Phase(s string) string {
 	switch strings.ToLower(s) {
 	case "ready", "completed", "success", "connected":
 		return Green(s)
-	case "creating", "running", "pending", "updating", "continuedasnew":
+	case "creating", "running", "pending", "updating", "continuedasnew", "continued-as-new":
 		return Yellow(s)
 	case "deleting", "canceled", "cancelled", "terminated":
 		return Purple(s)
-	case "failed", "error", "timedout", "failure":
+	case "failed", "error", "timedout", "timed-out", "failure":
 		return Red(s)
 	case "deleted":
 		return Gray(s)

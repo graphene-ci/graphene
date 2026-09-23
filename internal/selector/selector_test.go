@@ -37,8 +37,9 @@ func compileErr(t *testing.T, in string) string {
 func TestRunQueries(t *testing.T) {
 	cases := map[string]string{
 		"kind=run":                                `WorkflowId STARTS_WITH "run/"`,
-		"kind=run, phase=Running":                 `WorkflowId STARTS_WITH "run/" AND ExecutionStatus = 'Running'`,
-		"kind=run, phase in (Running, Failed)":    `WorkflowId STARTS_WITH "run/" AND ExecutionStatus IN ('Running', 'Failed')`,
+		"kind=run, phase=running":                 `WorkflowId STARTS_WITH "run/" AND ExecutionStatus = 'Running'`,
+		"kind=run, phase in (running, failed)":    `WorkflowId STARTS_WITH "run/" AND ExecutionStatus IN ('Running', 'Failed')`,
+		"kind=run, phase=timed-out":               `WorkflowId STARTS_WITH "run/" AND ExecutionStatus = 'TimedOut'`,
 		"kind=run, pipeline=deploy":               `WorkflowId STARTS_WITH "run/" AND WorkflowType = 'deploy'`,
 		"kind=run, pipeline=^dep":                 `WorkflowId STARTS_WITH "run/" AND WorkflowType STARTS_WITH "dep"`,
 		"kind=run, id=abc":                        `WorkflowId STARTS_WITH "run/" AND WorkflowId = 'run/abc'`,
@@ -59,6 +60,8 @@ func TestEntityQueries(t *testing.T) {
 		"kind=agent":                             `EntityKind = 'agent' AND ExecutionStatus = 'Running'`,
 		"kind in (agent, artifact)":              `EntityKind IN ('agent', 'artifact') AND ExecutionStatus = 'Running'`,
 		"phase=ready":                            `EntityKind IS NOT NULL AND ExecutionStatus = 'Running' AND EntityPhase = 'ready'`,
+		"kind=agent, phase=deleted":              `EntityKind = 'agent' AND EntityPhase = 'deleted'`,
+		"kind=agent, phase in (ready, deleted)":  `EntityKind = 'agent' AND EntityPhase IN ('ready', 'deleted')`,
 		"kind=agent, owner=run/x":                `EntityKind = 'agent' AND ExecutionStatus = 'Running' AND EntityOwner = 'run/x'`,
 		"kind=agent, label.env in (prod, stage)": `EntityKind = 'agent' AND ExecutionStatus = 'Running' AND EntityLabels IN ('env=prod', 'env=stage')`,
 	}
@@ -76,7 +79,8 @@ func TestErrors(t *testing.T) {
 		"pipeline=deploy":           "pipeline applies to kind=run only",
 		"kind in (run, agent)":      "cannot be mixed",
 		"bogus=1":                   "unknown field",
-		"kind=run, phase~Running":   "no operator",
+		"kind=run, phase~running":   "no operator",
+		"kind=run, phase=Completed": "not a run phase",
 		`kind=run, label.a=b'c`:     "quotes",
 		"kind=run, started=-2h":     "> and < only",
 		"kind=run, started>xyz":     "RFC3339",
@@ -91,7 +95,7 @@ func TestErrors(t *testing.T) {
 }
 
 func TestIsRunQuery(t *testing.T) {
-	q, _ := Parse("kind=run, phase=Running")
+	q, _ := Parse("kind=run, phase=running")
 	if !IsRunQuery(q) {
 		t.Error("kind=run not detected")
 	}
