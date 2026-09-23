@@ -210,7 +210,7 @@ func TestFullContour(t *testing.T) {
 	// on first touch, activities executed inside the agent-hosted
 	// process, capability published and required, selection fanned out,
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
-	awaitStatus(ctx, t, doorAddr, "Completed")
+	awaitStatus(ctx, t, doorAddr, "completed")
 
 	// Labels: the agent record is selectable by its user label through
 	// the visibility pushdown, and carries the system marker of the run
@@ -383,7 +383,7 @@ func awaitStatus(ctx context.Context, t *testing.T, doorAddr, want string) {
 		if json.NewDecoder(resp.Body).Decode(&status) != nil {
 			return false
 		}
-		if status.Status == "Failed" || status.Status == "Terminated" {
+		if status.Status == "failed" || status.Status == "terminated" {
 			// Surface the workflow's own error before dying.
 			resBody, _ := json.Marshal(map[string]string{"runId": runId})
 			resResp := doJSON(ctx, t, http.MethodPost,
