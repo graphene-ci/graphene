@@ -31,9 +31,59 @@ func scopeFilter(sel Selector) string {
 	return fmt.Sprintf("%q:=%q AND %s", "graphene.namespace", sel.Namespace, match)
 }
 
+// fenceable checks that a caller's filter can be laid inside parentheses
+// without ever closing them: parentheses balanced outside string literals
+// and never below zero, every literal terminated, no pipe at the top
+// level (a pipe cannot live inside a filter). Without this check
+// `*) OR (x` would close the fence early and OR itself with the scope.
+func fenceable(filter string) error {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(filter); i++ {
+		c := filter[i]
+		switch {
+		case quote != 0:
+			switch {
+			case c == '\\' && quote != '`':
+				i++ // the escaped character is part of the literal
+			case c == quote:
+				quote = 0
+			}
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			if depth--; depth < 0 {
+				return &ClientError{Msg: "query: a closing parenthesis without an opening one"}
+			}
+		case c == '|':
+			return &ClientError{Msg: "query: a pipe cannot be used inside a record's selection; use the selection's own fields"}
+		}
+	}
+	if quote != 0 {
+		return &ClientError{Msg: "query: an unterminated string literal"}
+	}
+	if depth != 0 {
+		return &ClientError{Msg: "query: unbalanced parentheses"}
+	}
+	return nil
+}
+
+// scopeExtra is the namespace as VictoriaLogs' extra_filters argument:
+// the backend ANDs it onto the query itself, whatever the query says —
+// a second wall around the tenant, independent of the fence.
+func scopeExtra(sel Selector) string {
+	raw, _ := json.Marshal(map[string]string{"graphene.namespace": sel.Namespace})
+	return string(raw)
+}
+
 // selection renders the filter part of a query — scope, bounds, the
 // caller's filters — without the pipes that order and page it.
-func selection(sel Selector, q LogQuery) string {
+func selection(sel Selector, q LogQuery) (string, error) {
+	if err := fenceable(q.Filter); err != nil {
+		return "", err
+	}
 	parts := []string{scopeFilter(sel)}
 	since := sel.After(q.Since)
 	switch {
@@ -67,7 +117,7 @@ func selection(sel Selector, q LogQuery) string {
 	if q.Text != "" {
 		parts = append(parts, "_msg:"+strconv.Quote(q.Text))
 	}
-	return strings.Join(parts, " AND ")
+	return strings.Join(parts, " AND "), nil
 }
 
 // Query returns one page of the selection, ordered by (time, stream,
@@ -86,9 +136,13 @@ func (l *LogsQL) Query(ctx context.Context, sel Selector, q LogQuery) (LogPage, 
 	}
 	// One more than the page says: that record is the answer to "is there
 	// more?", never delivered.
+	where, err := selection(sel, q)
+	if err != nil {
+		return LogPage{}, err
+	}
 	query := fmt.Sprintf("%s | sort by (_time, _stream_id, _msg)%s | offset %d | limit %d",
-		selection(sel, q), order, q.Cursor.Skip, limit+1)
-	raw, err := l.post(ctx, "/select/logsql/query", url.Values{"query": {query}})
+		where, order, q.Cursor.Skip, limit+1)
+	raw, err := l.post(ctx, "/select/logsql/query", url.Values{"query": {query}, "extra_filters": {scopeExtra(sel)}})
 	if err != nil {
 		return LogPage{}, err
 	}
@@ -120,11 +174,14 @@ func (l *LogsQL) Facets(ctx context.Context, sel Selector, q LogQuery, fields []
 	if limit <= 0 {
 		limit = DefaultFacetLimit
 	}
-	query := selection(sel, q)
+	query, err := selection(sel, q)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Facet, 0, len(fields))
 	for _, field := range fields {
 		raw, err := l.post(ctx, "/select/logsql/field_values", url.Values{
-			"query": {query}, "field": {field}, "limit": {strconv.Itoa(limit)},
+			"query": {query}, "field": {field}, "limit": {strconv.Itoa(limit)}, "extra_filters": {scopeExtra(sel)},
 		})
 		if err != nil {
 			return nil, err

@@ -78,3 +78,14 @@ func TestMetricsQueryOfDefaultsTheWindow(t *testing.T) {
 	require.Equal(t, int64(1), q.Start.Unix())
 	require.Equal(t, int64(2), q.End.Unix())
 }
+
+// Follow reads forward from the present with the selection's fields; the
+// backend's language cannot be evaluated on live records, so a query is
+// refused rather than silently applied to the past alone.
+func TestFollowTakesFieldsButNoQuery(t *testing.T) {
+	require.NoError(t, followable(false, telemetry.LogQuery{Filter: "level:error", Desc: true}))
+	require.NoError(t, followable(true, telemetry.LogQuery{Severities: []string{"error"}, Text: "refused", Attributes: map[string]string{"stream": "stderr"}}))
+	require.ErrorContains(t, followable(true, telemetry.LogQuery{Filter: "level:error"}), "no query")
+	require.ErrorContains(t, followable(true, telemetry.LogQuery{Desc: true}), "desc")
+	require.ErrorContains(t, followable(true, telemetry.LogQuery{Cursor: telemetry.LogCursor{Time: time.Now(), Skip: 1}}), "page token")
+}

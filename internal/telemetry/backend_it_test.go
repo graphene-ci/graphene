@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -43,7 +44,7 @@ func startContainer(t *testing.T, image, port string, args ...string) string {
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) //nolint:gosec // removes the container this test started
-	addr, err := exec.Command("docker", "port", id, port).Output() //nolint:gosec // id and port are the test's own
+	addr, err := exec.Command("docker", "port", id, port).Output()         //nolint:gosec // id and port are the test's own
 	if err != nil {
 		t.Fatalf("docker port: %v", err)
 	}
@@ -263,22 +264,43 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 		if len(got) != 0 {
 			t.Fatalf("another run's lines through the filter: %v", got)
 		}
-		// A pipe inside the fence is not a valid filter: the caller's
-		// fault, not the backend's.
-		wide := `_time:[2000-01-01, 2100-01-01]`
-		for _, filter := range []string{`* | delete "graphene.namespace"`, `later-1)`, wide} {
+		// A time filter is legal; it cannot reach before the record
+		// either — the bounds sit outside the fence.
+		if _, err := logs.Query(ctx, subject, LogQuery{Limit: 100, Filter: `_time:[2000-01-01, 2100-01-01]`}); err != nil {
+			t.Fatal(err)
+		}
+		// Closing the fence from inside — the found bypass: `*) OR (...`
+		// would have ORed the sibling and the other tenant onto the
+		// subject. A pipe, an unbalanced parenthesis: the caller's fault,
+		// refused before the backend.
+		for _, filter := range []string{
+			`*) OR ("graphene.namespace":="beta") OR ("graphene.run":="r2"`,
+			`* | delete "graphene.namespace"`,
+			`later-1)`,
+		} {
 			_, err := logs.Query(ctx, subject, LogQuery{Limit: 100, Filter: filter})
-			if filter == wide {
-				// A time filter is legal; it cannot reach before the
-				// record either — the bounds sit outside the fence.
-				if err != nil {
-					t.Fatalf("%s: %v", filter, err)
-				}
-				continue
+			var ce *ClientError
+			if !errors.As(err, &ce) {
+				t.Fatalf("filter %q: err=%v, want a client error", filter, err)
 			}
-			var be *BackendError
-			if !errors.As(err, &be) || !be.ClientFault() {
-				t.Fatalf("filter %q: err=%v, want a client-fault backend error", filter, err)
+		}
+		// The wall behind the fence: even a query that names the whole
+		// store returns the tenant's records alone when the backend gets
+		// the namespace as its own extra filter.
+		raw, err := logs.post(ctx, "/select/logsql/query", url.Values{"query": {`* | sort by (_time) | limit 100`}, "extra_filters": {scopeExtra(subject)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		all, err := parseLogsQLStream(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(all) != 14 {
+			t.Fatalf("extra_filters namespace wall: %d records, want 14 (alpha's r1 + r2)", len(all))
+		}
+		for _, rec := range all {
+			if strings.HasPrefix(rec.Body, "tenant") {
+				t.Fatalf("another tenant's line through extra_filters: %s", rec.Body)
 			}
 		}
 	})

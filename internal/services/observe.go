@@ -262,6 +262,22 @@ func logQueryOf(req *managementv1.LogsRequest) (telemetry.LogQuery, error) {
 	return q, nil
 }
 
+// followable says whether a selection can be followed: follow reads
+// forward from the present, so it takes neither desc nor a page token;
+// and the door cannot evaluate the backend's own language on live
+// records, so a follow takes the selection's fields but no query.
+func followable(follow bool, q telemetry.LogQuery) error {
+	switch {
+	case !follow:
+		return nil
+	case q.Desc || !q.Cursor.IsZero():
+		return errors.New("follow reads forward from the present: it takes neither desc nor a page token")
+	case strings.TrimSpace(q.Filter) != "":
+		return errors.New("follow takes the selection's fields (severities, stream, agent, entity, text) but no query: live records cannot be filtered in the backend's language")
+	}
+	return nil
+}
+
 // The page token is the cursor, base64 of "<unix nanos>:<skip>".
 func encodeCursor(c telemetry.LogCursor) string {
 	if c.IsZero() {
@@ -316,8 +332,8 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 	if err != nil {
 		return asConnectError(err)
 	}
-	if req.GetFollow() && (q.Desc || !q.Cursor.IsZero()) {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("follow reads forward from the present: it takes neither desc nor a page token"))
+	if err := followable(req.GetFollow(), q); err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
@@ -327,7 +343,9 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 	last := q.Since
 	if o.LogsBackend != nil {
 		page, err := o.LogsBackend.Query(ctx, sel, q)
-		if err != nil && sub == nil {
+		if err != nil {
+			// The past is part of the answer; a live tail is no substitute
+			// for it.
 			return backendError(err)
 		}
 		for _, rec := range page.Records {
@@ -338,14 +356,12 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 				last = rec.Time
 			}
 		}
-		if err == nil {
-			closing := &managementv1.LogPage{Returned: int32(len(page.Records)), Truncated: page.Truncated} //nolint:gosec // bounded by the limit
-			if page.Truncated {
-				closing.NextPageToken = encodeCursor(page.Next)
-			}
-			if err := stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Page{Page: closing}}); err != nil {
-				return err
-			}
+		closing := &managementv1.LogPage{Returned: int32(len(page.Records)), Truncated: page.Truncated} //nolint:gosec // bounded by the limit
+		if page.Truncated {
+			closing.NextPageToken = encodeCursor(page.Next)
+		}
+		if err := stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Page{Page: closing}}); err != nil {
+			return err
 		}
 	} else if sub == nil {
 		return connect.NewError(connect.CodeUnimplemented, errNoBackend)
@@ -368,8 +384,9 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 			}
 			for _, rec := range telemetry.LogRecordsFrom(env) {
 				// The seam: history already carried everything up to
-				// `last`; the buffer may hold the same lines again.
-				if !rec.Time.After(last) {
+				// `last`; the buffer may hold the same lines again. And the
+				// selection holds for the present as it held for the past.
+				if !rec.Time.After(last) || !q.Admits(rec) {
 					continue
 				}
 				if err := sendLog(stream, rec); err != nil {

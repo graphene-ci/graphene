@@ -242,3 +242,80 @@ func TestTraceScopedSearchKeepsTheScopeTags(t *testing.T) {
 		t.Fatal("malformed tags must be refused")
 	}
 }
+
+// The fence holds only if the caller's filter cannot close it: parentheses
+// must balance outside string literals and never dip below zero, literals
+// must end, and a pipe has no place inside a filter. What would escape is
+// refused as the caller's fault before any backend sees it.
+func TestLogsFilterCannotCloseTheFence(t *testing.T) {
+	var form url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		form = r.Form
+	}))
+	defer server.Close()
+	l := &LogsQL{Base: server.URL, Client: server.Client()}
+	for _, filter := range []string{
+		`*) OR ("graphene.namespace":="beta") OR ("graphene.run":="r2"`,
+		`*) OR ("graphene.run":="r2") AND (`,
+		`level:error)`,
+		`(level:error`,
+		`"unterminated`,
+		`'unterminated`,
+		"`unterminated",
+		`* | delete "graphene.namespace"`,
+		`"ok")`,
+	} {
+		form = nil
+		_, err := l.Query(context.Background(), sel, LogQuery{Filter: filter})
+		var ce *ClientError
+		if !errors.As(err, &ce) {
+			t.Errorf("filter %q: err=%v, want a client error", filter, err)
+		}
+		if form != nil {
+			t.Errorf("filter %q reached the backend", filter)
+		}
+		if _, err := l.Facets(context.Background(), sel, LogQuery{Filter: filter}, []string{"stream"}, 5); !errors.As(err, &ce) {
+			t.Errorf("facets with %q: err=%v, want a client error", filter, err)
+		}
+	}
+	// Parentheses and pipes INSIDE a literal are text, not structure.
+	for _, filter := range []string{
+		`_msg:"a ) b | c"`, `_msg:'quote " inside' OR (level:error AND _msg:~"x\)y")`, "_msg:`raw ) text`", `(a OR (b AND (c)))`, ``,
+	} {
+		if _, err := l.Query(context.Background(), sel, LogQuery{Filter: filter}); err != nil {
+			t.Errorf("filter %q refused: %v", filter, err)
+		}
+	}
+	// Whatever the query says, the backend gets the tenant as its own
+	// extra filter — the wall behind the fence.
+	if got := form.Get("extra_filters"); got != `{"graphene.namespace":"default"}` {
+		t.Errorf("extra_filters = %q", got)
+	}
+}
+
+// A live record is admitted by the same selection the history obeyed.
+func TestLogQueryAdmitsLiveRecords(t *testing.T) {
+	at := time.Now()
+	rec := LogRecord{Time: at, Severity: "ERROR", Body: "connection refused by 10.0.0.1", Attributes: map[string]string{"stream": "stderr", "graphene.agent": "db-1"}}
+	cases := map[string]struct {
+		q    LogQuery
+		want bool
+	}{
+		"empty selection":       {LogQuery{}, true},
+		"severity any case":     {LogQuery{Severities: []string{"warn", "error"}}, true},
+		"severity other":        {LogQuery{Severities: []string{"INFO"}}, false},
+		"attribute equal":       {LogQuery{Attributes: map[string]string{"stream": "stderr"}}, true},
+		"attribute other":       {LogQuery{Attributes: map[string]string{"stream": "stdout"}}, false},
+		"attribute missing":     {LogQuery{Attributes: map[string]string{"graphene.entity": "docker/pg"}}, false},
+		"text case-insensitive": {LogQuery{Text: "Connection Refused"}, true},
+		"text absent":           {LogQuery{Text: "timeout"}, false},
+		"until after":           {LogQuery{Until: at.Add(time.Second)}, true},
+		"until before":          {LogQuery{Until: at}, false},
+	}
+	for name, c := range cases {
+		if got := c.q.Admits(rec); got != c.want {
+			t.Errorf("%s: Admits=%v want %v", name, got, c.want)
+		}
+	}
+}

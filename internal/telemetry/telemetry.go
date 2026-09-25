@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -99,6 +100,28 @@ type LogQuery struct {
 	Attributes map[string]string
 	// Text keeps records whose body contains the phrase.
 	Text string
+}
+
+// Admits tells whether a record that arrived LIVE belongs to this
+// selection: the same severities, attributes, text and upper bound the
+// backend applied to the history. Filter — the backend's language — has
+// no evaluator here; a follow with a Filter is refused at the door.
+func (q LogQuery) Admits(rec LogRecord) bool {
+	if !q.Until.IsZero() && !rec.Time.Before(q.Until) {
+		return false
+	}
+	if len(q.Severities) > 0 && !slices.ContainsFunc(q.Severities, func(s string) bool { return strings.EqualFold(s, rec.Severity) }) {
+		return false
+	}
+	for k, v := range q.Attributes {
+		if rec.Attributes[k] != v {
+			return false
+		}
+	}
+	if q.Text != "" && !strings.Contains(strings.ToLower(rec.Body), strings.ToLower(q.Text)) {
+		return false
+	}
+	return true
 }
 
 // LogCursor is the position of a page: records are ordered by (time,
