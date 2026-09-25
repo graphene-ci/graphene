@@ -82,6 +82,13 @@ make test
 make build
 ```
 
+`make test` includes the integration contour (a Temporal dev server, the
+agent and a pipeline as separate processes). Two more checks need a
+docker daemon and are opt-in: `GRAPHENE_TELEMETRY_IT=1` runs the scoped
+query surface against real VictoriaLogs and VictoriaMetrics containers
+(`internal/telemetry`); `GRAPHENE_DOCKER_IT=1` in `library/docker` runs
+containers against the daemon.
+
 The full dev contour comes up with `make compose-up` and down with
 `make compose-down`. That is a development environment, not a production
 deployment; its limits and configuration are described in the docs.
