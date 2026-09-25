@@ -220,21 +220,28 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 	metrics := &PromQL{Base: vm, Client: http.DefaultClient, ExtraFilters: true}
 	subject := SelectorFor("alpha", "run/r1")
 
-	// Ingest is asynchronous on both sides: wait for the whole of r1.
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		page, err := logs.Query(ctx, subject, LogQuery{Limit: 100})
-		if err != nil {
-			t.Fatal(err)
+	// Ingest is asynchronous: wait for every record's lines, not only
+	// the subject's — the siblings are what the isolation checks read.
+	awaitLogs := func(sel Selector, want int) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			page, err := logs.Query(ctx, sel, LogQuery{Limit: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Records) == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("logs backend holds %d of %d records of %s %s", len(page.Records), want, sel.Namespace, sel.Value)
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
-		if len(page.Records) == 12 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("logs backend holds %d of 12 records of the subject", len(page.Records))
-		}
-		time.Sleep(200 * time.Millisecond)
 	}
+	awaitLogs(subject, 12)
+	awaitLogs(SelectorFor("alpha", "run/r2"), 2)
+	awaitLogs(SelectorFor("beta", "run/r1"), 2)
 
 	t.Run("isolation", func(t *testing.T) {
 		got := walk(t, logs, subject, LogQuery{Limit: 100})
@@ -331,8 +338,12 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 		if got := walk(t, logs, subject, LogQuery{Attributes: map[string]string{"stream": "stderr"}}); len(got) != 2 {
 			t.Fatalf("stream stderr: %v", got)
 		}
-		if got := walk(t, logs, subject, LogQuery{Text: "later-3"}); strings.Join(got, ",") != "later-3" {
-			t.Fatalf("text: %v", got)
+		// Text is a case-insensitive substring, the same test the live
+		// stream applies — LATER-3 and ater-3 find later-3 in the history.
+		for _, text := range []string{"later-3", "LATER-3", "ater-3"} {
+			if got := walk(t, logs, subject, LogQuery{Text: text}); strings.Join(got, ",") != "later-3" {
+				t.Fatalf("text %q: %v", text, got)
+			}
 		}
 		// The executor's own lines and the workload's are told apart by role.
 		if got := walk(t, logs, subject, LogQuery{Attributes: map[string]string{"graphene.role": "workload"}}); len(got) != 2 {

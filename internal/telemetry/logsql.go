@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -115,7 +116,11 @@ func selection(sel Selector, q LogQuery) (string, error) {
 		parts = append(parts, fmt.Sprintf("%q:=%q", attr, q.Attributes[attr]))
 	}
 	if q.Text != "" {
-		parts = append(parts, "_msg:"+strconv.Quote(q.Text))
+		// A case-insensitive substring, the same test Admits applies to a
+		// live record: a phrase filter would tokenize by word and keep
+		// case, so LATER-3 and ater-3 would miss later-3 in the history
+		// while the live stream delivers it.
+		parts = append(parts, "_msg:~"+strconv.Quote("(?i)"+regexp.QuoteMeta(q.Text)))
 	}
 	return strings.Join(parts, " AND "), nil
 }

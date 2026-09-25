@@ -40,7 +40,7 @@ func TestLogsScopedQueryFencesTheCallersFilter(t *testing.T) {
 		` AND (level:error OR "graphene.namespace":="other")`,
 		`(severity:in("WARN","ERROR") OR severity_text:in("WARN","ERROR"))`,
 		`"graphene.agent":="db-1" AND "stream":="stderr"`,
-		`_msg:"connection refused"`,
+		`_msg:~"(?i)connection refused"`,
 		`_time:>2026-09-18T11:00:00Z`,
 		`_time:<2026-09-18T12:00:00Z`,
 		`| sort by (_time, _stream_id, _msg) desc | offset 0 | limit 51`,
@@ -121,7 +121,7 @@ func TestLogsFacetsCountValuesInsideTheScope(t *testing.T) {
 		t.Fatalf("fields asked: %v", fields)
 	}
 	for _, q := range queries {
-		if !strings.HasPrefix(q, `"graphene.namespace":="default"`) || strings.Contains(q, "| sort") || !strings.Contains(q, `_msg:"job"`) {
+		if !strings.HasPrefix(q, `"graphene.namespace":="default"`) || strings.Contains(q, "| sort") || !strings.Contains(q, `_msg:~"(?i)job"`) {
 			t.Errorf("facet query must be the fenced selection without pipes: %s", q)
 		}
 	}

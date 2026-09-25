@@ -98,7 +98,8 @@ type LogQuery struct {
 	// Attributes keeps records whose attribute equals the value (stream,
 	// graphene.agent, graphene.entity, a job's name).
 	Attributes map[string]string
-	// Text keeps records whose body contains the phrase.
+	// Text keeps records whose body contains the text, as a
+	// case-insensitive substring — in the history and live alike.
 	Text string
 }
 
