@@ -92,19 +92,23 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 	// An explicit image is the one case that bypasses the arbiter: it
 	// names WHAT to run rather than asking the pipeline to run itself.
 	if req.GetImage() != "" {
-		workflowId, temporalRunId, err := startRunCore(ctx, b, m.Log,
+		out, err := startRunCore(ctx, b, m.Log,
 			req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
 			syslabels.TriggerManual, "")
 		if err != nil {
 			return nil, err
 		}
-		return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}), nil
+		return connect.NewResponse(&managementv1.StartRunResponse{
+			WorkflowId: out.WorkflowId, TemporalRunId: out.TemporalRunId, RunId: out.RunId, Decision: out.Decision,
+		}), nil
 	}
-	runId, err := fireRun(ctx, b, req.GetPipeline(), req.GetRunId(), req.GetParams(), req.GetLabels())
+	res, err := fireRun(ctx, b, req.GetPipeline(), req.GetRunId(), req.GetParams(), req.GetLabels())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&managementv1.StartRunResponse{WorkflowId: "run/" + runId}), nil
+	return connect.NewResponse(&managementv1.StartRunResponse{
+		WorkflowId: "run/" + res.RunId, RunId: res.RunId, Decision: res.Decision, DisplacedRunId: res.Displaced,
+	}), nil
 }
 
 // StartRunOnBundle exposes the start path to the server wiring: the
@@ -112,7 +116,7 @@ func (m *Management) StartRun(ctx context.Context, creq *connect.Request[managem
 func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	runId, pipelineId string, params []byte, image string, labels map[string]string, trigger, owner string,
 ) error {
-	_, _, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels, trigger, owner)
+	_, err := startRunCore(ctx, b, log, runId, pipelineId, params, image, labels, trigger, owner)
 	return err
 }
 
@@ -122,33 +126,46 @@ func StartRunOnBundle(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 // One arbiter decides for everyone, so the concurrency policy is not
 // something manual starts sneak past — which is exactly what they did
 // while this went straight to the workflow.
-func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, params []byte, labels map[string]string) (string, error) {
+func fireRun(ctx context.Context, b *nsbundle.Bundle, pipelineId, runId string, params []byte, labels map[string]string) (pipelineflow.FireRes, error) {
 	if pipelineId == "" {
-		return "", status.Error(codes.InvalidArgument, "pipeline is required")
+		return pipelineflow.FireRes{}, status.Error(codes.InvalidArgument, "pipeline is required")
 	}
 	if err := wire.ValidateUserLabels(labels); err != nil {
-		return "", status.Error(codes.InvalidArgument, err.Error())
+		return pipelineflow.FireRes{}, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Validate at the DOOR, before the firing enters the arbiter — a bad
 	// submit fails the caller synchronously here, instead of surfacing later
 	// through the retryable start activity the arbiter drives.
 	params, err := normalizeAndValidate(ctx, b, pipelineId, params)
 	if err != nil {
-		return "", err
+		return pipelineflow.FireRes{}, err
 	}
 	res, err := b.Worker.FirePipeline(ctx, pipelineId, pipelineflow.FireCmd{
 		Params: params, RunId: runId, Labels: labels,
 	})
 	if err != nil {
-		return "", status.Error(codes.FailedPrecondition, err.Error())
+		// A refusal of the arbiter is the caller's precondition; a
+		// transport that never answered is not — the firing may have
+		// been accepted, and the caller must be told to ask again, not
+		// that it was refused.
+		return pipelineflow.FireRes{}, temporalStatus(err, codes.FailedPrecondition)
 	}
-	if res.RunId == "" {
-		// Queued under the pipeline's policy: the decision is honest,
-		// and the caller learns it instead of getting a refusal.
-		return "", status.Errorf(codes.FailedPrecondition,
-			"run %s: the pipeline's concurrency policy queued this firing behind the live run", res.Decision)
+	if res.Decision == pipelineflow.DecisionConflict {
+		return pipelineflow.FireRes{}, status.Errorf(codes.AlreadyExists,
+			"run %s already names another request of pipeline %s: a re-run needs a new run id", res.RunId, pipelineId)
 	}
-	return res.RunId, nil
+	// Queued is an answer, not a refusal: the firing has its id and its
+	// place, and the caller can ask about it.
+	return res, nil
+}
+
+// startOutcome is what a start answered: the execution, and whether this
+// call began it or found it — the same request, replayed after a lost
+// answer, is the same run.
+type startOutcome struct {
+	WorkflowId, TemporalRunId, RunId string
+	// Decision is pipelineflow.DecisionStarted or DecisionExists.
+	Decision string
 }
 
 // normalizeAndValidate substitutes ${var:...}, checks the params against the
@@ -180,36 +197,39 @@ func normalizeAndValidate(ctx context.Context, b *nsbundle.Bundle, pipelineName 
 
 func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	runIdRaw, pipelineName string, params []byte, image string, labels map[string]string, trigger, owner string,
-) (string, string, error) {
+) (startOutcome, error) {
 	runId, err := id.ParseRunId(runIdRaw)
 	if err != nil {
-		return "", "", status.Error(codes.InvalidArgument, err.Error())
+		return startOutcome{}, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if pipelineName == "" {
-		return "", "", status.Error(codes.InvalidArgument, "pipeline is required")
+		return startOutcome{}, status.Error(codes.InvalidArgument, "pipeline is required")
 	}
 	if err := wire.ValidateUserLabels(labels); err != nil {
-		return "", "", status.Error(codes.InvalidArgument, err.Error())
+		return startOutcome{}, status.Error(codes.InvalidArgument, err.Error())
 	}
 	params, err = normalizeAndValidate(ctx, b, pipelineName, params)
 	if err != nil {
-		return "", "", err
+		return startOutcome{}, err
 	}
 	opts := client.StartWorkflowOptions{
 		ID:        "run/" + string(runId),
 		TaskQueue: wire.RunQueue(runId),
-		// A run id names ONE run. Two axes decide what "starting it again"
-		// means:
-		//   - ConflictPolicy governs a start while the run is still OPEN:
-		//     attach to the live one, never fork a second.
-		//   - ReusePolicy governs a start after the run has CLOSED: a
-		//     COMPLETED run's id is spent — a success is not re-run under
-		//     the same name; a failed/cancelled/terminated/timed-out run
-		//     MAY be re-started under its id. Without this the default
-		//     ALLOW_DUPLICATE forked a fresh execution every time, stacking
-		//     identical-named rows in visibility.
-		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+		// A run id names ONE logical execution, in EVERY state. A start
+		// under a taken id — open or closed, however it closed — fails
+		// here and is answered by replayStart: the same request is that
+		// run, another request is a conflict. Re-starting a failed run
+		// under its own id was allowed once; it forked a second execution
+		// under one name whenever a caller retried after a lost answer,
+		// and one record then stood for two executions' results, events
+		// and resources. A re-run is a new id.
+		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+		// The request's identity rides with the execution, so a replay
+		// is told from a conflict for as long as the execution is
+		// remembered — the namespace's retention is the horizon of this
+		// promise, and after it a run id is a new name.
+		Memo: map[string]any{pipelineflow.MemoRequest: pipelineflow.RequestDigest(pipelineName, params)},
 	}
 	// The run carries its labels in the same EntityLabels attribute
 	// resources use — one label language across the system. The system
@@ -244,11 +264,15 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 	}
 	run, err := b.Client.ExecuteWorkflow(ctx, opts, pipelineName, args...)
 	if err != nil {
-		return "", "", status.Error(codes.Internal, err.Error())
+		var taken *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &taken) {
+			return replayStart(ctx, b, log, runId, pipelineName, params, image)
+		}
+		return startOutcome{}, temporalStatus(err, codes.Unavailable)
 	}
 	if image != "" {
 		if err := b.Runner.Start(ctx, runId, image, mintRunToken(b, runId)); err != nil {
-			return "", "", status.Error(codes.Internal, err.Error())
+			return startOutcome{}, status.Error(codes.Internal, err.Error())
 		}
 	}
 	rctx := obs.WithEntity(ctx, "run/"+string(runId))
@@ -262,7 +286,40 @@ func startRunCore(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
 		xlog.Any("run", runId),
 		xlog.String("pipeline", pipelineName),
 		xlog.Bool("managed", image != ""))
-	return run.GetID(), run.GetRunID(), nil
+	return startOutcome{WorkflowId: run.GetID(), TemporalRunId: run.GetRunID(), RunId: string(runId), Decision: pipelineflow.DecisionStarted}, nil
+}
+
+// replayStart answers a start whose id is already taken. The same
+// request — pipeline and params — IS that run, in whatever state it is,
+// and is returned as it is: nothing begins twice under one name; while
+// it is open its managed executor is ensured, so a start whose container
+// failed can be asked again. Another request under the id is a conflict,
+// never a second execution.
+func replayStart(ctx context.Context, b *nsbundle.Bundle, log *xlog.Logger,
+	runId id.RunId, pipelineName string, params []byte, image string,
+) (startOutcome, error) {
+	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+string(runId), "")
+	if err != nil {
+		return startOutcome{}, temporalStatus(err, codes.Unavailable)
+	}
+	info := desc.GetWorkflowExecutionInfo()
+	if !pipelineflow.SameRequest(info, pipelineName, params) {
+		return startOutcome{}, status.Errorf(codes.AlreadyExists,
+			"run %s already names another request of pipeline %s: a re-run needs a new run id", runId, info.GetType().GetName())
+	}
+	if image != "" && info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		if err := b.Runner.Start(ctx, runId, image, mintRunToken(b, runId)); err != nil {
+			// The run exists and the reaper re-ensures executors of live
+			// runs; the replayed start still answers what is true.
+			log.Warn("managed executor not ensured on a replayed start", xlog.Any("run", runId), xlog.Err(err))
+		}
+	}
+	log.Info("run start replayed", xlog.String("namespace", b.Namespace), xlog.Any("run", runId),
+		xlog.String("status", info.GetStatus().String()))
+	return startOutcome{
+		WorkflowId: info.GetExecution().GetWorkflowId(), TemporalRunId: info.GetExecution().GetRunId(),
+		RunId: string(runId), Decision: pipelineflow.DecisionExists,
+	}, nil
 }
 
 // GetRun reports the run's status.
@@ -274,7 +331,7 @@ func (m *Management) GetRun(ctx context.Context, creq *connect.Request[managemen
 	}
 	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+req.GetRunId(), "")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.Unavailable)
 	}
 	return connect.NewResponse(&managementv1.GetRunResponse{
 		Status: selector.RunPhase(desc.GetWorkflowExecutionInfo().GetStatus()),
@@ -293,7 +350,7 @@ func (m *Management) RunStatus(ctx context.Context, creq *connect.Request[manage
 	}
 	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+creq.Msg.GetRunId(), "")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.Unavailable)
 	}
 	out := &managementv1.RunStatusResponse{
 		Status: selector.RunPhase(desc.GetWorkflowExecutionInfo().GetStatus()),
@@ -347,7 +404,7 @@ func watchRunCore(ctx context.Context, b *nsbundle.Bundle, runId string, send fu
 	for {
 		desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
 		if err != nil {
-			return status.Error(codes.NotFound, err.Error())
+			return temporalStatus(err, codes.Unavailable)
 		}
 		s := desc.GetWorkflowExecutionInfo().GetStatus()
 		if s != last {
@@ -389,7 +446,7 @@ func (m *Management) CancelRun(ctx context.Context, creq *connect.Request[manage
 		return nil, err
 	}
 	if err := b.Client.CancelWorkflow(ctx, "run/"+req.GetRunId(), ""); err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.Unavailable)
 	}
 	return connect.NewResponse(&managementv1.CancelRunResponse{}), nil
 }
@@ -621,7 +678,9 @@ func (m *Management) Get(ctx context.Context, creq *connect.Request[managementv1
 	}
 	res, err := m.describe(ctx, b, req.GetRef())
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		// Absent only when the service said so; a Temporal that did not
+		// answer is Unavailable, and an unknown kind stays NotFound.
+		return nil, temporalStatus(err, codes.NotFound)
 	}
 	// A record's age is the start of the FIRST run of its chain — a
 	// continue-as-new is the same record, not a newborn. A run's describe
@@ -803,7 +862,7 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	// them from here would race its own cleanup.
 	if runId, ok := strings.CutPrefix(req.GetRef(), "run/"); ok {
 		if err := b.Client.CancelWorkflow(ctx, "run/"+runId, ""); err != nil {
-			return nil, status.Error(codes.FailedPrecondition, err.Error())
+			return nil, temporalStatus(err, codes.FailedPrecondition)
 		}
 		return connect.NewResponse(&managementv1.DeleteResponse{}), nil
 	}

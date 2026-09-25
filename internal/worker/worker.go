@@ -236,6 +236,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.triggerFire, activity.RegisterOptions{Name: triggerflow.FireActivity})
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
 	w.RegisterActivityWithOptions(s.countRuns, activity.RegisterOptions{Name: pipelineflow.CountActivity})
+	w.RegisterActivityWithOptions(s.lookupRun, activity.RegisterOptions{Name: pipelineflow.LookupActivity})
 	w.RegisterActivityWithOptions(s.cancelRuns, activity.RegisterOptions{Name: pipelineflow.CancelActivity})
 	w.RegisterActivityWithOptions(s.resolveRevision, activity.RegisterOptions{Name: pipelineflow.ResolveActivity})
 	w.RegisterActivityWithOptions(s.forgetSecret, activity.RegisterOptions{Name: valueflow.ForgetActivity})
@@ -382,6 +383,24 @@ func triggerLabelValue(rawManifest json.RawMessage, name string) string {
 		}
 	}
 	return name
+}
+
+// lookupRun tells the arbiter whether a run id is taken, and whether by
+// this very request. Only the service's own NotFound means absent; any
+// other failure is an unknown answer and the activity retries.
+func (s *Worker) lookupRun(ctx context.Context, req pipelineflow.LookupReq) (pipelineflow.LookupRes, error) {
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, "run/"+req.RunId, "")
+	var notFound *serviceerror.NotFound
+	if errors.As(err, &notFound) {
+		return pipelineflow.LookupRes{}, nil
+	}
+	if err != nil {
+		return pipelineflow.LookupRes{}, err
+	}
+	return pipelineflow.LookupRes{
+		Exists: true,
+		Same:   pipelineflow.SameRequest(desc.GetWorkflowExecutionInfo(), req.PipelineId, req.Params),
+	}, nil
 }
 
 // countRuns counts the pipeline's running runs via visibility.

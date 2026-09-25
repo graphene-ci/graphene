@@ -46,6 +46,19 @@ message StartRunRequest {
 message StartRunResponse {
   string workflow_id = 1;
   string temporal_run_id = 2;
+  // RunId is the run's id: the caller's, or the one the arbiter gave a
+  // firing that named none — a queued firing has its name before it runs.
+  string run_id = 3;
+  // Decision is the arbiter's word: "started" — this call began the run;
+  // "exists" — the id already named this very request, open or closed,
+  // and nothing new began; "queued" — behind the live run under the
+  // queue policy; "replaced-previous". A run id names one logical
+  // execution in every state: another request under a taken id is
+  // ALREADY_EXISTS, never a second execution; a re-run is a new id.
+  string decision = 4;
+  // DisplacedRunId names the queued firing this one pushed out of the
+  // queue's single slot; that id never becomes a run.
+  string displaced_run_id = 5;
 }
 
 message GetRunRequest {

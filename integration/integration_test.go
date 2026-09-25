@@ -212,6 +212,36 @@ func TestFullContour(t *testing.T) {
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
 	awaitStatus(ctx, t, doorAddr, "completed")
 
+	// A run id names ONE logical execution in every state. The same
+	// request again — the caller's answer was lost and it asks again —
+	// is THIS run, closed as it is: nothing starts twice. Another
+	// request under the spent id is a conflict, never a second
+	// execution. And a run that never was is absent — and only that
+	// reads as absent.
+	startAgain := func(body []byte) (int, map[string]any) {
+		resp := doJSON(ctx, t, http.MethodPost,
+			"http://"+doorAddr+"/graphene.management.v1.RunsAPI/StartRun", adminToken, body)
+		defer func() { _ = resp.Body.Close() }()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	if code, out := startAgain(body); code != http.StatusOK || out["decision"] != "exists" || out["runId"] != runId {
+		t.Fatalf("replayed start: %d %v, want 200 decision=exists runId=%s", code, out, runId)
+	}
+	otherParams, _ := json.Marshal(map[string]any{"agentId": agentId, "markerDir": markerDir, "keep": time.Second, "volumeName": volumeName})
+	otherBody, _ := json.Marshal(map[string]any{"runId": runId, "pipeline": "e2e", "params": base64.StdEncoding.EncodeToString(otherParams)})
+	if code, out := startAgain(otherBody); code != http.StatusConflict {
+		t.Fatalf("another request under the spent id: %d %v, want 409", code, out)
+	}
+	unknown, _ := json.Marshal(map[string]string{"runId": runId + "-never"})
+	if resp := doJSON(ctx, t, http.MethodPost, "http://"+doorAddr+"/graphene.management.v1.RunsAPI/GetRun", adminToken, unknown); resp.StatusCode != http.StatusNotFound {
+		_ = resp.Body.Close()
+		t.Fatalf("a run that never was: %s, want 404", resp.Status)
+	} else {
+		_ = resp.Body.Close()
+	}
+
 	// Labels: the agent record is selectable by its user label through
 	// the visibility pushdown, and carries the system marker of the run
 	// that created it.

@@ -107,8 +107,21 @@ type StartRunResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkflowId    string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
 	TemporalRunId string                 `protobuf:"bytes,2,opt,name=temporal_run_id,json=temporalRunId,proto3" json:"temporal_run_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// RunId is the run's id: the caller's, or the one the arbiter gave a
+	// firing that named none — a queued firing has its name before it runs.
+	RunId string `protobuf:"bytes,3,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// Decision is the arbiter's word: "started" — this call began the run;
+	// "exists" — the id already named this very request, open or closed,
+	// and nothing new began; "queued" — behind the live run under the
+	// queue policy; "replaced-previous". A run id names one logical
+	// execution in every state: another request under a taken id is
+	// ALREADY_EXISTS, never a second execution; a re-run is a new id.
+	Decision string `protobuf:"bytes,4,opt,name=decision,proto3" json:"decision,omitempty"`
+	// DisplacedRunId names the queued firing this one pushed out of the
+	// queue's single slot; that id never becomes a run.
+	DisplacedRunId string `protobuf:"bytes,5,opt,name=displaced_run_id,json=displacedRunId,proto3" json:"displaced_run_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *StartRunResponse) Reset() {
@@ -151,6 +164,27 @@ func (x *StartRunResponse) GetWorkflowId() string {
 func (x *StartRunResponse) GetTemporalRunId() string {
 	if x != nil {
 		return x.TemporalRunId
+	}
+	return ""
+}
+
+func (x *StartRunResponse) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *StartRunResponse) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *StartRunResponse) GetDisplacedRunId() string {
+	if x != nil {
+		return x.DisplacedRunId
 	}
 	return ""
 }
@@ -718,11 +752,14 @@ const file_proto_management_v1_runs_proto_rawDesc = "" +
 	"\x06labels\x18\x05 \x03(\v23.graphene.management.v1.StartRunRequest.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"[\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb8\x01\n" +
 	"\x10StartRunResponse\x12\x1f\n" +
 	"\vworkflow_id\x18\x01 \x01(\tR\n" +
 	"workflowId\x12&\n" +
-	"\x0ftemporal_run_id\x18\x02 \x01(\tR\rtemporalRunId\"&\n" +
+	"\x0ftemporal_run_id\x18\x02 \x01(\tR\rtemporalRunId\x12\x15\n" +
+	"\x06run_id\x18\x03 \x01(\tR\x05runId\x12\x1a\n" +
+	"\bdecision\x18\x04 \x01(\tR\bdecision\x12(\n" +
+	"\x10displaced_run_id\x18\x05 \x01(\tR\x0edisplacedRunId\"&\n" +
 	"\rGetRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"(\n" +
 	"\x0eGetRunResponse\x12\x16\n" +

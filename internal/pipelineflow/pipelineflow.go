@@ -20,6 +20,8 @@ import (
 
 	"github.com/graphene-ci/temporal-entity/pkg/entdefine"
 	entity "github.com/graphene-ci/temporal-entity/pkg/entity"
+	workflowpb "go.temporal.io/api/workflow/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
@@ -55,8 +57,13 @@ type State struct {
 	// (default), "cancel-previous", "parallel".
 	Concurrency string `json:"concurrency,omitempty"`
 	// Pending is the one deferred firing under the queue policy —
-	// cron semantics: firings do not pile up, the latest wins.
+	// cron semantics: firings do not pile up, the latest wins, and the
+	// one it pushed out is named in the answer.
 	Pending *Fire `json:"pending,omitempty"`
+	// Fired counts the firings the arbiter named itself; LastRunId is the
+	// last name it gave — two firings in one second must not share one.
+	Fired     int    `json:"fired,omitempty"`
+	LastRunId string `json:"lastRunId,omitempty"`
 }
 
 // Fire is one firing awaiting or receiving a decision.
@@ -135,11 +142,77 @@ func (FireCmd) Name() entity.CommandName { return "fire" }
 // Result binds the response type.
 func (FireCmd) Result() FireRes { return FireRes{} }
 
+// The arbiter's decisions — the words a start answers with. A run id
+// names ONE logical execution in every state: the same request again is
+// that run (exists), another request under the id is a conflict, never a
+// second execution.
+const (
+	DecisionStarted  = "started"
+	DecisionQueued   = "queued"
+	DecisionReplaced = "replaced-previous"
+	DecisionExists   = "exists"
+	DecisionConflict = "conflict"
+)
+
 // FireRes reports the decision.
 type FireRes struct {
-	// Decision: "started" | "queued" | "replaced-previous".
+	// Decision is one of the Decision* words.
 	Decision string `json:"decision"`
-	RunId    string `json:"runId,omitempty"`
+	// RunId is the run's id: the caller's, or the one the arbiter gave a
+	// firing that named none — a queued firing has its name before it
+	// runs, so its caller can ask about it.
+	RunId string `json:"runId,omitempty"`
+	// Displaced names the queued firing this one pushed out of the
+	// queue's single slot; that id never becomes a run.
+	Displaced string `json:"displaced,omitempty"`
+}
+
+// MemoRequest is the memo key under which a run's execution carries the
+// identity of the request that started it, so a replay of the request is
+// told from another request under the same id.
+const MemoRequest = "graphene.request"
+
+// RequestDigest is the identity of a start request: the pipeline and the
+// normalized params. Labels and the image are not part of it — they
+// describe how to run, not what was asked.
+func RequestDigest(pipeline string, params []byte) string {
+	h := sha256.New()
+	h.Write([]byte(pipeline))
+	h.Write([]byte{0})
+	h.Write(params)
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+}
+
+// SameRequest tells whether an existing execution was started by this
+// very request. An execution without the memo — started before requests
+// carried their identity — cannot vouch for itself and is not the same.
+func SameRequest(info *workflowpb.WorkflowExecutionInfo, pipeline string, params []byte) bool {
+	if info.GetType().GetName() != pipeline {
+		return false
+	}
+	payload := info.GetMemo().GetFields()[MemoRequest]
+	if payload == nil {
+		return false
+	}
+	var digest string
+	if converter.GetDefaultDataConverter().FromPayload(payload, &digest) != nil {
+		return false
+	}
+	return digest == RequestDigest(pipeline, params)
+}
+
+// LookupReq asks whether a run id is taken, and by what.
+type LookupReq struct {
+	RunId      string          `json:"runId"`
+	PipelineId string          `json:"pipelineId"`
+	Params     json.RawMessage `json:"params,omitempty"`
+}
+
+// LookupRes is the answer: the id names an execution, and it is (or is
+// not) the one this request would start.
+type LookupRes struct {
+	Exists bool `json:"exists"`
+	Same   bool `json:"same"`
 }
 
 // Server-side activities the arbiter drives (registered by the server
@@ -147,6 +220,9 @@ type FireRes struct {
 const (
 	// StartActivity starts a run of the pipeline: (StartReq) -> run id.
 	StartActivity = "server.run.start"
+	// LookupActivity tells whether a run id is taken and by which
+	// request: (LookupReq) -> LookupRes.
+	LookupActivity = "server.run.lookup"
 	// CountActivity counts the pipeline's running runs: (pipelineId) -> int64.
 	CountActivity = "server.run.count"
 	// SweepActivity erases a deleted pipeline's own blobs: (SweepReq).
@@ -266,6 +342,29 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd FireCmd) (FireRes, error) {
 		st := ec.State()
 		fire := Fire(cmd)
+		if fire.RunId == "" {
+			fire.RunId = nextRunId(ctx, st, fire.Trigger)
+		} else {
+			// A named firing may be a REPLAY — the caller's answer was
+			// lost and it asks again. The one waiting in the slot is
+			// still queued; an execution that exists is that run, if it
+			// is the same request, and a conflict if it is not. Nothing
+			// begins twice under one name.
+			if st.Pending != nil && st.Pending.RunId == fire.RunId {
+				return FireRes{Decision: DecisionQueued, RunId: fire.RunId}, nil
+			}
+			var known LookupRes
+			if err := workflow.ExecuteActivity(actx(ctx), LookupActivity,
+				LookupReq{RunId: fire.RunId, PipelineId: pipelineId(ctx), Params: fire.Params}).Get(ctx, &known); err != nil {
+				return FireRes{}, err
+			}
+			switch {
+			case known.Exists && known.Same:
+				return FireRes{Decision: DecisionExists, RunId: fire.RunId}, nil
+			case known.Exists:
+				return FireRes{Decision: DecisionConflict, RunId: fire.RunId}, nil
+			}
+		}
 		running, err := countRuns(ctx, ec)
 		if err != nil {
 			return FireRes{}, err
@@ -280,7 +379,7 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			if err != nil {
 				return FireRes{}, err
 			}
-			return FireRes{Decision: "started", RunId: runId}, nil
+			return FireRes{Decision: DecisionStarted, RunId: runId}, nil
 		case policy == "cancel-previous":
 			if err := workflow.ExecuteActivity(actx(ctx), CancelActivity, pipelineId(ctx)).Get(ctx, nil); err != nil {
 				return FireRes{}, err
@@ -289,13 +388,39 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 			if err != nil {
 				return FireRes{}, err
 			}
-			return FireRes{Decision: "replaced-previous", RunId: runId}, nil
-		default: // queue
+			return FireRes{Decision: DecisionReplaced, RunId: runId}, nil
+		default:
+			// queue: ONE slot. The newer firing takes it — cron firings do
+			// not pile up behind a long run — and the one it pushed out is
+			// named in the answer, so nothing is replaced in silence. A
+			// displaced id never becomes a run.
+			res := FireRes{Decision: DecisionQueued, RunId: fire.RunId}
+			if st.Pending != nil {
+				res.Displaced = st.Pending.RunId
+			}
 			st.Pending = &fire
-			return FireRes{Decision: "queued"}, nil
+			return res, nil
 		}
 	})
 	return def
+}
+
+// nextRunId names a firing nobody named: the pipeline, what fired it,
+// when — and a counter when a second firing lands in the same second, so
+// two firings never share one name. Named at ACCEPT time: a queued firing
+// has its identity before it runs.
+func nextRunId(ctx workflow.Context, st *State, trigger string) string {
+	fired := trigger
+	if fired == "" {
+		fired = "manual"
+	}
+	st.Fired++
+	runId := fmt.Sprintf("%s-%s-%s", pipelineId(ctx), fired, workflow.Now(ctx).UTC().Format("20060102-150405"))
+	if strings.HasPrefix(st.LastRunId, runId) {
+		runId = fmt.Sprintf("%s-%d", runId, st.Fired)
+	}
+	st.LastRunId = runId
+	return runId
 }
 
 // pendingTick drains the one queued firing once the live run is gone.

@@ -188,7 +188,7 @@ func (w *WorkerPlane) Emit(ctx context.Context, req *workerplanev1.EmitRequest) 
 		note["payload"] = req.GetPayload()
 	}
 	if err := b.Client.SignalWorkflow(ctx, req.GetRef(), "", entity.NoteSignalName, note); err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.Unavailable)
 	}
 	return &workerplanev1.EmitResponse{}, nil
 }
@@ -241,7 +241,7 @@ func (w *WorkerPlane) GetPipeline(ctx context.Context, req *workerplanev1.GetPip
 	}
 	st, err := b.Worker.GetPipeline(ctx, req.GetPipelineId())
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.NotFound)
 	}
 	return &workerplanev1.GetPipelineResponse{Image: st.Image, Manifest: st.Manifest, Digest: st.Digest}, nil
 }
@@ -253,13 +253,13 @@ func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunR
 	if err != nil {
 		return nil, err
 	}
-	workflowId, temporalRunId, err := startRunCore(ctx, b, w.Log,
+	out, err := startRunCore(ctx, b, w.Log,
 		req.GetRunId(), req.GetPipeline(), req.GetParams(), req.GetImage(), req.GetLabels(),
 		syslabels.TriggerManual, "")
 	if err != nil {
 		return nil, err
 	}
-	return &workerplanev1.StartRunResponse{WorkflowId: workflowId, TemporalRunId: temporalRunId}, nil
+	return &workerplanev1.StartRunResponse{WorkflowId: out.WorkflowId, TemporalRunId: out.TemporalRunId}, nil
 }
 
 // GetRun reports the run's status.
@@ -270,7 +270,7 @@ func (w *WorkerPlane) GetRun(ctx context.Context, req *workerplanev1.GetRunReque
 	}
 	desc, err := b.Client.DescribeWorkflowExecution(ctx, "run/"+req.GetRunId(), "")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, temporalStatus(err, codes.Unavailable)
 	}
 	return &workerplanev1.GetRunResponse{Status: desc.GetWorkflowExecutionInfo().GetStatus().String()}, nil
 }
@@ -297,7 +297,9 @@ func (w *WorkerPlane) RunResult(ctx context.Context, req *workerplanev1.RunResul
 	}
 	var out json.RawMessage
 	if err := b.Client.GetWorkflow(ctx, "run/"+req.GetRunId(), "").Get(ctx, &out); err != nil {
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		// The run's own failure is the caller's precondition; an absent
+		// run or a silent Temporal keep their own codes.
+		return nil, temporalStatus(err, codes.FailedPrecondition)
 	}
 	return &workerplanev1.RunResultResponse{Result: out}, nil
 }

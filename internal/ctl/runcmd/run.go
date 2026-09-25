@@ -91,7 +91,7 @@ interactive form walks the schema field by field.`,
 			if id == "" {
 				id = fmt.Sprintf("%s-%s", pipelineId, time.Now().UTC().Format("20060102-150405"))
 			}
-			_, err = d.Runs.StartRun(ctx, connect.NewRequest(&managementv1.StartRunRequest{
+			resp, err := d.Runs.StartRun(ctx, connect.NewRequest(&managementv1.StartRunRequest{
 				RunId:    id,
 				Pipeline: pipelineId,
 				Params:   paramsJSON,
@@ -101,10 +101,31 @@ interactive form walks the schema field by field.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "run %s started (managed: %v)\n", id, image != "")
+			if got := resp.Msg.GetRunId(); got != "" {
+				id = got
+			}
+			// The door's word: a start may find the run already there (the
+			// same request asked twice) or put it in the queue behind the
+			// live run — neither is a failure, both are said.
+			switch resp.Msg.GetDecision() {
+			case "exists":
+				fmt.Fprintf(os.Stderr, "run %s already exists: the same request, nothing new started\n", id)
+			case "queued":
+				fmt.Fprintf(os.Stderr, "run %s queued behind the live run (concurrency policy: queue)\n", id)
+				if displaced := resp.Msg.GetDisplacedRunId(); displaced != "" {
+					fmt.Fprintf(os.Stderr, "%s\n", ui.Yellow("displaced the queued firing "+displaced+": it will not run"))
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "run %s started (managed: %v)\n", id, image != "")
+			}
 			if !watch {
 				fmt.Fprintln(cmdutil.Out, id)
 				return nil
+			}
+			if resp.Msg.GetDecision() == "queued" {
+				if err := awaitRun(ctx, d, id); err != nil {
+					return err
+				}
 			}
 			return watchToEnd(ctx, f, d, id, wopts)
 		},
@@ -148,6 +169,26 @@ a terminal (or --plain) the same model prints as an append-only feed.`,
 	}
 	bindWatchFlags(cmd, &wopts)
 	return cmd
+}
+
+// awaitRun waits for a queued firing to become a run: until then the run
+// is absent, and only absent — the door says NotFound for nothing else.
+func awaitRun(ctx context.Context, d *cmdutil.Door, runId string) error {
+	fmt.Fprintln(os.Stderr, ui.Gray("waiting for the queue to start it…"))
+	for {
+		_, err := d.Runs.GetRun(ctx, connect.NewRequest(&managementv1.GetRunRequest{RunId: runId}))
+		if err == nil {
+			return nil
+		}
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // watchToEnd runs the rich watch (a plain feed off a terminal) to a
