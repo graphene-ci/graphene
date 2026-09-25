@@ -15,8 +15,8 @@ require (
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
 	github.com/graphene-ci/agent v0.0.0-20260902105042-dd9da8e074b6
-	github.com/graphene-ci/library/docker v0.0.0-20260824104029-62c9fcb1c6ee
-	github.com/graphene-ci/pipeline v0.2.11
+	github.com/graphene-ci/library/docker v0.3.3
+	github.com/graphene-ci/pipeline v0.2.12
 	github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0
@@ -24,7 +24,7 @@ require (
 	github.com/siderolabs/grpc-proxy v0.5.2
 	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/cobra v1.10.2
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/proto/otlp v1.11.0
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.47.0
@@ -33,7 +33,7 @@ require (
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
 	google.golang.org/grpc v1.83.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
@@ -105,6 +105,8 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.71.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
@@ -127,7 +129,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.21.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/mod v0.38.0 // indirect
