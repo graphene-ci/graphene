@@ -182,58 +182,169 @@ func (o *Observe) Events(ctx context.Context, creq *connect.Request[managementv1
 	return nil
 }
 
-// Logs streams dimension 3: the backend's history first, then — with
-// follow — the live push straight from the collector. The
-// subscription opens BEFORE the history is read and the seam is
-// deduplicated by time, so the moment between "read the past" and
-// "listen to the present" cannot lose a line.
+// scopeOf resolves the two query forms of a dimension read. RAW — a query
+// without a ref: the whole store, an administrator's. SCOPED and plain —
+// a ref: the record's own selector, authorized like any read of the
+// record; a query, if any, is evaluated inside that scope by the backend.
+func (o *Observe) scopeOf(ctx context.Context, ref, query string) (sel telemetry.Selector, raw bool, err error) {
+	if ref == "" {
+		if query == "" {
+			return telemetry.Selector{}, false, status.Error(codes.InvalidArgument, "name a record (ref) or, as an administrator, a raw query")
+		}
+		if err := o.watchRaw(ctx); err != nil {
+			return telemetry.Selector{}, false, err
+		}
+		return telemetry.Selector{}, true, nil
+	}
+	sel, err = o.subject(ctx, ref)
+	return sel, false, err
+}
+
+// backendError maps a telemetry backend's failure onto the door's codes:
+// the query's fault is InvalidArgument, the backend's Unavailable, a form
+// the backend cannot serve Unimplemented.
+func backendError(err error) error {
+	var be *telemetry.BackendError
+	var ce *telemetry.ClientError
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, telemetry.ErrScopedQueryUnsupported):
+		return connect.NewError(connect.CodeUnimplemented, err)
+	case errors.As(err, &ce):
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.As(err, &be) && be.ClientFault():
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewError(connect.CodeUnavailable, err)
+}
+
+// logQueryOf reads a log selection off the wire; the cursor is the opaque
+// token of a previous page.
+func logQueryOf(req *managementv1.LogsRequest) (telemetry.LogQuery, error) {
+	q := telemetry.LogQuery{
+		Limit:      int(req.GetLimit()),
+		Filter:     req.GetQuery(),
+		Severities: req.GetSeverities(),
+		Text:       req.GetText(),
+		Attributes: map[string]string{},
+	}
+	if req.GetSinceUnixNano() > 0 {
+		q.Since = time.Unix(0, req.GetSinceUnixNano())
+	}
+	if req.GetUntilUnixNano() > 0 {
+		q.Until = time.Unix(0, req.GetUntilUnixNano())
+	}
+	switch req.GetOrder() {
+	case "", "asc":
+	case "desc":
+		q.Desc = true
+	default:
+		return q, status.Errorf(codes.InvalidArgument, "order %q: want asc or desc", req.GetOrder())
+	}
+	if q.Limit > telemetry.MaxLogLimit {
+		return q, status.Errorf(codes.InvalidArgument, "limit %d is above %d", q.Limit, telemetry.MaxLogLimit)
+	}
+	for attr, value := range map[string]string{
+		"stream": req.GetStream(), "graphene.agent": req.GetAgent(), "graphene.entity": req.GetEntity(),
+	} {
+		if value != "" {
+			q.Attributes[attr] = value
+		}
+	}
+	if tok := req.GetPageToken(); tok != "" {
+		cursor, err := decodeCursor(tok)
+		if err != nil {
+			return q, status.Error(codes.InvalidArgument, "page token: "+err.Error())
+		}
+		q.Cursor = cursor
+	}
+	return q, nil
+}
+
+// The page token is the cursor, base64 of "<unix nanos>:<skip>".
+func encodeCursor(c telemetry.LogCursor) string {
+	if c.IsZero() {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(c.Time.UnixNano(), 10) + ":" + strconv.Itoa(c.Skip)))
+}
+
+func decodeCursor(tok string) (telemetry.LogCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(tok)
+	if err != nil {
+		return telemetry.LogCursor{}, err
+	}
+	at, skip, ok := strings.Cut(string(raw), ":")
+	nanos, err1 := strconv.ParseInt(at, 10, 64)
+	n, err2 := strconv.Atoi(skip)
+	if !ok || err1 != nil || err2 != nil || n < 0 {
+		return telemetry.LogCursor{}, errors.New("not a page token of this door")
+	}
+	return telemetry.LogCursor{Time: time.Unix(0, nanos), Skip: n}, nil
+}
+
+// Logs streams dimension 3: the selection's history first — one page,
+// closed by a page chunk that says how much came and whether more is
+// there — then, with follow, the live push straight from the collector.
+// The subscription opens BEFORE the history is read and the seam is
+// deduplicated by time, so the moment between "read the past" and "listen
+// to the present" cannot lose a line.
 func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.LogsRequest], stream *connect.ServerStream[managementv1.LogChunk]) error {
 	req := creq.Msg
-	// The raw view: the whole store, the backend's own language.
-	if req.GetQuery() != "" {
-		if err := o.watchRaw(ctx); err != nil {
-			return asConnectError(err)
-		}
+	sel, raw, err := o.scopeOf(ctx, req.GetRef(), req.GetQuery())
+	if err != nil {
+		return asConnectError(err)
+	}
+	if raw {
 		backend, ok := o.LogsBackend.(*telemetry.LogsQL)
 		if !ok {
 			return connect.NewError(connect.CodeUnimplemented, errNoBackend)
 		}
-		records, err := backend.RawLogs(ctx, req.GetQuery(), 1000)
+		records, err := backend.RawLogs(ctx, req.GetQuery(), int(req.GetLimit()))
 		if err != nil {
-			return asConnectError(status.Error(codes.InvalidArgument, err.Error()))
+			return backendError(err)
 		}
 		for _, rec := range records {
 			if err := sendLog(stream, rec); err != nil {
 				return err
 			}
 		}
-		return nil
+		return stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Page{Page: &managementv1.LogPage{Returned: int32(len(records))}}}) //nolint:gosec // bounded by the limit
 	}
-	sel, err := o.subject(ctx, req.GetRef())
+	q, err := logQueryOf(req)
 	if err != nil {
 		return asConnectError(err)
+	}
+	if req.GetFollow() && (q.Desc || !q.Cursor.IsZero()) {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("follow reads forward from the present: it takes neither desc nor a page token"))
 	}
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
 		sub = o.Hub.Subscribe(sel, "log")
 		defer sub.Close()
 	}
-	since := time.Time{}
-	if req.GetSinceUnixNano() > 0 {
-		since = time.Unix(0, req.GetSinceUnixNano())
-	}
-	last := since
+	last := q.Since
 	if o.LogsBackend != nil {
-		records, err := o.LogsBackend.Query(ctx, sel, since, 1000)
+		page, err := o.LogsBackend.Query(ctx, sel, q)
 		if err != nil && sub == nil {
-			return asConnectError(status.Error(codes.Unavailable, err.Error()))
+			return backendError(err)
 		}
-		for _, rec := range records {
+		for _, rec := range page.Records {
 			if err := sendLog(stream, rec); err != nil {
 				return err
 			}
 			if rec.Time.After(last) {
 				last = rec.Time
+			}
+		}
+		if err == nil {
+			closing := &managementv1.LogPage{Returned: int32(len(page.Records)), Truncated: page.Truncated} //nolint:gosec // bounded by the limit
+			if page.Truncated {
+				closing.NextPageToken = encodeCursor(page.Next)
+			}
+			if err := stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Page{Page: closing}}); err != nil {
+				return err
 			}
 		}
 	} else if sub == nil {
@@ -269,6 +380,43 @@ func (o *Observe) Logs(ctx context.Context, creq *connect.Request[managementv1.L
 	}
 }
 
+// LogFacets counts the values of fields within the same selection Logs
+// would return — a UI's filter menu with its numbers.
+func (o *Observe) LogFacets(ctx context.Context, creq *connect.Request[managementv1.LogFacetsRequest]) (*connect.Response[managementv1.LogFacetsResponse], error) {
+	req := creq.Msg
+	selection := req.GetSelection()
+	if selection.GetRef() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("facets are counted within one record: name its ref"))
+	}
+	if len(req.GetFields()) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name the fields to count"))
+	}
+	sel, _, err := o.scopeOf(ctx, selection.GetRef(), selection.GetQuery())
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	q, err := logQueryOf(selection)
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	if o.LogsBackend == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errNoBackend)
+	}
+	facets, err := o.LogsBackend.Facets(ctx, sel, q, req.GetFields(), int(req.GetLimit()))
+	if err != nil {
+		return nil, backendError(err)
+	}
+	out := &managementv1.LogFacetsResponse{}
+	for _, f := range facets {
+		facet := &managementv1.LogFacetsResponse_Facet{Field: f.Field}
+		for _, v := range f.Values {
+			facet.Values = append(facet.Values, &managementv1.LogFacetsResponse_Value{Value: v.Value, Hits: v.Hits})
+		}
+		out.Facets = append(out.Facets, facet)
+	}
+	return connect.NewResponse(out), nil
+}
+
 // sendLog renders one record chunk.
 func sendLog(stream *connect.ServerStream[managementv1.LogChunk], rec telemetry.LogRecord) error {
 	return stream.Send(&managementv1.LogChunk{Chunk: &managementv1.LogChunk_Record{Record: &managementv1.LogRecord{
@@ -279,54 +427,52 @@ func sendLog(stream *connect.ServerStream[managementv1.LogChunk], rec telemetry.
 	}}})
 }
 
+// metricsQueryOf reads the window and resolution off the wire: end now,
+// start an hour before, unless said otherwise.
+func metricsQueryOf(req *managementv1.MetricsRequest) telemetry.MetricsQuery {
+	q := telemetry.MetricsQuery{End: time.Now(), Step: time.Duration(req.GetStepSeconds()) * time.Second}
+	if req.GetEndUnixNano() > 0 {
+		q.End = time.Unix(0, req.GetEndUnixNano())
+	}
+	q.Start = q.End.Add(-time.Hour)
+	if req.GetStartUnixNano() > 0 {
+		q.Start = time.Unix(0, req.GetStartUnixNano())
+	}
+	return q
+}
+
 // Metrics streams dimension 4: one snapshot chunk — the backend's own
-// PromQL range JSON — then, with follow, live OTLP metric batches of
-// this subject, decodable by any standard OTel library.
+// PromQL range JSON of the record's series, or of the caller's expression
+// evaluated inside the record's scope — then, with follow, live OTLP
+// metric batches of the record.
 func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv1.MetricsRequest], stream *connect.ServerStream[managementv1.MetricsChunk]) error {
 	req := creq.Msg
-	if req.GetQuery() != "" {
-		if err := o.watchRaw(ctx); err != nil {
-			return asConnectError(err)
-		}
+	sel, raw, err := o.scopeOf(ctx, req.GetRef(), req.GetQuery())
+	if err != nil {
+		return asConnectError(err)
+	}
+	q := metricsQueryOf(req)
+	if raw {
 		backend, ok := o.MetricsBackend.(*telemetry.PromQL)
 		if !ok {
 			return connect.NewError(connect.CodeUnimplemented, errNoBackend)
 		}
-		end := time.Now()
-		if req.GetEndUnixNano() > 0 {
-			end = time.Unix(0, req.GetEndUnixNano())
-		}
-		start := end.Add(-time.Hour)
-		if req.GetStartUnixNano() > 0 {
-			start = time.Unix(0, req.GetStartUnixNano())
-		}
-		raw, err := backend.RawMetrics(ctx, req.GetQuery(), start, end)
+		snapshot, err := backend.RawMetrics(ctx, req.GetQuery(), q)
 		if err != nil {
-			return asConnectError(status.Error(codes.InvalidArgument, err.Error()))
+			return backendError(err)
 		}
-		return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: raw}})
+		return stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: snapshot}})
 	}
-	sel, err := o.subject(ctx, req.GetRef())
-	if err != nil {
-		return asConnectError(err)
-	}
+	q.Expr = req.GetQuery()
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
 		sub = o.Hub.Subscribe(sel, "metric")
 		defer sub.Close()
 	}
 	if o.MetricsBackend != nil {
-		end := time.Now()
-		if req.GetEndUnixNano() > 0 {
-			end = time.Unix(0, req.GetEndUnixNano())
-		}
-		start := end.Add(-time.Hour)
-		if req.GetStartUnixNano() > 0 {
-			start = time.Unix(0, req.GetStartUnixNano())
-		}
-		series, serr := o.MetricsBackend.Series(ctx, sel, start, end)
+		series, serr := o.MetricsBackend.Series(ctx, sel, q)
 		if serr != nil && sub == nil {
-			return asConnectError(status.Error(codes.Unavailable, serr.Error()))
+			return backendError(serr)
 		}
 		if serr == nil {
 			if err := stream.Send(&managementv1.MetricsChunk{Chunk: &managementv1.MetricsChunk_Snapshot{Snapshot: series}}); err != nil {
@@ -346,26 +492,24 @@ func (o *Observe) Metrics(ctx context.Context, creq *connect.Request[managementv
 }
 
 // Trace streams dimension 5: one snapshot chunk — Jaeger JSON of the
-// subject's traces — then, with follow, live OTLP span batches.
+// record's traces, narrowed by the caller's search parameters inside the
+// record's scope — then, with follow, live OTLP span batches.
 func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.TraceRequest], stream *connect.ServerStream[managementv1.TraceChunk]) error {
 	req := creq.Msg
-	if req.GetQuery() != "" {
-		if err := o.watchRaw(ctx); err != nil {
-			return asConnectError(err)
-		}
+	sel, raw, err := o.scopeOf(ctx, req.GetRef(), req.GetQuery())
+	if err != nil {
+		return asConnectError(err)
+	}
+	if raw {
 		backend, ok := o.TracesBackend.(*telemetry.Jaeger)
 		if !ok {
 			return connect.NewError(connect.CodeUnimplemented, errNoBackend)
 		}
-		raw, err := backend.RawTraces(ctx, req.GetQuery())
+		snapshot, err := backend.RawTraces(ctx, req.GetQuery())
 		if err != nil {
-			return asConnectError(status.Error(codes.InvalidArgument, err.Error()))
+			return backendError(err)
 		}
-		return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: raw}})
-	}
-	sel, err := o.subject(ctx, req.GetRef())
-	if err != nil {
-		return asConnectError(err)
+		return stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: snapshot}})
 	}
 	var sub *telemetry.Subscription
 	if req.GetFollow() && o.Hub != nil {
@@ -373,9 +517,9 @@ func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.
 		defer sub.Close()
 	}
 	if o.TracesBackend != nil {
-		trace, serr := o.TracesBackend.Search(ctx, sel, 20)
+		trace, serr := o.TracesBackend.Search(ctx, sel, req.GetQuery(), int(req.GetLimit()))
 		if serr != nil && sub == nil {
-			return asConnectError(status.Error(codes.Unavailable, serr.Error()))
+			return backendError(serr)
 		}
 		if serr == nil {
 			if err := stream.Send(&managementv1.TraceChunk{Chunk: &managementv1.TraceChunk_Snapshot{Snapshot: trace}}); err != nil {
@@ -394,8 +538,6 @@ func (o *Observe) Trace(ctx context.Context, creq *connect.Request[managementv1.
 		})
 }
 
-// followOtlp drains a live subscription into OTLP chunks; a nil
-// subscription ends the stream after the snapshot.
 func followOtlp(ctx context.Context, sub *telemetry.Subscription, send func([]byte) error, sendDropped func(int64) error) error {
 	if sub == nil {
 		return nil

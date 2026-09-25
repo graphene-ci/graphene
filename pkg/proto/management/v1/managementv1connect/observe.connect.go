@@ -47,6 +47,8 @@ const (
 	ObserveAPIEventsProcedure = "/graphene.management.v1.ObserveAPI/Events"
 	// ObserveAPILogsProcedure is the fully-qualified name of the ObserveAPI's Logs RPC.
 	ObserveAPILogsProcedure = "/graphene.management.v1.ObserveAPI/Logs"
+	// ObserveAPILogFacetsProcedure is the fully-qualified name of the ObserveAPI's LogFacets RPC.
+	ObserveAPILogFacetsProcedure = "/graphene.management.v1.ObserveAPI/LogFacets"
 	// ObserveAPIMetricsProcedure is the fully-qualified name of the ObserveAPI's Metrics RPC.
 	ObserveAPIMetricsProcedure = "/graphene.management.v1.ObserveAPI/Metrics"
 	// ObserveAPITraceProcedure is the fully-qualified name of the ObserveAPI's Trace RPC.
@@ -63,6 +65,9 @@ type ObserveAPIClient interface {
 	// Logs is dimension 3 (telemetry plane). History first, then — with
 	// follow — the live push from the collector: no polling anywhere.
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error)
+	// LogFacets answers the values a log field takes within the same
+	// selection Logs would return, each with its record count.
+	LogFacets(context.Context, *connect.Request[v1.LogFacetsRequest]) (*connect.Response[v1.LogFacetsResponse], error)
 	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
 	// range JSON), then — with follow — live OTLP metric chunks.
 	Metrics(context.Context, *connect.Request[v1.MetricsRequest]) (*connect.ServerStreamForClient[v1.MetricsChunk], error)
@@ -100,6 +105,12 @@ func NewObserveAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(observeAPIMethods.ByName("Logs")),
 			connect.WithClientOptions(opts...),
 		),
+		logFacets: connect.NewClient[v1.LogFacetsRequest, v1.LogFacetsResponse](
+			httpClient,
+			baseURL+ObserveAPILogFacetsProcedure,
+			connect.WithSchema(observeAPIMethods.ByName("LogFacets")),
+			connect.WithClientOptions(opts...),
+		),
 		metrics: connect.NewClient[v1.MetricsRequest, v1.MetricsChunk](
 			httpClient,
 			baseURL+ObserveAPIMetricsProcedure,
@@ -117,11 +128,12 @@ func NewObserveAPIClient(httpClient connect.HTTPClient, baseURL string, opts ...
 
 // observeAPIClient implements ObserveAPIClient.
 type observeAPIClient struct {
-	state   *connect.Client[v1.ObserveStateRequest, v1.ObserveStateResponse]
-	events  *connect.Client[v1.EventsRequest, v1.Event]
-	logs    *connect.Client[v1.LogsRequest, v1.LogChunk]
-	metrics *connect.Client[v1.MetricsRequest, v1.MetricsChunk]
-	trace   *connect.Client[v1.TraceRequest, v1.TraceChunk]
+	state     *connect.Client[v1.ObserveStateRequest, v1.ObserveStateResponse]
+	events    *connect.Client[v1.EventsRequest, v1.Event]
+	logs      *connect.Client[v1.LogsRequest, v1.LogChunk]
+	logFacets *connect.Client[v1.LogFacetsRequest, v1.LogFacetsResponse]
+	metrics   *connect.Client[v1.MetricsRequest, v1.MetricsChunk]
+	trace     *connect.Client[v1.TraceRequest, v1.TraceChunk]
 }
 
 // State calls graphene.management.v1.ObserveAPI.State.
@@ -137,6 +149,11 @@ func (c *observeAPIClient) Events(ctx context.Context, req *connect.Request[v1.E
 // Logs calls graphene.management.v1.ObserveAPI.Logs.
 func (c *observeAPIClient) Logs(ctx context.Context, req *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error) {
 	return c.logs.CallServerStream(ctx, req)
+}
+
+// LogFacets calls graphene.management.v1.ObserveAPI.LogFacets.
+func (c *observeAPIClient) LogFacets(ctx context.Context, req *connect.Request[v1.LogFacetsRequest]) (*connect.Response[v1.LogFacetsResponse], error) {
+	return c.logFacets.CallUnary(ctx, req)
 }
 
 // Metrics calls graphene.management.v1.ObserveAPI.Metrics.
@@ -159,6 +176,9 @@ type ObserveAPIHandler interface {
 	// Logs is dimension 3 (telemetry plane). History first, then — with
 	// follow — the live push from the collector: no polling anywhere.
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogChunk]) error
+	// LogFacets answers the values a log field takes within the same
+	// selection Logs would return, each with its record count.
+	LogFacets(context.Context, *connect.Request[v1.LogFacetsRequest]) (*connect.Response[v1.LogFacetsResponse], error)
 	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
 	// range JSON), then — with follow — live OTLP metric chunks.
 	Metrics(context.Context, *connect.Request[v1.MetricsRequest], *connect.ServerStream[v1.MetricsChunk]) error
@@ -192,6 +212,12 @@ func NewObserveAPIHandler(svc ObserveAPIHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(observeAPIMethods.ByName("Logs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	observeAPILogFacetsHandler := connect.NewUnaryHandler(
+		ObserveAPILogFacetsProcedure,
+		svc.LogFacets,
+		connect.WithSchema(observeAPIMethods.ByName("LogFacets")),
+		connect.WithHandlerOptions(opts...),
+	)
 	observeAPIMetricsHandler := connect.NewServerStreamHandler(
 		ObserveAPIMetricsProcedure,
 		svc.Metrics,
@@ -212,6 +238,8 @@ func NewObserveAPIHandler(svc ObserveAPIHandler, opts ...connect.HandlerOption) 
 			observeAPIEventsHandler.ServeHTTP(w, r)
 		case ObserveAPILogsProcedure:
 			observeAPILogsHandler.ServeHTTP(w, r)
+		case ObserveAPILogFacetsProcedure:
+			observeAPILogFacetsHandler.ServeHTTP(w, r)
 		case ObserveAPIMetricsProcedure:
 			observeAPIMetricsHandler.ServeHTTP(w, r)
 		case ObserveAPITraceProcedure:
@@ -235,6 +263,10 @@ func (UnimplementedObserveAPIHandler) Events(context.Context, *connect.Request[v
 
 func (UnimplementedObserveAPIHandler) Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.Logs is not implemented"))
+}
+
+func (UnimplementedObserveAPIHandler) LogFacets(context.Context, *connect.Request[v1.LogFacetsRequest]) (*connect.Response[v1.LogFacetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("graphene.management.v1.ObserveAPI.LogFacets is not implemented"))
 }
 
 func (UnimplementedObserveAPIHandler) Metrics(context.Context, *connect.Request[v1.MetricsRequest], *connect.ServerStream[v1.MetricsChunk]) error {

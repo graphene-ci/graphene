@@ -22,6 +22,9 @@ service ObserveAPI {
   // Logs is dimension 3 (telemetry plane). History first, then — with
   // follow — the live push from the collector: no polling anywhere.
   rpc Logs(LogsRequest) returns (stream LogChunk);
+  // LogFacets answers the values a log field takes within the same
+  // selection Logs would return, each with its record count.
+  rpc LogFacets(LogFacetsRequest) returns (LogFacetsResponse);
   // Metrics is dimension 4: one snapshot chunk (the backend's PromQL
   // range JSON), then — with follow — live OTLP metric chunks.
   rpc Metrics(MetricsRequest) returns (stream MetricsChunk);
@@ -87,14 +90,67 @@ message Event {
   string activity_id = 12;
 }
 
+// Every read of a record's dimensions 3-5 has two query forms. RAW —
+// `query` without `ref`: the backend's own language over the whole store,
+// an administrator's. SCOPED — `ref` with `query`: the same language, but
+// the door lays the record's scope (namespace, correlation, birth) over
+// it in a way the expression cannot escape; authorized like any read of
+// the record.
 message LogsRequest {
   string ref = 1;
   bool follow = 2;
+  // Since/Until bound the selection; zero means open.
   int64 since_unix_nano = 3;
-  // Query is the RAW view: a LogsQL query in the backend's own
-  // language, over the whole store (admin only; ref and follow are
-  // ignored). A resource's logs are the same store filtered.
+  int64 until_unix_nano = 5;
+  // Query: raw LogsQL without ref; a LogsQL filter ANDed into the
+  // record's scope with ref.
   string query = 4;
+  // Limit caps the records of one page (default 1000, at most 10000).
+  int32 limit = 6;
+  // Order is "asc" (default: oldest first) or "desc".
+  string order = 7;
+  // PageToken continues a previous page (opaque, from the page chunk).
+  // A follow cannot be paged.
+  string page_token = 8;
+  // Filters, ANDed: severity names (INFO, WARN, ...), the record's
+  // stream attribute (stdout/stderr), the agent and entity that emitted
+  // it, a text the body must contain.
+  repeated string severities = 9;
+  string stream = 10;
+  string agent = 11;
+  string entity = 12;
+  string text = 13;
+}
+
+// LogPage closes a history read: what the page did not carry.
+message LogPage {
+  // Returned is how many records this page sent — zero is an answer.
+  int32 returned = 1;
+  // Truncated: the selection has more than limit; NextPageToken
+  // continues it. Empty token — the selection is exhausted.
+  bool truncated = 2;
+  string next_page_token = 3;
+}
+
+message LogFacetsRequest {
+  // The same selection as LogsRequest (ref, query, bounds, filters).
+  LogsRequest selection = 1;
+  // Fields to count values of: severity, stream, agent, entity, job, ...
+  repeated string fields = 2;
+  // Limit caps the values per field (default 50).
+  int32 limit = 3;
+}
+
+message LogFacetsResponse {
+  message Value {
+    string value = 1;
+    int64 hits = 2;
+  }
+  message Facet {
+    string field = 1;
+    repeated Value values = 2;
+  }
+  repeated Facet facets = 1;
 }
 
 message LogRecord {
@@ -112,6 +168,8 @@ message LogChunk {
     // Dropped reports lines a slow consumer lost — telemetry sheds
     // rather than blocks, and says so instead of leaving silent holes.
     int64 dropped = 2;
+    // Page closes the history part: count, truncation, the next token.
+    LogPage page = 3;
   }
 }
 
@@ -121,9 +179,13 @@ message MetricsRequest {
   int64 end_unix_nano = 3;
   // Follow keeps the stream open: live points arrive as standard OTLP.
   bool follow = 4;
-  // Query is the RAW view: a PromQL range query over the whole store
-  // (admin only; ref and follow are ignored).
+  // Query: raw PromQL without ref; with ref, the same PromQL evaluated
+  // inside the record's scope — the backend applies the scope to every
+  // selector and subquery of the expression.
   string query = 5;
+  // StepSeconds is the range query's resolution; 0 lets the door pick
+  // (range/200, at least 15 s). At most 11000 points per series.
+  int32 step_seconds = 6;
 }
 
 message MetricsChunk {
@@ -142,9 +204,12 @@ message TraceRequest {
   string ref = 1;
   // Follow keeps the stream open: live spans arrive as standard OTLP.
   bool follow = 2;
-  // Query is the RAW view: Jaeger search parameters as a query string
-  // ("service=x&tags=..."), over the whole store (admin only).
+  // Query: raw Jaeger search parameters ("service=x&tags=...") without
+  // ref; with ref, the same parameters inside the record's scope — the
+  // scope's tags win over the query's, the namespace is enforced.
   string query = 3;
+  // Limit caps the traces of the snapshot (default 20).
+  int32 limit = 4;
 }
 
 message TraceChunk {

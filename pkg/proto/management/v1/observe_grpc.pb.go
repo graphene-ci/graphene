@@ -27,11 +27,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ObserveAPI_State_FullMethodName   = "/graphene.management.v1.ObserveAPI/State"
-	ObserveAPI_Events_FullMethodName  = "/graphene.management.v1.ObserveAPI/Events"
-	ObserveAPI_Logs_FullMethodName    = "/graphene.management.v1.ObserveAPI/Logs"
-	ObserveAPI_Metrics_FullMethodName = "/graphene.management.v1.ObserveAPI/Metrics"
-	ObserveAPI_Trace_FullMethodName   = "/graphene.management.v1.ObserveAPI/Trace"
+	ObserveAPI_State_FullMethodName     = "/graphene.management.v1.ObserveAPI/State"
+	ObserveAPI_Events_FullMethodName    = "/graphene.management.v1.ObserveAPI/Events"
+	ObserveAPI_Logs_FullMethodName      = "/graphene.management.v1.ObserveAPI/Logs"
+	ObserveAPI_LogFacets_FullMethodName = "/graphene.management.v1.ObserveAPI/LogFacets"
+	ObserveAPI_Metrics_FullMethodName   = "/graphene.management.v1.ObserveAPI/Metrics"
+	ObserveAPI_Trace_FullMethodName     = "/graphene.management.v1.ObserveAPI/Trace"
 )
 
 // ObserveAPIClient is the client API for ObserveAPI service.
@@ -46,6 +47,9 @@ type ObserveAPIClient interface {
 	// Logs is dimension 3 (telemetry plane). History first, then — with
 	// follow — the live push from the collector: no polling anywhere.
 	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error)
+	// LogFacets answers the values a log field takes within the same
+	// selection Logs would return, each with its record count.
+	LogFacets(ctx context.Context, in *LogFacetsRequest, opts ...grpc.CallOption) (*LogFacetsResponse, error)
 	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
 	// range JSON), then — with follow — live OTLP metric chunks.
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsChunk], error)
@@ -110,6 +114,16 @@ func (c *observeAPIClient) Logs(ctx context.Context, in *LogsRequest, opts ...gr
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ObserveAPI_LogsClient = grpc.ServerStreamingClient[LogChunk]
 
+func (c *observeAPIClient) LogFacets(ctx context.Context, in *LogFacetsRequest, opts ...grpc.CallOption) (*LogFacetsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LogFacetsResponse)
+	err := c.cc.Invoke(ctx, ObserveAPI_LogFacets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *observeAPIClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ObserveAPI_ServiceDesc.Streams[2], ObserveAPI_Metrics_FullMethodName, cOpts...)
@@ -160,6 +174,9 @@ type ObserveAPIServer interface {
 	// Logs is dimension 3 (telemetry plane). History first, then — with
 	// follow — the live push from the collector: no polling anywhere.
 	Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error
+	// LogFacets answers the values a log field takes within the same
+	// selection Logs would return, each with its record count.
+	LogFacets(context.Context, *LogFacetsRequest) (*LogFacetsResponse, error)
 	// Metrics is dimension 4: one snapshot chunk (the backend's PromQL
 	// range JSON), then — with follow — live OTLP metric chunks.
 	Metrics(*MetricsRequest, grpc.ServerStreamingServer[MetricsChunk]) error
@@ -184,6 +201,9 @@ func (UnimplementedObserveAPIServer) Events(*EventsRequest, grpc.ServerStreaming
 }
 func (UnimplementedObserveAPIServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error {
 	return status.Error(codes.Unimplemented, "method Logs not implemented")
+}
+func (UnimplementedObserveAPIServer) LogFacets(context.Context, *LogFacetsRequest) (*LogFacetsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method LogFacets not implemented")
 }
 func (UnimplementedObserveAPIServer) Metrics(*MetricsRequest, grpc.ServerStreamingServer[MetricsChunk]) error {
 	return status.Error(codes.Unimplemented, "method Metrics not implemented")
@@ -252,6 +272,24 @@ func _ObserveAPI_Logs_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ObserveAPI_LogsServer = grpc.ServerStreamingServer[LogChunk]
 
+func _ObserveAPI_LogFacets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LogFacetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ObserveAPIServer).LogFacets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ObserveAPI_LogFacets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ObserveAPIServer).LogFacets(ctx, req.(*LogFacetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ObserveAPI_Metrics_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(MetricsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -284,6 +322,10 @@ var ObserveAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "State",
 			Handler:    _ObserveAPI_State_Handler,
+		},
+		{
+			MethodName: "LogFacets",
+			Handler:    _ObserveAPI_LogFacets_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

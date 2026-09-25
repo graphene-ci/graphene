@@ -406,7 +406,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		observe.LogsBackend = &telemetry.LogsQL{Base: cfg.QueryLogs, Client: telemetryHTTP}
 	}
 	if cfg.QueryMetrics != "" {
-		observe.MetricsBackend = &telemetry.PromQL{Base: cfg.QueryMetrics, Client: telemetryHTTP}
+		observe.MetricsBackend = &telemetry.PromQL{Base: cfg.QueryMetrics, Client: telemetryHTTP, ExtraFilters: cfg.QueryMetricsExtraFilters}
 	}
 	if cfg.QueryTraces != "" {
 		observe.TracesBackend = &telemetry.Jaeger{Base: cfg.QueryTraces, Client: telemetryHTTP}

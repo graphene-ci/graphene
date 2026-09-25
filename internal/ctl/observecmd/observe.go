@@ -41,7 +41,7 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			window, err := ReadWindow(cmd, dim)
+			opts, err := ReadOptions(cmd, dim)
 			if err != nil {
 				return err
 			}
@@ -49,29 +49,28 @@ func New(f *cmdutil.Factory, dim, short string) *cobra.Command {
 			// ("gctl metrics 'rate(...)'"), over the whole store. A
 			// record target never contains these characters.
 			if len(args) == 1 && strings.ContainsAny(args[0], "{}()|=* ") {
-				return RunQuery(cmd.Context(), f, dim, args[0], window)
+				opts.Query = args[0]
+				return RunQuery(cmd.Context(), f, dim, opts)
 			}
 			ref, rest, err := cmdutil.TargetRef(args)
 			if err != nil || len(rest) != 0 {
-				return fmt.Errorf("usage: %s <kind> <id>, or %s '<backend query>'", dim, dim)
+				return fmt.Errorf("usage: %s <kind> <id> [--query '<expr>'], or %s '<backend query>'", dim, dim)
 			}
-			return Run(cmd.Context(), f, dim, ref, follow, window, kinds...)
+			return Run(cmd.Context(), f, dim, ref, follow, opts, kinds...)
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep streaming live entries (push from the collector, no polling)")
 	if dim == "events" {
 		cmd.Flags().StringSliceVar(&kinds, "kind", nil, "only these event kinds (repeatable): note, activity-failed, run-failed, ...")
 	}
-	if dim == "metrics" {
-		BindWindowFlags(cmd)
-	}
+	BindFlags(cmd, dim)
 	return cmd
 }
 
 // Run executes one dimension read — the shared engine of the verb
 // form ("gctl logs pipeline/x") and the resource-first form
 // ("gctl pipeline/x logs").
-func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, window Window, kinds ...string) error {
+func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, opts Options, kinds ...string) error {
 	d, err := f.Dial()
 	if err != nil {
 		return err
@@ -115,13 +114,24 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 		}
 		return nil
 	case "logs":
-		stream, err := d.Observe.Logs(ctx, connect.NewRequest(&managementv1.LogsRequest{
-			Ref: ref, Follow: follow,
-		}))
+		selection := &managementv1.LogsRequest{
+			Ref: ref, Follow: follow, Query: opts.Query,
+			SinceUnixNano: opts.Start, UntilUnixNano: opts.End,
+			Limit: opts.Limit, PageToken: opts.PageToken,
+			Severities: opts.Severities, Stream: opts.Stream, Agent: opts.Agent, Entity: opts.Entity, Text: opts.Text,
+		}
+		if opts.Desc {
+			selection.Order = "desc"
+		}
+		if len(opts.Facets) > 0 {
+			return facets(ctx, f, d, selection, opts.Facets)
+		}
+		stream, err := d.Observe.Logs(ctx, connect.NewRequest(selection))
 		if err != nil {
 			return err
 		}
 		n := 0
+		var page *managementv1.LogPage
 		for stream.Receive() {
 			chunk := stream.Msg()
 			if done, err := f.Emit(chunk); err != nil {
@@ -133,6 +143,10 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 				fmt.Fprintf(os.Stderr, "... %d lines dropped (slow consumer)\n", d)
 				continue
 			}
+			if p := chunk.GetPage(); p != nil {
+				page = p
+				continue
+			}
 			rec := chunk.GetRecord()
 			if rec == nil {
 				continue
@@ -141,17 +155,20 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 			fmt.Fprintln(cmdutil.Out, logLine(rec, f.Output == "wide"))
 		}
 		if err := stream.Err(); err != nil {
-			return err
+			return cmdutil.OrNoRecord(err, ref)
 		}
 		if n == 0 && !follow {
 			if err := d.Exists(ctx, ref); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "%s has no log records.\n", ref)
+			fmt.Fprintf(os.Stderr, "%s has no log records in this selection.\n", ref)
+		}
+		if page != nil && page.GetTruncated() {
+			fmt.Fprintln(os.Stderr, ui.Gray(fmt.Sprintf("… %d of more; next page: --page %s", page.GetReturned(), page.GetNextPageToken())))
 		}
 		return nil
 	case "metrics":
-		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref, Follow: follow, StartUnixNano: window.Start, EndUnixNano: window.End}))
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Ref: ref, Follow: follow, Query: opts.Query, StartUnixNano: opts.Start, EndUnixNano: opts.End, StepSeconds: opts.Step}))
 		if err != nil {
 			return err
 		}
@@ -175,7 +192,7 @@ func Run(ctx context.Context, f *cmdutil.Factory, dim, ref string, follow bool, 
 		}
 		return stream.Err()
 	case "trace":
-		stream, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Ref: ref, Follow: follow}))
+		stream, err := d.Observe.Trace(ctx, connect.NewRequest(&managementv1.TraceRequest{Ref: ref, Follow: follow, Query: opts.Query, Limit: opts.Limit}))
 		if err != nil {
 			return err
 		}
@@ -350,14 +367,15 @@ func renderLiveSpans(raw []byte) {
 }
 
 // RunQuery executes one raw backend query through the door.
-func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string, window Window) error {
+func RunQuery(ctx context.Context, f *cmdutil.Factory, dim string, opts Options) error {
+	query := opts.Query
 	d, err := f.Dial()
 	if err != nil {
 		return err
 	}
 	switch dim {
 	case "logs":
-		stream, err := d.Observe.Logs(ctx, connect.NewRequest(&managementv1.LogsRequest{Query: query}))
+		stream, err := d.Observe.Logs(ctx, connect.NewRequest(&managementv1.LogsRequest{Query: query, Limit: opts.Limit}))
 		if err != nil {
 			return err
 		}
@@ -368,7 +386,7 @@ func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string, window
 		}
 		return stream.Err()
 	case "metrics":
-		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Query: query, StartUnixNano: window.Start, EndUnixNano: window.End}))
+		stream, err := d.Observe.Metrics(ctx, connect.NewRequest(&managementv1.MetricsRequest{Query: query, StartUnixNano: opts.Start, EndUnixNano: opts.End, StepSeconds: opts.Step}))
 		if err != nil {
 			return err
 		}
@@ -395,4 +413,31 @@ func RunQuery(ctx context.Context, f *cmdutil.Factory, dim, query string, window
 		return stream.Err()
 	}
 	return fmt.Errorf("%s has no raw query form", dim)
+}
+
+// facets prints the values of the named log fields within the selection,
+// with their counts — the numbers a filter menu shows.
+func facets(ctx context.Context, f *cmdutil.Factory, d *cmdutil.Door, selection *managementv1.LogsRequest, fields []string) error {
+	resp, err := d.Observe.LogFacets(ctx, connect.NewRequest(&managementv1.LogFacetsRequest{Selection: selection, Fields: fields}))
+	if err != nil {
+		return cmdutil.OrNoRecord(err, selection.GetRef())
+	}
+	if done, err := f.Emit(resp.Msg); done || err != nil {
+		return err
+	}
+	table := ui.NewTable("FIELD", "VALUE", "RECORDS").Right(2)
+	for i, facet := range resp.Msg.GetFacets() {
+		if i > 0 {
+			table.Break()
+		}
+		name := ui.Bold(facet.GetField())
+		if len(facet.GetValues()) == 0 {
+			table.Row(name, ui.Gray("—"), "0")
+		}
+		for _, v := range facet.GetValues() {
+			table.Row(name, v.GetValue(), ui.Number(float64(v.GetHits())))
+			name = ""
+		}
+	}
+	return table.Render(cmdutil.Out, ui.Width())
 }

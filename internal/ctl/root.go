@@ -57,11 +57,11 @@ binary itself, over the same connection contexts.`,
 				switch dim {
 				case "events", "logs", "metrics", "trace":
 					follow, _ := cmd.Flags().GetBool("follow")
-					window, err := observecmd.ReadWindow(cmd, dim)
+					opts, err := observecmd.ReadOptions(cmd, dim)
 					if err != nil {
 						return err
 					}
-					return observecmd.Run(cmd.Context(), f, dim, args[0], follow, window)
+					return observecmd.Run(cmd.Context(), f, dim, args[0], follow, opts)
 				}
 			}
 			return cmd.Help()
@@ -72,9 +72,10 @@ binary itself, over the same connection contexts.`,
 	// the root — subcommands keep their own flags.
 	root.Flags().BoolP("follow", "f", false, "keep streaming live entries (resource-first form)")
 	_ = root.Flags().MarkHidden("follow")
-	observecmd.BindWindowFlags(root)
-	_ = root.Flags().MarkHidden("start")
-	_ = root.Flags().MarkHidden("end")
+	observecmd.BindFlags(root, "")
+	for _, name := range []string{"start", "end", "step", "query", "limit", "desc", "page", "severity", "stream", "agent", "entity", "text", "facets", "traces"} {
+		_ = root.Flags().MarkHidden(name)
+	}
 	f.Bind(root)
 
 	connection := &cobra.Group{ID: "connection", Title: "Connection:"}

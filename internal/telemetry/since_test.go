@@ -45,7 +45,7 @@ func TestLogsQueryIsBoundedByBirth(t *testing.T) {
 	defer server.Close()
 	l := &LogsQL{Base: server.URL, Client: server.Client()}
 	// run watch asks a node's logs from the beginning: since is zero.
-	if _, err := l.Query(context.Background(), sel, time.Time{}, 10); err != nil {
+	if _, err := l.Query(context.Background(), sel, LogQuery{Limit: 10}); err != nil {
 		t.Fatal(err)
 	}
 	if want := "_time:>2026-09-18T11:00:00Z"; !strings.Contains(query, want) {
@@ -62,14 +62,14 @@ func TestMetricsWindowStartsAtBirth(t *testing.T) {
 	defer server.Close()
 	p := &PromQL{Base: server.URL, Client: server.Client()}
 	windowEnd := born.Add(10 * time.Minute)
-	if _, err := p.Series(context.Background(), sel, windowEnd.Add(-time.Hour), windowEnd); err != nil {
+	if _, err := p.Series(context.Background(), sel, MetricsQuery{Start: windowEnd.Add(-time.Hour), End: windowEnd}); err != nil {
 		t.Fatal(err)
 	}
 	if want := strconv.FormatInt(born.Unix(), 10); start != want {
 		t.Fatalf("start = %s, want the birth %s", start, want)
 	}
 	// A window that ended before the record was born is empty, not inverted.
-	if _, err := p.Series(context.Background(), sel, born.Add(-2*time.Hour), born.Add(-time.Hour)); err != nil {
+	if _, err := p.Series(context.Background(), sel, MetricsQuery{Start: born.Add(-2 * time.Hour), End: born.Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	if start != end {
@@ -89,7 +89,7 @@ func TestTraceSearchStartsAtBirth(t *testing.T) {
 	}))
 	defer server.Close()
 	j := &Jaeger{Base: server.URL, Client: server.Client()}
-	if _, err := j.Search(context.Background(), sel, 20); err != nil {
+	if _, err := j.Search(context.Background(), sel, "", 20); err != nil {
 		t.Fatal(err)
 	}
 	want := strconv.FormatInt(born.UnixMicro(), 10)

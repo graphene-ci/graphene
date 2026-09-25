@@ -161,6 +161,11 @@ type File struct {
 			Metrics string `mapstructure:"metrics"`
 			Logs    string `mapstructure:"logs"`
 			Traces  string `mapstructure:"traces"`
+			// MetricsExtraFilters marks a metrics backend that honors
+			// VictoriaMetrics' extra_filters[] — the mechanism a SCOPED
+			// PromQL query (a caller's expression inside one record) runs
+			// on. Off, that form answers Unimplemented.
+			MetricsExtraFilters *bool `mapstructure:"metricsExtraFilters"`
 		} `mapstructure:"query"`
 	} `mapstructure:"otel"`
 
@@ -229,6 +234,9 @@ type Config struct {
 	QueryMetrics string
 	QueryLogs    string
 	QueryTraces  string
+	// QueryMetricsExtraFilters: the metrics backend takes extra_filters[]
+	// (VictoriaMetrics); default true, the shipped stack.
+	QueryMetricsExtraFilters bool
 
 	AgentHeartbeat        time.Duration
 	AgentHeartbeatSeconds int
@@ -294,32 +302,33 @@ func Resolve(f File) (Config, error) {
 			SecretKey: f.Blobs.S3.SecretKey,
 			UseSSL:    f.Blobs.S3.UseSSL,
 		},
-		RegistryUpstream:      f.Registry.Upstream,
-		ManagedBackend:        f.Managed.Backend,
-		ManagedPodNamespace:   f.Managed.PodNamespace,
-		ManagedPullSecret:     f.Managed.PullSecret,
-		ManagedPullRegistry:   f.Managed.PullRegistry,
-		ManagedPodTemplate:    f.Managed.PodTemplate,
-		OtelTraces:            f.Otel.Traces,
-		OtelLogs:              f.Otel.Logs,
-		OtelMetrics:           f.Otel.Metrics,
-		QueryMetrics:          f.Otel.Query.Metrics,
-		QueryLogs:             f.Otel.Query.Logs,
-		QueryTraces:           f.Otel.Query.Traces,
-		AgentHeartbeatSeconds: f.Intervals.AgentHeartbeatSeconds,
-		SweepSeconds:          f.Intervals.SweepSeconds,
-		ReapSeconds:           f.Intervals.ReapSeconds,
-		Secrets:               map[string]string{},
-		SecretsStore:          f.Secrets.Store,
-		SecretsKey:            f.Secrets.Key,
-		Runtimes:              f.Runtimes,
-		OIDCIssuer:            f.Identity.Issuer,
-		OIDCAudience:          f.Identity.Audience,
-		OIDCUsernameClaim:     f.Identity.UsernameClaim,
-		OIDCGroupsClaim:       f.Identity.GroupsClaim,
-		SigningKey:            f.Identity.SigningKey,
-		Vars:                  f.Vars.Values,
-		VarsStore:             f.Vars.Store,
+		RegistryUpstream:         f.Registry.Upstream,
+		ManagedBackend:           f.Managed.Backend,
+		ManagedPodNamespace:      f.Managed.PodNamespace,
+		ManagedPullSecret:        f.Managed.PullSecret,
+		ManagedPullRegistry:      f.Managed.PullRegistry,
+		ManagedPodTemplate:       f.Managed.PodTemplate,
+		OtelTraces:               f.Otel.Traces,
+		OtelLogs:                 f.Otel.Logs,
+		OtelMetrics:              f.Otel.Metrics,
+		QueryMetrics:             f.Otel.Query.Metrics,
+		QueryLogs:                f.Otel.Query.Logs,
+		QueryTraces:              f.Otel.Query.Traces,
+		QueryMetricsExtraFilters: f.Otel.Query.MetricsExtraFilters == nil || *f.Otel.Query.MetricsExtraFilters,
+		AgentHeartbeatSeconds:    f.Intervals.AgentHeartbeatSeconds,
+		SweepSeconds:             f.Intervals.SweepSeconds,
+		ReapSeconds:              f.Intervals.ReapSeconds,
+		Secrets:                  map[string]string{},
+		SecretsStore:             f.Secrets.Store,
+		SecretsKey:               f.Secrets.Key,
+		Runtimes:                 f.Runtimes,
+		OIDCIssuer:               f.Identity.Issuer,
+		OIDCAudience:             f.Identity.Audience,
+		OIDCUsernameClaim:        f.Identity.UsernameClaim,
+		OIDCGroupsClaim:          f.Identity.GroupsClaim,
+		SigningKey:               f.Identity.SigningKey,
+		Vars:                     f.Vars.Values,
+		VarsStore:                f.Vars.Store,
 	}
 	if cfg.External == "" {
 		cfg.External = cfg.Listen

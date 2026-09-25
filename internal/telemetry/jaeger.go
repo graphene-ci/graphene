@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,22 +19,37 @@ type Jaeger struct {
 	Client *http.Client
 }
 
-// Search returns standard Jaeger JSON: the traces of every service
-// that carry the selector's attributes. Correlation attributes live in
-// the RESOURCE (Jaeger: process tags), and tag search implementations
-// differ on whether process tags participate — so the filter runs
+// Search returns standard Jaeger JSON: the traces of the record. Params
+// are the caller's own search parameters (service, operation, tags,
+// minDuration, ...) evaluated inside the record's scope: the scope's tags
+// win over the caller's, the namespace is a post-filter, and a service the
+// caller names is the only one asked. Correlation attributes live in the
+// RESOURCE (Jaeger: process tags), and tag search implementations differ
+// on whether process tags participate — so the namespace filter runs
 // here, over the standard response shape, and works everywhere.
-func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawMessage, error) {
+func (j *Jaeger) Search(ctx context.Context, sel Selector, params string, limit int) (json.RawMessage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	caller, err := url.ParseQuery(params)
+	if err != nil {
+		return nil, &ClientError{Msg: "trace query: " + err.Error()}
+	}
+	callerTags := map[string]string{}
+	if raw := caller.Get("tags"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &callerTags); err != nil {
+			return nil, &ClientError{Msg: "trace query: tags must be a JSON object: " + err.Error()}
+		}
+	}
 	services, err := j.services(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// The SUBJECT filters server-side: the correlation attribute lives
-	// on the spans, and the backend indexes span tags — fetching
-	// unfiltered traces and sieving them here found only whatever
-	// happened to be recent. The namespace stays a post-filter: it is a
-	// resource attribute (a process tag in Jaeger terms), stamped by
-	// the door, and belongs to a different half of the trace.
+	if want := caller.Get("service"); want != "" {
+		services = []string{want}
+	}
+	// The SUBJECT filters server-side: the correlation attribute lives on
+	// the spans, and the backend indexes span tags.
 	axes := []map[string]string{{sel.Attribute: sel.Value}}
 	if sel.AltAttribute != "" {
 		axes = append(axes, map[string]string{sel.AltAttribute: sel.AltValue})
@@ -44,18 +58,40 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 	seen := map[string]bool{}
 	for _, service := range services {
 		for _, axis := range axes {
-			tags, err := json.Marshal(axis)
+			tags := map[string]string{}
+			for k, v := range callerTags {
+				if isCorrelationKey(k) {
+					continue // the scope owns the correlation tags
+				}
+				tags[k] = v
+			}
+			for k, v := range axis {
+				tags[k] = v
+			}
+			encoded, err := json.Marshal(tags)
 			if err != nil {
 				return nil, err
 			}
-			q := url.Values{
-				"service": {service},
-				"tags":    {string(tags)},
-				"limit":   {strconv.Itoa(limit)},
+			q := url.Values{}
+			for k, vs := range caller {
+				if k == "service" || k == "tags" || k == "limit" || k == "start" {
+					continue
+				}
+				q[k] = vs
 			}
+			q.Set("service", service)
+			q.Set("tags", string(encoded))
+			q.Set("limit", strconv.Itoa(limit))
 			if !sel.Since.IsZero() {
-				// Jaeger's bounds are microseconds since the epoch.
-				q.Set("start", strconv.FormatInt(sel.Since.UnixMicro(), 10))
+				// Jaeger's bounds are microseconds since the epoch; the
+				// record's birth is the floor of any start the caller gave.
+				start := sel.Since.UnixMicro()
+				if s, err := strconv.ParseInt(caller.Get("start"), 10, 64); err == nil && s > start {
+					start = s
+				}
+				q.Set("start", strconv.FormatInt(start, 10))
+			} else if s := caller.Get("start"); s != "" {
+				q.Set("start", s)
 			}
 			raw, err := j.get(ctx, "/api/traces?"+q.Encode())
 			if err != nil {
@@ -84,6 +120,16 @@ func (j *Jaeger) Search(ctx context.Context, sel Selector, limit int) (json.RawM
 		return nil, err
 	}
 	return out, nil
+}
+
+// isCorrelationKey names the tags the door stamps and the scope is made
+// of; a caller's own value for one is dropped, not merged.
+func isCorrelationKey(key string) bool {
+	switch key {
+	case "graphene.namespace", "graphene.run", "graphene.agent", "graphene.entity":
+		return true
+	}
+	return false
 }
 
 // traceKey identifies a trace for axis-merge dedup.
@@ -137,8 +183,7 @@ func (j *Jaeger) services(ctx context.Context) ([]string, error) {
 }
 
 func (j *Jaeger) get(ctx context.Context, path string) (json.RawMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		strings.TrimSuffix(j.Base, "/")+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(j.Base, "/")+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -146,13 +191,12 @@ func (j *Jaeger) get(ctx context.Context, path string) (json.RawMessage, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	raw, err := readBackend("traces", resp, 32<<20)
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("traces backend: %s: %s", resp.Status, truncate(raw, 512))
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("traces backend returned invalid JSON")
 	}
 	return raw, nil
 }

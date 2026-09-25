@@ -20,7 +20,7 @@ func TestMetricsResponseBoundaries(t *testing.T) {
 		{"exact limit", `{"padding":"` + strings.Repeat("x", limit-14) + `"}`, "", http.StatusOK},
 		{"oversized", `{"padding":"` + strings.Repeat("x", limit) + `"}`, "exceeds 8 MiB", http.StatusOK},
 		{"invalid json", `{"data":`, "invalid JSON", http.StatusOK},
-		{"backend error", "unavailable", "503 Service Unavailable", http.StatusServiceUnavailable},
+		{"backend error", "unavailable", "metrics backend: 503", http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,9 +36,9 @@ func TestMetricsResponseBoundaries(t *testing.T) {
 				var result []byte
 				var err error
 				if raw {
-					result, err = p.RawMetrics(context.Background(), "up", time.Unix(100, 0), time.Unix(200, 0))
+					result, err = p.RawMetrics(context.Background(), "up", MetricsQuery{Start: time.Unix(100, 0), End: time.Unix(200, 0)})
 				} else {
-					result, err = p.Series(context.Background(), Selector{Namespace: "test", Attribute: "graphene.run", Value: "run-1"}, time.Unix(100, 0), time.Unix(200, 0))
+					result, err = p.Series(context.Background(), Selector{Namespace: "test", Attribute: "graphene.run", Value: "run-1"}, MetricsQuery{Start: time.Unix(100, 0), End: time.Unix(200, 0)})
 				}
 				if tc.wantError != "" {
 					if err == nil || !strings.Contains(err.Error(), tc.wantError) || result != nil {
@@ -67,7 +67,7 @@ func TestMetricsSelectsBothLabelEncodingsWithinNamespace(t *testing.T) {
 			}))
 			defer server.Close()
 			backend := &PromQL{Base: server.URL, Client: server.Client(), DotsToUnderscores: normalizedOnly}
-			_, err := backend.Series(context.Background(), Selector{Namespace: "tenant", Attribute: "graphene.run", Value: "run-1", AltAttribute: "graphene.owner", AltValue: "run/run-1"}, time.Unix(100, 0), time.Unix(200, 0))
+			_, err := backend.Series(context.Background(), Selector{Namespace: "tenant", Attribute: "graphene.run", Value: "run-1", AltAttribute: "graphene.owner", AltValue: "run/run-1"}, MetricsQuery{Start: time.Unix(100, 0), End: time.Unix(200, 0)})
 			if err != nil {
 				t.Fatal(err)
 			}

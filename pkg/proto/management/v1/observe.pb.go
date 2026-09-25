@@ -358,15 +358,37 @@ func (x *Event) GetActivityId() string {
 	return ""
 }
 
+// Every read of a record's dimensions 3-5 has two query forms. RAW —
+// `query` without `ref`: the backend's own language over the whole store,
+// an administrator's. SCOPED — `ref` with `query`: the same language, but
+// the door lays the record's scope (namespace, correlation, birth) over
+// it in a way the expression cannot escape; authorized like any read of
+// the record.
 type LogsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ref           string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
-	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
-	SinceUnixNano int64                  `protobuf:"varint,3,opt,name=since_unix_nano,json=sinceUnixNano,proto3" json:"since_unix_nano,omitempty"`
-	// Query is the RAW view: a LogsQL query in the backend's own
-	// language, over the whole store (admin only; ref and follow are
-	// ignored). A resource's logs are the same store filtered.
-	Query         string `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Ref    string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Follow bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	// Since/Until bound the selection; zero means open.
+	SinceUnixNano int64 `protobuf:"varint,3,opt,name=since_unix_nano,json=sinceUnixNano,proto3" json:"since_unix_nano,omitempty"`
+	UntilUnixNano int64 `protobuf:"varint,5,opt,name=until_unix_nano,json=untilUnixNano,proto3" json:"until_unix_nano,omitempty"`
+	// Query: raw LogsQL without ref; a LogsQL filter ANDed into the
+	// record's scope with ref.
+	Query string `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
+	// Limit caps the records of one page (default 1000, at most 10000).
+	Limit int32 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Order is "asc" (default: oldest first) or "desc".
+	Order string `protobuf:"bytes,7,opt,name=order,proto3" json:"order,omitempty"`
+	// PageToken continues a previous page (opaque, from the page chunk).
+	// A follow cannot be paged.
+	PageToken string `protobuf:"bytes,8,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Filters, ANDed: severity names (INFO, WARN, ...), the record's
+	// stream attribute (stdout/stderr), the agent and entity that emitted
+	// it, a text the body must contain.
+	Severities    []string `protobuf:"bytes,9,rep,name=severities,proto3" json:"severities,omitempty"`
+	Stream        string   `protobuf:"bytes,10,opt,name=stream,proto3" json:"stream,omitempty"`
+	Agent         string   `protobuf:"bytes,11,opt,name=agent,proto3" json:"agent,omitempty"`
+	Entity        string   `protobuf:"bytes,12,opt,name=entity,proto3" json:"entity,omitempty"`
+	Text          string   `protobuf:"bytes,13,opt,name=text,proto3" json:"text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -422,11 +444,245 @@ func (x *LogsRequest) GetSinceUnixNano() int64 {
 	return 0
 }
 
+func (x *LogsRequest) GetUntilUnixNano() int64 {
+	if x != nil {
+		return x.UntilUnixNano
+	}
+	return 0
+}
+
 func (x *LogsRequest) GetQuery() string {
 	if x != nil {
 		return x.Query
 	}
 	return ""
+}
+
+func (x *LogsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *LogsRequest) GetOrder() string {
+	if x != nil {
+		return x.Order
+	}
+	return ""
+}
+
+func (x *LogsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+func (x *LogsRequest) GetSeverities() []string {
+	if x != nil {
+		return x.Severities
+	}
+	return nil
+}
+
+func (x *LogsRequest) GetStream() string {
+	if x != nil {
+		return x.Stream
+	}
+	return ""
+}
+
+func (x *LogsRequest) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *LogsRequest) GetEntity() string {
+	if x != nil {
+		return x.Entity
+	}
+	return ""
+}
+
+func (x *LogsRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+// LogPage closes a history read: what the page did not carry.
+type LogPage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Returned is how many records this page sent — zero is an answer.
+	Returned int32 `protobuf:"varint,1,opt,name=returned,proto3" json:"returned,omitempty"`
+	// Truncated: the selection has more than limit; NextPageToken
+	// continues it. Empty token — the selection is exhausted.
+	Truncated     bool   `protobuf:"varint,2,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	NextPageToken string `protobuf:"bytes,3,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogPage) Reset() {
+	*x = LogPage{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogPage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogPage) ProtoMessage() {}
+
+func (x *LogPage) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogPage.ProtoReflect.Descriptor instead.
+func (*LogPage) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LogPage) GetReturned() int32 {
+	if x != nil {
+		return x.Returned
+	}
+	return 0
+}
+
+func (x *LogPage) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *LogPage) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type LogFacetsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The same selection as LogsRequest (ref, query, bounds, filters).
+	Selection *LogsRequest `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	// Fields to count values of: severity, stream, agent, entity, job, ...
+	Fields []string `protobuf:"bytes,2,rep,name=fields,proto3" json:"fields,omitempty"`
+	// Limit caps the values per field (default 50).
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogFacetsRequest) Reset() {
+	*x = LogFacetsRequest{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogFacetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogFacetsRequest) ProtoMessage() {}
+
+func (x *LogFacetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogFacetsRequest.ProtoReflect.Descriptor instead.
+func (*LogFacetsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LogFacetsRequest) GetSelection() *LogsRequest {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
+func (x *LogFacetsRequest) GetFields() []string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *LogFacetsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type LogFacetsResponse struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Facets        []*LogFacetsResponse_Facet `protobuf:"bytes,1,rep,name=facets,proto3" json:"facets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogFacetsResponse) Reset() {
+	*x = LogFacetsResponse{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogFacetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogFacetsResponse) ProtoMessage() {}
+
+func (x *LogFacetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogFacetsResponse.ProtoReflect.Descriptor instead.
+func (*LogFacetsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *LogFacetsResponse) GetFacets() []*LogFacetsResponse_Facet {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
 }
 
 type LogRecord struct {
@@ -441,7 +697,7 @@ type LogRecord struct {
 
 func (x *LogRecord) Reset() {
 	*x = LogRecord{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[5]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +709,7 @@ func (x *LogRecord) String() string {
 func (*LogRecord) ProtoMessage() {}
 
 func (x *LogRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[5]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +722,7 @@ func (x *LogRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogRecord.ProtoReflect.Descriptor instead.
 func (*LogRecord) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{5}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *LogRecord) GetTimeUnixNano() int64 {
@@ -503,6 +759,7 @@ type LogChunk struct {
 	//
 	//	*LogChunk_Record
 	//	*LogChunk_Dropped
+	//	*LogChunk_Page
 	Chunk         isLogChunk_Chunk `protobuf_oneof:"chunk"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -510,7 +767,7 @@ type LogChunk struct {
 
 func (x *LogChunk) Reset() {
 	*x = LogChunk{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +779,7 @@ func (x *LogChunk) String() string {
 func (*LogChunk) ProtoMessage() {}
 
 func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[6]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +792,7 @@ func (x *LogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
 func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{6}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LogChunk) GetChunk() isLogChunk_Chunk {
@@ -563,6 +820,15 @@ func (x *LogChunk) GetDropped() int64 {
 	return 0
 }
 
+func (x *LogChunk) GetPage() *LogPage {
+	if x != nil {
+		if x, ok := x.Chunk.(*LogChunk_Page); ok {
+			return x.Page
+		}
+	}
+	return nil
+}
+
 type isLogChunk_Chunk interface {
 	isLogChunk_Chunk()
 }
@@ -579,9 +845,16 @@ type LogChunk_Dropped struct {
 	Dropped int64 `protobuf:"varint,2,opt,name=dropped,proto3,oneof"`
 }
 
+type LogChunk_Page struct {
+	// Page closes the history part: count, truncation, the next token.
+	Page *LogPage `protobuf:"bytes,3,opt,name=page,proto3,oneof"`
+}
+
 func (*LogChunk_Record) isLogChunk_Chunk() {}
 
 func (*LogChunk_Dropped) isLogChunk_Chunk() {}
+
+func (*LogChunk_Page) isLogChunk_Chunk() {}
 
 type MetricsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -590,16 +863,20 @@ type MetricsRequest struct {
 	EndUnixNano   int64                  `protobuf:"varint,3,opt,name=end_unix_nano,json=endUnixNano,proto3" json:"end_unix_nano,omitempty"`
 	// Follow keeps the stream open: live points arrive as standard OTLP.
 	Follow bool `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
-	// Query is the RAW view: a PromQL range query over the whole store
-	// (admin only; ref and follow are ignored).
-	Query         string `protobuf:"bytes,5,opt,name=query,proto3" json:"query,omitempty"`
+	// Query: raw PromQL without ref; with ref, the same PromQL evaluated
+	// inside the record's scope — the backend applies the scope to every
+	// selector and subquery of the expression.
+	Query string `protobuf:"bytes,5,opt,name=query,proto3" json:"query,omitempty"`
+	// StepSeconds is the range query's resolution; 0 lets the door pick
+	// (range/200, at least 15 s). At most 11000 points per series.
+	StepSeconds   int32 `protobuf:"varint,6,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricsRequest) Reset() {
 	*x = MetricsRequest{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +888,7 @@ func (x *MetricsRequest) String() string {
 func (*MetricsRequest) ProtoMessage() {}
 
 func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[7]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +901,7 @@ func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsRequest.ProtoReflect.Descriptor instead.
 func (*MetricsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *MetricsRequest) GetRef() string {
@@ -662,6 +939,13 @@ func (x *MetricsRequest) GetQuery() string {
 	return ""
 }
 
+func (x *MetricsRequest) GetStepSeconds() int32 {
+	if x != nil {
+		return x.StepSeconds
+	}
+	return 0
+}
+
 type MetricsChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Chunk:
@@ -676,7 +960,7 @@ type MetricsChunk struct {
 
 func (x *MetricsChunk) Reset() {
 	*x = MetricsChunk{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -688,7 +972,7 @@ func (x *MetricsChunk) String() string {
 func (*MetricsChunk) ProtoMessage() {}
 
 func (x *MetricsChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[8]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -701,7 +985,7 @@ func (x *MetricsChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsChunk.ProtoReflect.Descriptor instead.
 func (*MetricsChunk) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{8}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MetricsChunk) GetChunk() isMetricsChunk_Chunk {
@@ -769,16 +1053,19 @@ type TraceRequest struct {
 	Ref   string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	// Follow keeps the stream open: live spans arrive as standard OTLP.
 	Follow bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
-	// Query is the RAW view: Jaeger search parameters as a query string
-	// ("service=x&tags=..."), over the whole store (admin only).
-	Query         string `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
+	// Query: raw Jaeger search parameters ("service=x&tags=...") without
+	// ref; with ref, the same parameters inside the record's scope — the
+	// scope's tags win over the query's, the namespace is enforced.
+	Query string `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
+	// Limit caps the traces of the snapshot (default 20).
+	Limit         int32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TraceRequest) Reset() {
 	*x = TraceRequest{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +1077,7 @@ func (x *TraceRequest) String() string {
 func (*TraceRequest) ProtoMessage() {}
 
 func (x *TraceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[9]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +1090,7 @@ func (x *TraceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraceRequest.ProtoReflect.Descriptor instead.
 func (*TraceRequest) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{9}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TraceRequest) GetRef() string {
@@ -827,6 +1114,13 @@ func (x *TraceRequest) GetQuery() string {
 	return ""
 }
 
+func (x *TraceRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
 type TraceChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Chunk:
@@ -841,7 +1135,7 @@ type TraceChunk struct {
 
 func (x *TraceChunk) Reset() {
 	*x = TraceChunk{}
-	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +1147,7 @@ func (x *TraceChunk) String() string {
 func (*TraceChunk) ProtoMessage() {}
 
 func (x *TraceChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_management_v1_observe_proto_msgTypes[10]
+	mi := &file_proto_management_v1_observe_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +1160,7 @@ func (x *TraceChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraceChunk.ProtoReflect.Descriptor instead.
 func (*TraceChunk) Descriptor() ([]byte, []int) {
-	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{10}
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TraceChunk) GetChunk() isTraceChunk_Chunk {
@@ -928,6 +1222,110 @@ func (*TraceChunk_Otlp) isTraceChunk_Chunk() {}
 
 func (*TraceChunk_Dropped) isTraceChunk_Chunk() {}
 
+type LogFacetsResponse_Value struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Hits          int64                  `protobuf:"varint,2,opt,name=hits,proto3" json:"hits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogFacetsResponse_Value) Reset() {
+	*x = LogFacetsResponse_Value{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogFacetsResponse_Value) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogFacetsResponse_Value) ProtoMessage() {}
+
+func (x *LogFacetsResponse_Value) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogFacetsResponse_Value.ProtoReflect.Descriptor instead.
+func (*LogFacetsResponse_Value) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7, 0}
+}
+
+func (x *LogFacetsResponse_Value) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *LogFacetsResponse_Value) GetHits() int64 {
+	if x != nil {
+		return x.Hits
+	}
+	return 0
+}
+
+type LogFacetsResponse_Facet struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Field         string                     `protobuf:"bytes,1,opt,name=field,proto3" json:"field,omitempty"`
+	Values        []*LogFacetsResponse_Value `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogFacetsResponse_Facet) Reset() {
+	*x = LogFacetsResponse_Facet{}
+	mi := &file_proto_management_v1_observe_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogFacetsResponse_Facet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogFacetsResponse_Facet) ProtoMessage() {}
+
+func (x *LogFacetsResponse_Facet) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_management_v1_observe_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogFacetsResponse_Facet.ProtoReflect.Descriptor instead.
+func (*LogFacetsResponse_Facet) Descriptor() ([]byte, []int) {
+	return file_proto_management_v1_observe_proto_rawDescGZIP(), []int{7, 1}
+}
+
+func (x *LogFacetsResponse_Facet) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *LogFacetsResponse_Facet) GetValues() []*LogFacetsResponse_Value {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_proto_management_v1_observe_proto protoreflect.FileDescriptor
 
 const file_proto_management_v1_observe_proto_rawDesc = "" +
@@ -959,12 +1357,41 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	" \x01(\fR\x06result\x12\x10\n" +
 	"\x03raw\x18\v \x01(\fR\x03raw\x12\x1f\n" +
 	"\vactivity_id\x18\f \x01(\tR\n" +
-	"activityId\"u\n" +
+	"activityId\"\xe2\x02\n" +
 	"\vLogsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12&\n" +
-	"\x0fsince_unix_nano\x18\x03 \x01(\x03R\rsinceUnixNano\x12\x14\n" +
-	"\x05query\x18\x04 \x01(\tR\x05query\"\xf3\x01\n" +
+	"\x0fsince_unix_nano\x18\x03 \x01(\x03R\rsinceUnixNano\x12&\n" +
+	"\x0funtil_unix_nano\x18\x05 \x01(\x03R\runtilUnixNano\x12\x14\n" +
+	"\x05query\x18\x04 \x01(\tR\x05query\x12\x14\n" +
+	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x14\n" +
+	"\x05order\x18\a \x01(\tR\x05order\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\b \x01(\tR\tpageToken\x12\x1e\n" +
+	"\n" +
+	"severities\x18\t \x03(\tR\n" +
+	"severities\x12\x16\n" +
+	"\x06stream\x18\n" +
+	" \x01(\tR\x06stream\x12\x14\n" +
+	"\x05agent\x18\v \x01(\tR\x05agent\x12\x16\n" +
+	"\x06entity\x18\f \x01(\tR\x06entity\x12\x12\n" +
+	"\x04text\x18\r \x01(\tR\x04text\"k\n" +
+	"\aLogPage\x12\x1a\n" +
+	"\breturned\x18\x01 \x01(\x05R\breturned\x12\x1c\n" +
+	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12&\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"\x83\x01\n" +
+	"\x10LogFacetsRequest\x12A\n" +
+	"\tselection\x18\x01 \x01(\v2#.graphene.management.v1.LogsRequestR\tselection\x12\x16\n" +
+	"\x06fields\x18\x02 \x03(\tR\x06fields\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\xf7\x01\n" +
+	"\x11LogFacetsResponse\x12G\n" +
+	"\x06facets\x18\x01 \x03(\v2/.graphene.management.v1.LogFacetsResponse.FacetR\x06facets\x1a1\n" +
+	"\x05Value\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x12\n" +
+	"\x04hits\x18\x02 \x01(\x03R\x04hits\x1af\n" +
+	"\x05Facet\x12\x14\n" +
+	"\x05field\x18\x01 \x01(\tR\x05field\x12G\n" +
+	"\x06values\x18\x02 \x03(\v2/.graphene.management.v1.LogFacetsResponse.ValueR\x06values\"\xf3\x01\n" +
 	"\tLogRecord\x12$\n" +
 	"\x0etime_unix_nano\x18\x01 \x01(\x03R\ftimeUnixNano\x12\x1a\n" +
 	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x12\n" +
@@ -974,37 +1401,41 @@ const file_proto_management_v1_observe_proto_rawDesc = "" +
 	"attributes\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa3\x01\n" +
 	"\bLogChunk\x12;\n" +
 	"\x06record\x18\x01 \x01(\v2!.graphene.management.v1.LogRecordH\x00R\x06record\x12\x1a\n" +
-	"\adropped\x18\x02 \x01(\x03H\x00R\adroppedB\a\n" +
-	"\x05chunk\"\x9c\x01\n" +
+	"\adropped\x18\x02 \x01(\x03H\x00R\adropped\x125\n" +
+	"\x04page\x18\x03 \x01(\v2\x1f.graphene.management.v1.LogPageH\x00R\x04pageB\a\n" +
+	"\x05chunk\"\xbf\x01\n" +
 	"\x0eMetricsRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12&\n" +
 	"\x0fstart_unix_nano\x18\x02 \x01(\x03R\rstartUnixNano\x12\"\n" +
 	"\rend_unix_nano\x18\x03 \x01(\x03R\vendUnixNano\x12\x16\n" +
 	"\x06follow\x18\x04 \x01(\bR\x06follow\x12\x14\n" +
-	"\x05query\x18\x05 \x01(\tR\x05query\"g\n" +
+	"\x05query\x18\x05 \x01(\tR\x05query\x12!\n" +
+	"\fstep_seconds\x18\x06 \x01(\x05R\vstepSeconds\"g\n" +
 	"\fMetricsChunk\x12\x1c\n" +
 	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +
 	"\x04otlp\x18\x02 \x01(\fH\x00R\x04otlp\x12\x1a\n" +
 	"\adropped\x18\x03 \x01(\x03H\x00R\adroppedB\a\n" +
-	"\x05chunk\"N\n" +
+	"\x05chunk\"d\n" +
 	"\fTraceRequest\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x14\n" +
-	"\x05query\x18\x03 \x01(\tR\x05query\"e\n" +
+	"\x05query\x18\x03 \x01(\tR\x05query\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\"e\n" +
 	"\n" +
 	"TraceChunk\x12\x1c\n" +
 	"\bsnapshot\x18\x01 \x01(\fH\x00R\bsnapshot\x12\x14\n" +
 	"\x04otlp\x18\x02 \x01(\fH\x00R\x04otlp\x12\x1a\n" +
 	"\adropped\x18\x03 \x01(\x03H\x00R\adroppedB\a\n" +
-	"\x05chunk2\xc3\x03\n" +
+	"\x05chunk2\xa5\x04\n" +
 	"\n" +
 	"ObserveAPI\x12b\n" +
 	"\x05State\x12+.graphene.management.v1.ObserveStateRequest\x1a,.graphene.management.v1.ObserveStateResponse\x12P\n" +
 	"\x06Events\x12%.graphene.management.v1.EventsRequest\x1a\x1d.graphene.management.v1.Event0\x01\x12O\n" +
-	"\x04Logs\x12#.graphene.management.v1.LogsRequest\x1a .graphene.management.v1.LogChunk0\x01\x12Y\n" +
+	"\x04Logs\x12#.graphene.management.v1.LogsRequest\x1a .graphene.management.v1.LogChunk0\x01\x12`\n" +
+	"\tLogFacets\x12(.graphene.management.v1.LogFacetsRequest\x1a).graphene.management.v1.LogFacetsResponse\x12Y\n" +
 	"\aMetrics\x12&.graphene.management.v1.MetricsRequest\x1a$.graphene.management.v1.MetricsChunk0\x01\x12S\n" +
 	"\x05Trace\x12$.graphene.management.v1.TraceRequest\x1a\".graphene.management.v1.TraceChunk0\x01BFZDgithub.com/graphene-ci/graphene/pkg/proto/management/v1;managementv1b\x06proto3"
 
@@ -1020,41 +1451,52 @@ func file_proto_management_v1_observe_proto_rawDescGZIP() []byte {
 	return file_proto_management_v1_observe_proto_rawDescData
 }
 
-var file_proto_management_v1_observe_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_proto_management_v1_observe_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_proto_management_v1_observe_proto_goTypes = []any{
-	(*ObserveStateRequest)(nil),  // 0: graphene.management.v1.ObserveStateRequest
-	(*ObserveStateResponse)(nil), // 1: graphene.management.v1.ObserveStateResponse
-	(*EventsRequest)(nil),        // 2: graphene.management.v1.EventsRequest
-	(*Event)(nil),                // 3: graphene.management.v1.Event
-	(*LogsRequest)(nil),          // 4: graphene.management.v1.LogsRequest
-	(*LogRecord)(nil),            // 5: graphene.management.v1.LogRecord
-	(*LogChunk)(nil),             // 6: graphene.management.v1.LogChunk
-	(*MetricsRequest)(nil),       // 7: graphene.management.v1.MetricsRequest
-	(*MetricsChunk)(nil),         // 8: graphene.management.v1.MetricsChunk
-	(*TraceRequest)(nil),         // 9: graphene.management.v1.TraceRequest
-	(*TraceChunk)(nil),           // 10: graphene.management.v1.TraceChunk
-	nil,                          // 11: graphene.management.v1.LogRecord.AttributesEntry
-	(*Resource)(nil),             // 12: graphene.management.v1.Resource
+	(*ObserveStateRequest)(nil),     // 0: graphene.management.v1.ObserveStateRequest
+	(*ObserveStateResponse)(nil),    // 1: graphene.management.v1.ObserveStateResponse
+	(*EventsRequest)(nil),           // 2: graphene.management.v1.EventsRequest
+	(*Event)(nil),                   // 3: graphene.management.v1.Event
+	(*LogsRequest)(nil),             // 4: graphene.management.v1.LogsRequest
+	(*LogPage)(nil),                 // 5: graphene.management.v1.LogPage
+	(*LogFacetsRequest)(nil),        // 6: graphene.management.v1.LogFacetsRequest
+	(*LogFacetsResponse)(nil),       // 7: graphene.management.v1.LogFacetsResponse
+	(*LogRecord)(nil),               // 8: graphene.management.v1.LogRecord
+	(*LogChunk)(nil),                // 9: graphene.management.v1.LogChunk
+	(*MetricsRequest)(nil),          // 10: graphene.management.v1.MetricsRequest
+	(*MetricsChunk)(nil),            // 11: graphene.management.v1.MetricsChunk
+	(*TraceRequest)(nil),            // 12: graphene.management.v1.TraceRequest
+	(*TraceChunk)(nil),              // 13: graphene.management.v1.TraceChunk
+	(*LogFacetsResponse_Value)(nil), // 14: graphene.management.v1.LogFacetsResponse.Value
+	(*LogFacetsResponse_Facet)(nil), // 15: graphene.management.v1.LogFacetsResponse.Facet
+	nil,                             // 16: graphene.management.v1.LogRecord.AttributesEntry
+	(*Resource)(nil),                // 17: graphene.management.v1.Resource
 }
 var file_proto_management_v1_observe_proto_depIdxs = []int32{
-	12, // 0: graphene.management.v1.ObserveStateResponse.resource:type_name -> graphene.management.v1.Resource
-	11, // 1: graphene.management.v1.LogRecord.attributes:type_name -> graphene.management.v1.LogRecord.AttributesEntry
-	5,  // 2: graphene.management.v1.LogChunk.record:type_name -> graphene.management.v1.LogRecord
-	0,  // 3: graphene.management.v1.ObserveAPI.State:input_type -> graphene.management.v1.ObserveStateRequest
-	2,  // 4: graphene.management.v1.ObserveAPI.Events:input_type -> graphene.management.v1.EventsRequest
-	4,  // 5: graphene.management.v1.ObserveAPI.Logs:input_type -> graphene.management.v1.LogsRequest
-	7,  // 6: graphene.management.v1.ObserveAPI.Metrics:input_type -> graphene.management.v1.MetricsRequest
-	9,  // 7: graphene.management.v1.ObserveAPI.Trace:input_type -> graphene.management.v1.TraceRequest
-	1,  // 8: graphene.management.v1.ObserveAPI.State:output_type -> graphene.management.v1.ObserveStateResponse
-	3,  // 9: graphene.management.v1.ObserveAPI.Events:output_type -> graphene.management.v1.Event
-	6,  // 10: graphene.management.v1.ObserveAPI.Logs:output_type -> graphene.management.v1.LogChunk
-	8,  // 11: graphene.management.v1.ObserveAPI.Metrics:output_type -> graphene.management.v1.MetricsChunk
-	10, // 12: graphene.management.v1.ObserveAPI.Trace:output_type -> graphene.management.v1.TraceChunk
-	8,  // [8:13] is the sub-list for method output_type
-	3,  // [3:8] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 0: graphene.management.v1.ObserveStateResponse.resource:type_name -> graphene.management.v1.Resource
+	4,  // 1: graphene.management.v1.LogFacetsRequest.selection:type_name -> graphene.management.v1.LogsRequest
+	15, // 2: graphene.management.v1.LogFacetsResponse.facets:type_name -> graphene.management.v1.LogFacetsResponse.Facet
+	16, // 3: graphene.management.v1.LogRecord.attributes:type_name -> graphene.management.v1.LogRecord.AttributesEntry
+	8,  // 4: graphene.management.v1.LogChunk.record:type_name -> graphene.management.v1.LogRecord
+	5,  // 5: graphene.management.v1.LogChunk.page:type_name -> graphene.management.v1.LogPage
+	14, // 6: graphene.management.v1.LogFacetsResponse.Facet.values:type_name -> graphene.management.v1.LogFacetsResponse.Value
+	0,  // 7: graphene.management.v1.ObserveAPI.State:input_type -> graphene.management.v1.ObserveStateRequest
+	2,  // 8: graphene.management.v1.ObserveAPI.Events:input_type -> graphene.management.v1.EventsRequest
+	4,  // 9: graphene.management.v1.ObserveAPI.Logs:input_type -> graphene.management.v1.LogsRequest
+	6,  // 10: graphene.management.v1.ObserveAPI.LogFacets:input_type -> graphene.management.v1.LogFacetsRequest
+	10, // 11: graphene.management.v1.ObserveAPI.Metrics:input_type -> graphene.management.v1.MetricsRequest
+	12, // 12: graphene.management.v1.ObserveAPI.Trace:input_type -> graphene.management.v1.TraceRequest
+	1,  // 13: graphene.management.v1.ObserveAPI.State:output_type -> graphene.management.v1.ObserveStateResponse
+	3,  // 14: graphene.management.v1.ObserveAPI.Events:output_type -> graphene.management.v1.Event
+	9,  // 15: graphene.management.v1.ObserveAPI.Logs:output_type -> graphene.management.v1.LogChunk
+	7,  // 16: graphene.management.v1.ObserveAPI.LogFacets:output_type -> graphene.management.v1.LogFacetsResponse
+	11, // 17: graphene.management.v1.ObserveAPI.Metrics:output_type -> graphene.management.v1.MetricsChunk
+	13, // 18: graphene.management.v1.ObserveAPI.Trace:output_type -> graphene.management.v1.TraceChunk
+	13, // [13:19] is the sub-list for method output_type
+	7,  // [7:13] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_proto_management_v1_observe_proto_init() }
@@ -1063,16 +1505,17 @@ func file_proto_management_v1_observe_proto_init() {
 		return
 	}
 	file_proto_management_v1_resources_proto_init()
-	file_proto_management_v1_observe_proto_msgTypes[6].OneofWrappers = []any{
+	file_proto_management_v1_observe_proto_msgTypes[9].OneofWrappers = []any{
 		(*LogChunk_Record)(nil),
 		(*LogChunk_Dropped)(nil),
+		(*LogChunk_Page)(nil),
 	}
-	file_proto_management_v1_observe_proto_msgTypes[8].OneofWrappers = []any{
+	file_proto_management_v1_observe_proto_msgTypes[11].OneofWrappers = []any{
 		(*MetricsChunk_Snapshot)(nil),
 		(*MetricsChunk_Otlp)(nil),
 		(*MetricsChunk_Dropped)(nil),
 	}
-	file_proto_management_v1_observe_proto_msgTypes[10].OneofWrappers = []any{
+	file_proto_management_v1_observe_proto_msgTypes[13].OneofWrappers = []any{
 		(*TraceChunk_Snapshot)(nil),
 		(*TraceChunk_Otlp)(nil),
 		(*TraceChunk_Dropped)(nil),
@@ -1083,7 +1526,7 @@ func file_proto_management_v1_observe_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_management_v1_observe_proto_rawDesc), len(file_proto_management_v1_observe_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
