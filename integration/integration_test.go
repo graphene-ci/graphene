@@ -232,7 +232,7 @@ func TestFullContour(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(out, raw, 0o600); err != nil {
+		if err := os.WriteFile(out, raw, 0o600); err != nil { //nolint:gosec // fixture path named by the runner
 			t.Fatal(err)
 		}
 		t.Logf("pipeline history: %d events -> %s", len(hist.Events), out)
