@@ -1439,10 +1439,19 @@ func (s *Worker) runCleanup(ctx context.Context, req wire.RunCleanupRequest) err
 	if err := s.deleteResource(ctx, ref.RunOwner(req.RunId)); err != nil {
 		return err
 	}
+	// Stopping the machine executors is best effort HERE: the run is
+	// over when its records are gone, and an executor whose agent cannot
+	// be reached now — the VM already deleted under it, a link down — is
+	// the reaper's to collect once the run is closed and its queue empty.
+	// Failing the cleanup on it held a cancelled run in "cancelling" for
+	// as long as one agent kept dropping the stop command.
 	if err := s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, req.RunId, func(agentId id.AgentId) bool {
 		return s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, req.RunId))
 	}); err != nil {
-		return err
+		obs.Warn(ctx, "executor not stopped; the reaper collects it once the run is closed",
+			obs.Str("error", err.Error()))
+		s.deps.Log.Warn("run cleanup: executor stop deferred to the reaper",
+			xlog.Any("run", req.RunId), xlog.Err(err))
 	}
 	// The CROSS-PIPELINE edge: a finished run is what an Upstream
 	// trigger waits for. The pipeline this run executed is the
