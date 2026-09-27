@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -112,13 +113,21 @@ func logsRequest(namespace, run string, lines []line) *collogspb.ExportLogsServi
 			byRole[l.role] = rl
 			req.ResourceLogs = append(req.ResourceLogs, rl)
 		}
+		// The text is what the emitter said; "17" and the like stand for
+		// an emitter that said only the OTel number — the pipeline SDK's
+		// own logs are such.
 		num := logspb.SeverityNumber_SEVERITY_NUMBER_INFO
-		if l.severity == "ERROR" {
+		text := l.severity
+		switch {
+		case l.severity == "ERROR":
 			num = logspb.SeverityNumber_SEVERITY_NUMBER_ERROR
+		case l.severity != "" && l.severity[0] >= '0' && l.severity[0] <= '9':
+			n, _ := strconv.Atoi(l.severity)
+			num, text = logspb.SeverityNumber(n), "" //nolint:gosec // test data
 		}
 		rl.ScopeLogs[0].LogRecords = append(rl.ScopeLogs[0].LogRecords, &logspb.LogRecord{
 			TimeUnixNano:   uint64(l.at.UnixNano()),
-			SeverityText:   l.severity,
+			SeverityText:   text,
 			SeverityNumber: num,
 			Body:           &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: l.body}},
 			Attributes:     []*commonpb.KeyValue{kv("stream", l.stream)},
@@ -149,6 +158,15 @@ func bodies(recs []LogRecord) []string {
 		out[i] = r.Body
 	}
 	return out
+}
+
+func mustPage(t *testing.T, l *LogsQL, sel Selector, q LogQuery) LogPage {
+	t.Helper()
+	page, err := l.Query(context.Background(), sel, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page
 }
 
 // walk pages through the whole selection from the given order and returns
@@ -205,6 +223,11 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 		}
 		r1 = append(r1, line{t0.Add(time.Duration(i) * time.Second), fmt.Sprintf("later-%d", i), sev, stream, role})
 	}
+	// Two lines that name their severity only by the OTel number, as the
+	// pipeline SDK's logs do: 17 is ERROR, 13 is WARN.
+	r1 = append(r1,
+		line{t0.Add(6 * time.Second), "later-6", "17", "stderr", "machine"},
+		line{t0.Add(7 * time.Second), "later-7", "13", "stdout", "machine"})
 	postProto(t, vl+"/insert/opentelemetry/v1/logs", logsRequest("alpha", "r1", r1))
 	postProto(t, vl+"/insert/opentelemetry/v1/logs", logsRequest("alpha", "r2", []line{
 		{t0, "sibling-0", "INFO", "stdout", "machine"}, {t0.Add(time.Second), "sibling-1", "ERROR", "stderr", "machine"},
@@ -239,7 +262,7 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
-	awaitLogs(subject, 12)
+	awaitLogs(subject, 14)
 	awaitLogs(SelectorFor("alpha", "run/r2"), 2)
 	awaitLogs(SelectorFor("beta", "run/r1"), 2)
 
@@ -250,8 +273,8 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 				t.Fatalf("another record's line in the subject's answer: %s", b)
 			}
 		}
-		if len(got) != 12 {
-			t.Fatalf("subject has %d lines, want 12: %v", len(got), got)
+		if len(got) != 14 {
+			t.Fatalf("subject has %d lines, want 14: %v", len(got), got)
 		}
 		// The same run id in another tenant is that tenant's alone.
 		other := walk(t, logs, SelectorFor("beta", "run/r1"), LogQuery{Limit: 100})
@@ -263,7 +286,7 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 	t.Run("bypass attempts", func(t *testing.T) {
 		// An OR that would widen the scope stays inside the fence.
 		got := walk(t, logs, subject, LogQuery{Limit: 100, Filter: `* OR "graphene.namespace":="beta" OR "graphene.run":="r2"`})
-		if len(got) != 12 {
+		if len(got) != 14 {
 			t.Fatalf("widened: %d lines: %v", len(got), got)
 		}
 		// Naming another record inside the scope contradicts it: nothing.
@@ -302,8 +325,8 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(all) != 14 {
-			t.Fatalf("extra_filters namespace wall: %d records, want 14 (alpha's r1 + r2)", len(all))
+		if len(all) != 16 {
+			t.Fatalf("extra_filters namespace wall: %d records, want 16 (alpha's r1 + r2)", len(all))
 		}
 		for _, rec := range all {
 			if strings.HasPrefix(rec.Body, "tenant") {
@@ -314,12 +337,12 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 
 	t.Run("pagination", func(t *testing.T) {
 		asc := walk(t, logs, subject, LogQuery{Limit: 3})
-		want := []string{"same-0", "same-1", "same-2", "same-3", "same-4", "same-5", "same-6", "later-1", "later-2", "later-3", "later-4", "later-5"}
+		want := []string{"same-0", "same-1", "same-2", "same-3", "same-4", "same-5", "same-6", "later-1", "later-2", "later-3", "later-4", "later-5", "later-6", "later-7"}
 		if strings.Join(asc, ",") != strings.Join(want, ",") {
 			t.Fatalf("asc walk by 3:\n got %v\nwant %v", asc, want)
 		}
 		desc := walk(t, logs, subject, LogQuery{Limit: 5, Desc: true})
-		if len(desc) != 12 || desc[0] != "later-5" || desc[11] != "same-0" {
+		if len(desc) != 14 || desc[0] != "later-7" || desc[13] != "same-0" {
 			t.Fatalf("desc walk by 5: %v", desc)
 		}
 		seen := map[string]bool{}
@@ -332,10 +355,23 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 	})
 
 	t.Run("selection", func(t *testing.T) {
-		if got := walk(t, logs, subject, LogQuery{Severities: []string{"error"}}); strings.Join(got, ",") != "later-2,later-4" {
+		// The reported defect: a line whose emitter said only
+		// severity_number=17 is shown as ERROR and must be FOUND by ERROR.
+		if got := walk(t, logs, subject, LogQuery{Severities: []string{"error"}}); strings.Join(got, ",") != "later-2,later-4,later-6" {
 			t.Fatalf("severity error: %v", got)
 		}
-		if got := walk(t, logs, subject, LogQuery{Attributes: map[string]string{"stream": "stderr"}}); len(got) != 2 {
+		if got := walk(t, logs, subject, LogQuery{Severities: []string{"WARN", "error"}}); strings.Join(got, ",") != "later-2,later-4,later-6,later-7" {
+			t.Fatalf("severity warn+error: %v", got)
+		}
+		if got := walk(t, logs, subject, LogQuery{Severities: []string{"info"}}); len(got) != 10 {
+			t.Fatalf("severity info: %d lines %v", len(got), got)
+		}
+		for _, rec := range mustPage(t, logs, subject, LogQuery{Severities: []string{"error"}}).Records {
+			if rec.Severity != "ERROR" {
+				t.Fatalf("a record found by ERROR is named %q", rec.Severity)
+			}
+		}
+		if got := walk(t, logs, subject, LogQuery{Attributes: map[string]string{"stream": "stderr"}}); len(got) != 3 {
 			t.Fatalf("stream stderr: %v", got)
 		}
 		// Text is a case-insensitive substring, the same test the live
@@ -352,7 +388,7 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 		// Birth bounds the record: a record born at t0+3s owns nothing older.
 		born := subject
 		born.Since = t0.Add(3 * time.Second)
-		if got := walk(t, logs, born, LogQuery{}); strings.Join(got, ",") != "later-4,later-5" {
+		if got := walk(t, logs, born, LogQuery{}); strings.Join(got, ",") != "later-4,later-5,later-6,later-7" {
 			t.Fatalf("born later: %v", got)
 		}
 		// A time window of the caller's is honored inside the bound.
@@ -362,7 +398,7 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 	})
 
 	t.Run("facets", func(t *testing.T) {
-		facets, err := logs.Facets(ctx, subject, LogQuery{}, []string{"stream", "graphene.role"}, 10)
+		facets, err := logs.Facets(ctx, subject, LogQuery{}, []string{"stream", "graphene.role", "severity"}, 10)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -372,7 +408,10 @@ func TestScopedQueriesAgainstVictoria(t *testing.T) {
 				counts[f.Field+"="+v.Value] = v.Hits
 			}
 		}
-		want := map[string]int64{"stream=stdout": 10, "stream=stderr": 2, "graphene.role=machine": 10, "graphene.role=workload": 2}
+		// The severity facet counts number-only lines under their band:
+		// ERROR is 2 text + 1 numeric, WARN the one numeric line.
+		want := map[string]int64{"stream=stdout": 11, "stream=stderr": 3, "graphene.role=machine": 12, "graphene.role=workload": 2,
+			"severity=INFO": 10, "severity=ERROR": 3, "severity=WARN": 1}
 		for k, n := range want {
 			if counts[k] != n {
 				t.Fatalf("facet %s = %d, want %d (all: %v)", k, counts[k], n, counts)

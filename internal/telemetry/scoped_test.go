@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"fmt"
+	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,7 +40,7 @@ func TestLogsScopedQueryFencesTheCallersFilter(t *testing.T) {
 	for _, want := range []string{
 		`"graphene.namespace":="default" AND ("graphene.agent":="db-1" OR "graphene.entity":="agent/db-1")`,
 		` AND (level:error OR "graphene.namespace":="other")`,
-		`(severity:in("WARN","ERROR") OR severity_text:in("WARN","ERROR"))`,
+		`(severity:~"(?i)^(WARN|ERROR)$" OR severity_text:~"(?i)^(WARN|ERROR)$" OR (severity:"" AND severity_text:"" AND severity_number:>=13 AND severity_number:<=16) OR (severity:"" AND severity_text:"" AND severity_number:>=17 AND severity_number:<=20))`,
 		`"graphene.agent":="db-1" AND "stream":="stderr"`,
 		`_msg:~"(?i)connection refused"`,
 		`_time:>2026-09-18T11:00:00Z`,
@@ -106,7 +108,22 @@ func TestLogsFacetsCountValuesInsideTheScope(t *testing.T) {
 		}
 		fields = append(fields, r.Form.Get("field"))
 		queries = append(queries, r.Form.Get("query"))
-		_, _ = w.Write([]byte(`{"values":[{"value":"INFO","hits":"61"},{"value":"WARN","hits":2}]}`))
+		switch r.Form.Get("field") {
+		case "severity":
+			// Records carrying only a number have an empty text: not a
+			// severity of its own.
+			_, _ = w.Write([]byte(`{"values":[{"value":"INFO","hits":"61"},{"value":"","hits":"5"},{"value":"WARN","hits":2}]}`))
+		case "severity_text":
+			// Another emitter's spelling of the same level, and
+			// VictoriaLogs' own "Error" derived from a bare number.
+			_, _ = w.Write([]byte(`{"values":[{"value":"info","hits":"4"},{"value":"Error","hits":"2"}]}`))
+		case "severity_number":
+			// The number-only records: 3 of band ERROR, 1 more INFO, 1
+			// unspecified.
+			_, _ = w.Write([]byte(`{"values":[{"value":"17","hits":"3"},{"value":"9","hits":"1"},{"value":"0","hits":"1"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"values":[{"value":"stdout","hits":"7"}]}`))
+		}
 	}))
 	defer server.Close()
 	l := &LogsQL{Base: server.URL, Client: server.Client()}
@@ -114,15 +131,53 @@ func TestLogsFacetsCountValuesInsideTheScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(facets) != 2 || facets[0].Field != "severity" || facets[0].Values[0].Hits != 61 || facets[0].Values[1].Hits != 2 {
-		t.Fatalf("facets: %+v", facets)
+	// The severity facet speaks the reader's names: the number-only ERRORs
+	// appear under ERROR, the number-only INFO joins INFO, unspecified
+	// stays nameless.
+	want := []FacetValue{{"INFO", 66}, {"ERROR", 5}, {"WARN", 2}, {"", 1}}
+	if len(facets) != 2 || facets[0].Field != "severity" || fmt.Sprint(facets[0].Values) != fmt.Sprint(want) {
+		t.Fatalf("facets: %+v, want severity %v", facets, want)
 	}
-	if strings.Join(fields, ",") != "severity,stream" {
+	if facets[1].Field != "stream" || len(facets[1].Values) != 1 || facets[1].Values[0].Hits != 7 {
+		t.Fatalf("stream facet: %+v", facets[1])
+	}
+	if strings.Join(fields, ",") != "severity,severity_text,severity_number,stream" {
 		t.Fatalf("fields asked: %v", fields)
 	}
-	for _, q := range queries {
+	for i, q := range queries {
 		if !strings.HasPrefix(q, `"graphene.namespace":="default"`) || strings.Contains(q, "| sort") || !strings.Contains(q, `_msg:~"(?i)job"`) {
 			t.Errorf("facet query must be the fenced selection without pipes: %s", q)
+		}
+		if fields[i] == "severity_number" && !strings.HasSuffix(q, `AND severity:"" AND severity_text:""`) {
+			t.Errorf("the number is folded only where no text names the severity: %s", q)
+		}
+	}
+}
+
+// Live records are named as the history is: the text when given, the
+// number's band when not, nothing for unspecified.
+func TestLiveSeverityFollowsTheReader(t *testing.T) {
+	cases := map[string]struct {
+		text string
+		num  logspb.SeverityNumber
+		want string
+	}{
+		"text wins, one case": {"warning", logspb.SeverityNumber_SEVERITY_NUMBER_ERROR, "WARNING"},
+		"number only error":   {"", logspb.SeverityNumber_SEVERITY_NUMBER_ERROR, "ERROR"},
+		"number only 20":      {"", logspb.SeverityNumber_SEVERITY_NUMBER_ERROR4, "ERROR"},
+		"number only fatal":   {"", logspb.SeverityNumber_SEVERITY_NUMBER_FATAL, "FATAL"},
+		"number only debug":   {"", logspb.SeverityNumber_SEVERITY_NUMBER_DEBUG, "DEBUG"},
+		"unspecified":         {"", logspb.SeverityNumber_SEVERITY_NUMBER_UNSPECIFIED, ""},
+	}
+	for name, c := range cases {
+		if got := severityOf(&logspb.LogRecord{SeverityText: c.text, SeverityNumber: c.num}); got != c.want {
+			t.Errorf("%s: %q, want %q", name, got, c.want)
+		}
+	}
+	// The filter's bands and the reader's names are one table.
+	for n, want := range map[int]string{1: "TRACE", 4: "TRACE", 5: "DEBUG", 8: "DEBUG", 9: "INFO", 12: "INFO", 13: "WARN", 16: "WARN", 17: "ERROR", 20: "ERROR", 21: "FATAL", 24: "FATAL", 0: "", -1: ""} {
+		if got := severityName(n); got != want {
+			t.Errorf("severityName(%d) = %q, want %q", n, got, want)
 		}
 	}
 }

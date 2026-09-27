@@ -11,10 +11,12 @@ package telemetry
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 )
 
 // LogRecordsFrom renders a routed log envelope's records.
@@ -51,7 +53,7 @@ func LogRecordsFrom(env Envelope) []LogRecord {
 				}
 				out = append(out, LogRecord{
 					Time:       time.Unix(0, int64(ts)), //nolint:gosec // otel nanos
-					Severity:   rec.GetSeverityText(),
+					Severity:   severityOf(rec),
 					Body:       renderValue(rec.GetBody()),
 					Attributes: attrs,
 				})
@@ -59,6 +61,15 @@ func LogRecordsFrom(env Envelope) []LogRecord {
 		}
 	}
 	return out
+}
+
+// severityOf names a live record's severity as the history reader does:
+// the text when the emitter gave one, else the band of the number.
+func severityOf(rec *logspb.LogRecord) string {
+	if s := rec.GetSeverityText(); s != "" {
+		return strings.ToUpper(s)
+	}
+	return severityName(int(rec.GetSeverityNumber()))
 }
 
 // renderValue renders an OTLP AnyValue the way a log reader wants it.

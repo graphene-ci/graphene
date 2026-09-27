@@ -105,12 +105,7 @@ func selection(sel Selector, q LogQuery) (string, error) {
 		parts = append(parts, "("+f+")")
 	}
 	if len(q.Severities) > 0 {
-		quoted := make([]string, len(q.Severities))
-		for i, sev := range q.Severities {
-			quoted[i] = strconv.Quote(strings.ToUpper(sev))
-		}
-		list := strings.Join(quoted, ",")
-		parts = append(parts, fmt.Sprintf("(severity:in(%s) OR severity_text:in(%s))", list, list))
+		parts = append(parts, severityFilter(q.Severities))
 	}
 	for _, attr := range sortedKeys(q.Attributes) {
 		parts = append(parts, fmt.Sprintf("%q:=%q", attr, q.Attributes[attr]))
@@ -185,27 +180,80 @@ func (l *LogsQL) Facets(ctx context.Context, sel Selector, q LogQuery, fields []
 	}
 	out := make([]Facet, 0, len(fields))
 	for _, field := range fields {
-		raw, err := l.post(ctx, "/select/logsql/field_values", url.Values{
-			"query": {query}, "field": {field}, "limit": {strconv.Itoa(limit)}, "extra_filters": {scopeExtra(sel)},
-		})
+		facet := Facet{Field: field}
+		values, err := l.fieldValues(ctx, sel, query, field, limit)
 		if err != nil {
 			return nil, err
 		}
-		var reply struct {
-			Values []struct {
-				Value string `json:"value"`
-				Hits  any    `json:"hits"`
-			} `json:"values"`
+		if field == "severity" || field == "severity_text" {
+			// The severity facet speaks the reader's names: both text
+			// fields in one case, and records that carry only a number
+			// counted under their band — the facet's ERROR is the same set
+			// the ERROR filter returns.
+			other := "severity_text"
+			if field == "severity_text" {
+				other = "severity"
+			}
+			more, err := l.fieldValues(ctx, sel, query, other, limit)
+			if err != nil {
+				return nil, err
+			}
+			folded, err := l.fieldValues(ctx, sel, query+` AND severity:"" AND severity_text:""`, "severity_number", limit)
+			if err != nil {
+				return nil, err
+			}
+			byName := map[string]int64{}
+			order := []string{}
+			for _, v := range append(values, more...) {
+				if v.Value == "" {
+					continue // the empty text is not a severity; a number may still name one
+				}
+				name := strings.ToUpper(v.Value)
+				if _, seen := byName[name]; !seen {
+					order = append(order, name)
+				}
+				byName[name] += v.Hits
+			}
+			for _, v := range folded {
+				name := severityFromNumber(v.Value)
+				if _, seen := byName[name]; !seen {
+					order = append(order, name)
+				}
+				byName[name] += v.Hits
+			}
+			values = values[:0]
+			for _, name := range order {
+				values = append(values, FacetValue{Value: name, Hits: byName[name]})
+			}
+			sort.SliceStable(values, func(i, j int) bool { return values[i].Hits > values[j].Hits })
 		}
-		if err := json.Unmarshal(raw, &reply); err != nil {
-			return nil, fmt.Errorf("logs backend: field_values: %w", err)
-		}
-		facet := Facet{Field: field}
-		for _, v := range reply.Values {
-			hits, _ := strconv.ParseInt(fmt.Sprint(v.Hits), 10, 64)
-			facet.Values = append(facet.Values, FacetValue{Value: v.Value, Hits: hits})
-		}
+		facet.Values = values
 		out = append(out, facet)
+	}
+	return out, nil
+}
+
+// fieldValues counts one field's values within a query.
+func (l *LogsQL) fieldValues(ctx context.Context, sel Selector, query, field string, limit int) ([]FacetValue, error) {
+	raw, err := l.post(ctx, "/select/logsql/field_values", url.Values{
+		"query": {query}, "field": {field}, "limit": {strconv.Itoa(limit)}, "extra_filters": {scopeExtra(sel)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var reply struct {
+		Values []struct {
+			Value string `json:"value"`
+			Hits  any    `json:"hits"`
+		} `json:"values"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return nil, fmt.Errorf("logs backend: field_values: %w", err)
+	}
+	out := make([]FacetValue, 0, len(reply.Values))
+	for _, v := range reply.Values {
+		hits, _ := strconv.ParseInt(fmt.Sprint(v.Hits), 10, 64)
+		out = append(out, FacetValue{Value: v.Value, Hits: hits})
 	}
 	return out, nil
 }
@@ -257,7 +305,11 @@ func parseLogsQLStream(body []byte) ([]LogRecord, error) {
 			case "_msg":
 				rec.Body = v
 			case "severity", "severity_text":
-				rec.Severity = v
+				// One spelling for one level: emitters and backends
+				// write ERROR, error and Error for the same thing.
+				if v != "" {
+					rec.Severity = strings.ToUpper(v)
+				}
 			case "_stream", "_stream_id":
 				// stream identity is derivable from the attributes
 			default:
@@ -275,14 +327,62 @@ func parseLogsQLStream(body []byte) ([]LogRecord, error) {
 	return out, nil
 }
 
-// severityFromNumber maps OTel severity numbers to names.
+// severityFilter selects records of the named severities the way the
+// reader NAMES them: by the text fields regardless of case — an emitter
+// writes "ERROR", another "error", VictoriaLogs itself derives "Error"
+// from a bare number — and, for a record with no text at all, by the
+// band of the OTel severity number. A line the reader shows as ERROR is
+// found by ERROR, whichever way its emitter said it.
+func severityFilter(names []string) string {
+	patterns := make([]string, 0, len(names))
+	bands := make([]string, 0, len(names))
+	for _, name := range names {
+		upper := strings.ToUpper(strings.TrimSpace(name))
+		patterns = append(patterns, regexp.QuoteMeta(upper))
+		if band, ok := severityBand(upper); ok {
+			bands = append(bands, `(severity:"" AND severity_text:"" AND `+band+")")
+		}
+	}
+	re := strconv.Quote("(?i)^(" + strings.Join(patterns, "|") + ")$")
+	alts := append([]string{"severity:~" + re, "severity_text:~" + re}, bands...)
+	return "(" + strings.Join(alts, " OR ") + ")"
+}
+
+// severityBand is the severity_number range severityName folds into one
+// name — the filter's side of the same table.
+func severityBand(name string) (string, bool) {
+	switch name {
+	case "TRACE":
+		return "severity_number:>=1 AND severity_number:<=4", true
+	case "DEBUG":
+		return "severity_number:>=5 AND severity_number:<=8", true
+	case "INFO":
+		return "severity_number:>=9 AND severity_number:<=12", true
+	case "WARN":
+		return "severity_number:>=13 AND severity_number:<=16", true
+	case "ERROR":
+		return "severity_number:>=17 AND severity_number:<=20", true
+	case "FATAL":
+		return "severity_number:>=21", true
+	}
+	return "", false
+}
+
+// severityFromNumber maps an OTel severity number, as the backend stores
+// it, to its name.
 func severityFromNumber(n string) string {
 	v, err := strconv.Atoi(n)
 	if err != nil {
 		return ""
 	}
+	return severityName(v)
+}
+
+// severityName folds an OTel severity number into the name of its band;
+// zero — unspecified — has none.
+func severityName(v int) string {
 	switch {
-	case v == 0:
+	case v <= 0:
 		return ""
 	case v <= 4:
 		return "TRACE"
