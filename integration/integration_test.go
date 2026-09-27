@@ -27,9 +27,11 @@ import (
 	"github.com/gopherex/xlog"
 
 	"go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/graphene/internal/server"
@@ -211,6 +213,30 @@ func TestFullContour(t *testing.T) {
 	// process, capability published and required, selection fanned out,
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
 	awaitStatus(ctx, t, doorAddr, "completed")
+
+	// The pipeline entity's history as THIS version wrote it — the
+	// golden fixture a later version must replay (see
+	// internal/pipelineflow/replay_test.go). Recorded from an older
+	// checkout, never from the version under test.
+	if out := os.Getenv("GRAPHENE_DUMP_PIPELINE_HISTORY"); out != "" {
+		var hist historypb.History
+		it := srv.Client().GetWorkflowHistory(ctx, "pipeline/e2e", "", false, enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for it.HasNext() {
+			ev, err := it.Next()
+			if err != nil {
+				t.Fatalf("pipeline history: %v", err)
+			}
+			hist.Events = append(hist.Events, ev)
+		}
+		raw, err := protojson.MarshalOptions{Indent: "  "}.Marshal(&hist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(out, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("pipeline history: %d events -> %s", len(hist.Events), out)
+	}
 
 	// A run id names ONE logical execution in every state. The same
 	// request again — the caller's answer was lost and it asks again —

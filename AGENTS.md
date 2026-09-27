@@ -20,6 +20,13 @@ Control plane и `graphenectl` Graphene. Текущая модель проду�
   `internal/`, каждый метод идемпотентен.
 - Секреты и большие данные не входят в specs, логи или Temporal history:
   используются только ссылки.
+- Системные entity (`internal/*flow`) крутятся на воркере сервера, который
+  обновляется при живых workflow. Любое изменение порядка или набора
+  команд workflow (activity, таймеры, side effects, ранний return) — только
+  за `workflow.GetVersion`. Проверка — golden-replay: реальная история,
+  снятая контуром прежней версии (`GRAPHENE_DUMP_PIPELINE_HISTORY=<файл>
+  go test -run TestFullContour ./integration/` в checkout прежнего тега),
+  кладётся в `internal/<flow>/testdata/` и реплеится в тестах пакета.
 
 ## Границы
 

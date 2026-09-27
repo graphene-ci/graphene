@@ -82,6 +82,12 @@ make test
 make build
 ```
 
+`make test` replays recorded histories of the system entities
+(`internal/*/testdata`) against the current workflow code: the server
+worker is upgraded under live records, and a history written by an older
+version must still replay. The contour of an older checkout records such
+a history with `GRAPHENE_DUMP_PIPELINE_HISTORY=<file>`.
+
 `make test` includes the integration contour (a Temporal dev server, the
 agent and a pipeline as separate processes). Two more checks need a
 docker daemon and are opt-in: `GRAPHENE_TELEMETRY_IT=1` runs the scoped

@@ -342,9 +342,15 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd FireCmd) (FireRes, error) {
 		st := ec.State()
 		fire := Fire(cmd)
-		if fire.RunId == "" {
+		// A pipeline record lives for months and its history is replayed
+		// by whatever worker serves it next: a firing handled before the
+		// lookup existed must replay WITHOUT it, or the record's task
+		// fails and every later command with it.
+		lookups := workflow.GetVersion(ctx, "fire-lookup", workflow.DefaultVersion, 1) >= 1
+		switch {
+		case fire.RunId == "":
 			fire.RunId = nextRunId(ctx, st, fire.Trigger)
-		} else {
+		case lookups:
 			// A named firing may be a REPLAY — the caller's answer was
 			// lost and it asks again. The one waiting in the slot is
 			// still queued; an execution that exists is that run, if it
