@@ -465,6 +465,7 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Health:           health.HTTPMux(),
 		Bundles:          bundles,
 		Secrets:          secretStore,
+		Gate:             management,
 		Log:              log.With(xlog.String("component", "http")),
 	}))
 	httpProtocols := new(http.Protocols)

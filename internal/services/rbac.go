@@ -9,7 +9,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"github.com/graphene-ci/graphene/internal/httpapi"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -119,6 +122,36 @@ func randomId() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+// AuthorizeHTTP is the plain-HTTP door's question — the registry, the
+// agent binary — for a token the static authenticator does not know: who
+// is it, and may it do one of the asks in the namespace. The same
+// identities and the same bindings as every API call, so a binding that
+// lets a service account push a pipeline over the API lets it push the
+// pipeline's image too.
+func (m *Management) AuthorizeHTTP(ctx context.Context, token, namespace string, asks []httpapi.Ask) (bool, error) {
+	identity, ok := m.authenticate(ctx, token, namespace)
+	if !ok {
+		return false, nil
+	}
+	if len(asks) == 0 {
+		return true, nil
+	}
+	if m.Authz == nil {
+		return true, fmt.Errorf("%s: no authorization is wired for this door", identity.Subject)
+	}
+	id := identity.Identity
+	id.Namespace = namespace
+	var reasons []string
+	for _, ask := range asks {
+		d := m.Authz.Allow(ctx, id, identity.BoundRole, ask.Verb, ask.Kind)
+		if d.Allowed {
+			return true, nil
+		}
+		reasons = append(reasons, d.Reason)
+	}
+	return true, errors.New(strings.Join(reasons, "; "))
 }
 
 // authenticate resolves a bearer token that is NOT one of the

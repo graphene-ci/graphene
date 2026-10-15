@@ -37,7 +37,11 @@ type Deps struct {
 	// disables it.
 	Bundles *nsbundle.Manager
 	Secrets *secrets.Namespaced
-	Log     *xlog.Logger
+	// Gate decides for the tokens Auth does not know (a service
+	// account's, a person's) with the namespace's roles and bindings; nil
+	// leaves the door to the configured and minted tokens alone.
+	Gate Gate
+	Log  *xlog.Logger
 }
 
 // New builds the HTTP handler.
@@ -57,7 +61,7 @@ func New(deps Deps) http.Handler {
 		mux.Handle("GET /agent/binary", deps.requireRole(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				http.ServeFile(w, r, agentBinaryPath)
-			}), auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
+			}), agentBinaryRule, auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
 	}
 	if deps.Bundles != nil && deps.Secrets != nil {
 		// The webhook door: authenticated by the trigger's own secret,
@@ -73,7 +77,10 @@ func New(deps Deps) http.Handler {
 			// token; the door forwards them to the metrics store. The
 			// series' own labels (vmagent external_labels — graphene entity/
 			// run) carry the correlation.
-			mux.Handle("POST /api/v1/write", deps.requireRole(proxy, auth.RoleRun, auth.RoleAdmin))
+			// Only the configured and minted tokens: the door does not
+			// stamp the namespace on remote_write series, so a binding
+			// would let its holder write any tenant's labels.
+			mux.Handle("POST /api/v1/write", deps.requireRole(proxy, nil, auth.RoleRun, auth.RoleAdmin))
 		}
 	}
 	if deps.RegistryUpstream != "" {
@@ -83,13 +90,17 @@ func New(deps Deps) http.Handler {
 		} else {
 			// Agents pull worker images through here — the only registry
 			// they know.
-			mux.Handle("/v2/", deps.requireRole(proxy, auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
+			mux.Handle("/v2/", deps.requireRole(proxy, registryRule, auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
 		}
 	}
 	return mux
 }
 
-func (d Deps) requireRole(next http.Handler, roles ...auth.Role) http.Handler {
+// requireRole admits a configured or minted token by its role; any other
+// token — a service account's, a person's — is decided by the Gate with
+// the route's rule, against the namespace's bindings. A route without a
+// rule is for configured and minted tokens only.
+func (d Deps) requireRole(next http.Handler, decide rule, roles ...auth.Role) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		// Docker daemons speak Basic after a challenge — the token rides
@@ -99,9 +110,7 @@ func (d Deps) requireRole(next http.Handler, roles ...auth.Role) http.Handler {
 		}
 		p, ok := d.Auth.Check(token)
 		if !ok {
-			// The challenge makes docker daemons retry WITH credentials.
-			w.Header().Set("WWW-Authenticate", `Basic realm="graphene"`)
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			d.gated(w, r, next, token, decide)
 			return
 		}
 		for _, role := range roles {
@@ -112,6 +121,31 @@ func (d Deps) requireRole(next http.Handler, roles ...auth.Role) http.Handler {
 		}
 		http.Error(w, fmt.Sprintf("role %s may not call this", p.Role), http.StatusForbidden)
 	})
+}
+
+// gated answers a token the static authenticator does not know.
+func (d Deps) gated(w http.ResponseWriter, r *http.Request, next http.Handler, token string, decide rule) {
+	unknown := func() {
+		// The challenge makes docker daemons retry WITH credentials.
+		w.Header().Set("WWW-Authenticate", `Basic realm="graphene"`)
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+	}
+	if d.Gate == nil || decide == nil || token == "" {
+		unknown()
+		return
+	}
+	namespace, asks, ok := decide(r)
+	authenticated, err := d.Gate.AuthorizeHTTP(r.Context(), token, namespace, asks)
+	switch {
+	case !authenticated:
+		unknown()
+	case !ok:
+		http.Error(w, "this path is not open to a binding", http.StatusForbidden)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusForbidden)
+	default:
+		next.ServeHTTP(w, r)
+	}
 }
 
 // remoteWriteProxy forwards Prometheus remote_write to the metrics

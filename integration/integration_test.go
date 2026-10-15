@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,7 +87,18 @@ func TestFullContour(t *testing.T) {
 	// The server: one gRPC door (agents + Temporal proxy), one HTTP door.
 	doorAddr := freeAddr(t)
 	blobDir := t.TempDir()
+	// The registry behind the door: what reaches it is what the door let
+	// through.
+	registryHits := make(chan string, 16)
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/" {
+			registryHits <- r.Method + " " + r.URL.Path
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer registry.Close()
 	cfg := config.Config{
+		RegistryUpstream: registry.URL,
 		Listen:           doorAddr,
 		TemporalHostPort: srv.FrontendHostPort(),
 		Tokens: []config.Token{
@@ -213,6 +225,74 @@ func TestFullContour(t *testing.T) {
 	// process, capability published and required, selection fanned out,
 	// artifact uploaded and attached, stand transfer done, cleanup ran.
 	awaitStatus(ctx, t, doorAddr, "completed")
+
+	// A service account's issued token reaches the registry door through
+	// its bindings, like every API door: developer in "default" may push
+	// default's images, not another namespace's; a token nobody issued
+	// gets the docker challenge.
+	sysApply := func(kind, name string, spec any) {
+		raw, _ := json.Marshal(spec)
+		body, _ := json.Marshal(map[string]any{"kind": kind, "id": name, "spec": base64.StdEncoding.EncodeToString(raw)})
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+doorAddr+"/graphene.management.v1.ResourcesAPI/Apply", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		req.Header.Set("X-Graphene-Namespace", "graphene-system")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("apply %s/%s: %v", kind, name, err)
+		}
+		raw, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("apply %s/%s: %s %s", kind, name, resp.Status, raw)
+		}
+	}
+	sysApply("serviceaccount", "pusher", map[string]any{"description": "contour"})
+	sysApply("rolebinding", "pusher-dev", map[string]any{"role": "developer", "subjects": []map[string]string{{"kind": "sa", "name": "pusher"}}, "namespace": "default"})
+	issueBody, _ := json.Marshal(map[string]any{"account": "pusher"})
+	issueReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+doorAddr+"/graphene.management.v1.RbacAPI/IssueToken", bytes.NewReader(issueBody))
+	issueReq.Header.Set("Content-Type", "application/json")
+	issueReq.Header.Set("Authorization", "Bearer "+adminToken)
+	issueReq.Header.Set("X-Graphene-Namespace", "graphene-system")
+	issueResp, err := http.DefaultClient.Do(issueReq)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	var issued struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(issueResp.Body).Decode(&issued)
+	_ = issueResp.Body.Close()
+	if issued.Token == "" {
+		t.Fatalf("issue token: %s", issueResp.Status)
+	}
+	registryCall := func(method, path, token string) int {
+		req, _ := http.NewRequestWithContext(ctx, method, "http://"+doorAddr+path, nil)
+		req.SetBasicAuth("token", token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	saStart := time.Now()
+	awaitTrue(ctx, t, "service account pushes through the registry door", func() bool {
+		return registryCall(http.MethodPut, "/v2/default/e2e/manifests/sa", issued.Token) == http.StatusOK
+	})
+	t.Logf("service account admitted after %s", time.Since(saStart))
+	if got := <-registryHits; got != "PUT /v2/default/e2e/manifests/sa" {
+		t.Fatalf("registry saw %q", got)
+	}
+	if code := registryCall(http.MethodGet, "/v2/", issued.Token); code != http.StatusOK {
+		t.Fatalf("registry ping with the account's token: %d", code)
+	}
+	if code := registryCall(http.MethodGet, "/v2/elsewhere/e2e/manifests/sa", issued.Token); code != http.StatusForbidden {
+		t.Fatalf("another namespace's image: %d, want 403", code)
+	}
+	if code := registryCall(http.MethodGet, "/v2/default/e2e/manifests/sa", "never-issued"); code != http.StatusUnauthorized {
+		t.Fatalf("a token nobody issued: %d, want 401", code)
+	}
 
 	// The pipeline entity's history as THIS version wrote it — the
 	// golden fixture a later version must replay (see
