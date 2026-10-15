@@ -418,6 +418,9 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 		Log:     log.With(xlog.String("component", "workerplane")),
 	}
 
+	// The native door admits service accounts and people on the methods
+	// open to bindings, decided by the same bindings as the API.
+	authn.WithBindings(management)
 	grpcServer := grpc.NewServer(
 		codecOpt,
 		unknownOpt,

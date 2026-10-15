@@ -25,6 +25,11 @@ const (
 	RoleAgent Role = "agent"
 	RoleRun   Role = "run"
 	RoleAdmin Role = "admin"
+	// RoleBound is a caller whose call was decided by the namespace's
+	// bindings — a service account's token, a person's id_token — on one
+	// of the gRPC methods open to them. It names no rights of its own:
+	// only the handlers of those methods admit it.
+	RoleBound Role = "bound"
 )
 
 // Principal is an authenticated caller.
@@ -46,9 +51,53 @@ func (p Principal) In(namespace string) bool {
 
 // Authenticator checks tokens.
 type Authenticator struct {
-	tokens []config.Token
-	minter *Minter
+	tokens   []config.Token
+	minter   *Minter
+	bindings BindingGate
 }
+
+// BindingGate decides a gRPC call for a token Check does not know, with
+// the namespace's roles and bindings: who the token names (authenticated)
+// and whether it may call this method in this namespace (nil when it
+// may). An allowed call gets the principal it returns.
+type BindingGate interface {
+	AuthorizeGRPC(ctx context.Context, token, namespace, fullMethod string) (p Principal, authenticated bool, err error)
+}
+
+// WithBindings lets the gRPC door admit the tokens of service accounts
+// and people on the methods the gate opens to them.
+func (a *Authenticator) WithBindings(g BindingGate) *Authenticator {
+	a.bindings = g
+	return a
+}
+
+// resolve is the gRPC door's answer: a configured or minted token by
+// Check, any other by the binding gate.
+func (a *Authenticator) resolve(ctx context.Context, fullMethod string) (Principal, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	token := BearerFromMD(md)
+	if p, ok := a.Check(token); ok {
+		return p, nil
+	}
+	if a.bindings == nil || token == "" {
+		return Principal{}, status.Error(codes.Unauthenticated, "invalid token")
+	}
+	namespace := "default"
+	if hdr := md.Get(namespaceHeader); len(hdr) > 0 && hdr[0] != "" {
+		namespace = hdr[0]
+	}
+	p, authenticated, err := a.bindings.AuthorizeGRPC(ctx, token, namespace, fullMethod)
+	switch {
+	case !authenticated:
+		return Principal{}, status.Error(codes.Unauthenticated, "invalid token")
+	case err != nil:
+		return Principal{}, status.Error(codes.PermissionDenied, err.Error())
+	}
+	return p, nil
+}
+
+// namespaceHeader is the namespace a call names (services.NamespaceHeader).
+const namespaceHeader = "x-graphene-namespace"
 
 // New builds an authenticator over the configured token list.
 func New(tokens []config.Token) *Authenticator {
@@ -134,10 +183,9 @@ func (a *Authenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 		if strings.HasPrefix(info.FullMethod, healthService) {
 			return handler(srv, ss)
 		}
-		md, _ := metadata.FromIncomingContext(ss.Context())
-		p, ok := a.Check(BearerFromMD(md))
-		if !ok {
-			return status.Error(codes.Unauthenticated, "invalid token")
+		p, err := a.resolve(ss.Context(), info.FullMethod)
+		if err != nil {
+			return err
 		}
 		return handler(srv, &wrappedStream{ServerStream: ss, ctx: WithPrincipal(ss.Context(), p)})
 	}
@@ -149,10 +197,9 @@ func (a *Authenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		if strings.HasPrefix(info.FullMethod, healthService) {
 			return handler(ctx, req)
 		}
-		md, _ := metadata.FromIncomingContext(ctx)
-		p, ok := a.Check(BearerFromMD(md))
-		if !ok {
-			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		p, err := a.resolve(ctx, info.FullMethod)
+		if err != nil {
+			return nil, err
 		}
 		return handler(WithPrincipal(ctx, p), req)
 	}

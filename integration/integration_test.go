@@ -13,6 +13,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	workerplanev1 "github.com/graphene-ci/pipeline/pkg/proto/workerplane/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"io"
 	"net"
 	"net/http"
@@ -292,6 +299,32 @@ func TestFullContour(t *testing.T) {
 	}
 	if code := registryCall(http.MethodGet, "/v2/default/e2e/manifests/sa", "never-issued"); code != http.StatusUnauthorized {
 		t.Fatalf("a token nobody issued: %d, want 401", code)
+	}
+
+	// The same token on the native gRPC door: the pipeline surface a
+	// binding opens answers, the rest of the door does not.
+	conn, err := grpc.NewClient(doorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	saCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+issued.Token, "x-graphene-namespace", "default")
+	if _, err := workerplanev1.NewManifestAPIClient(conn).GetPipeline(saCtx, &workerplanev1.GetPipelineRequest{PipelineId: "e2e"}); err != nil {
+		t.Fatalf("service account reads its pipeline over gRPC: %v", err)
+	}
+	if _, err := workerplanev1.NewSecretsAPIClient(conn).GetSecret(saCtx, &workerplanev1.GetSecretRequest{Name: "x"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("secrets over gRPC with a binding: %v, want PermissionDenied", err)
+	}
+	if _, err := workflowservice.NewWorkflowServiceClient(conn).DescribeNamespace(saCtx, &workflowservice.DescribeNamespaceRequest{Namespace: "default"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("the Temporal proxy with a binding: %v, want PermissionDenied", err)
+	}
+	elsewhere := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+issued.Token, "x-graphene-namespace", "elsewhere")
+	if _, err := workerplanev1.NewManifestAPIClient(conn).GetPipeline(elsewhere, &workerplanev1.GetPipelineRequest{PipelineId: "e2e"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("another namespace over gRPC: %v, want PermissionDenied", err)
+	}
+	never := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer never-issued")
+	if _, err := workerplanev1.NewManifestAPIClient(conn).GetPipeline(never, &workerplanev1.GetPipelineRequest{PipelineId: "e2e"}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("a token nobody issued over gRPC: %v, want Unauthenticated", err)
 	}
 
 	// The pipeline entity's history as THIS version wrote it — the

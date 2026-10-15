@@ -195,7 +195,7 @@ func (w *WorkerPlane) Emit(ctx context.Context, req *workerplanev1.EmitRequest) 
 
 // PublishManifest records what a pipeline binary is.
 func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.PublishManifestRequest) (*workerplanev1.PublishManifestResponse, error) {
-	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (w *WorkerPlane) PublishManifest(ctx context.Context, req *workerplanev1.Pu
 // GetPipeline reads the pipeline record: the current image and the last
 // published manifest — a push compares against it.
 func (w *WorkerPlane) GetPipeline(ctx context.Context, req *workerplanev1.GetPipelineRequest) (*workerplanev1.GetPipelineResponse, error) {
-	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func (w *WorkerPlane) GetPipeline(ctx context.Context, req *workerplanev1.GetPip
 // StartRun starts a run of the caller's own pipeline — the binary's
 // `run` subcommand comes through this door with its run token.
 func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunRequest) (*workerplanev1.StartRunResponse, error) {
-	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (w *WorkerPlane) StartRun(ctx context.Context, req *workerplanev1.StartRunR
 
 // GetRun reports the run's status.
 func (w *WorkerPlane) GetRun(ctx context.Context, req *workerplanev1.GetRunRequest) (*workerplanev1.GetRunResponse, error) {
-	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ func (w *WorkerPlane) GetRun(ctx context.Context, req *workerplanev1.GetRunReque
 
 // WatchRun streams status transitions until a terminal one.
 func (w *WorkerPlane) WatchRun(req *workerplanev1.WatchRunRequest, stream workerplanev1.RunsAPI_WatchRunServer) error {
-	b, err := bundleFor(stream.Context(), w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(stream.Context(), w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func (w *WorkerPlane) WatchRun(req *workerplanev1.WatchRunRequest, stream worker
 
 // RunResult waits for the run and returns its typed result as JSON.
 func (w *WorkerPlane) RunResult(ctx context.Context, req *workerplanev1.RunResultRequest) (*workerplanev1.RunResultResponse, error) {
-	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin)
+	b, err := bundleFor(ctx, w.Bundles, auth.RoleRun, auth.RoleAdmin, auth.RoleBound)
 	if err != nil {
 		return nil, err
 	}
