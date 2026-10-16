@@ -766,9 +766,7 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	query := subtreeQuery(owner, withPast, runScope)
 	// Visibility carries everything a tree node shows; a describe per
 	// node would wake every record's worker.
-	page, err := b.Client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Query: query,
-	})
+	executions, err := treeLevel(ctx, b.Client, query)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +777,7 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	// their resources, so recurse into those.
 	ownerIsRun := strings.HasPrefix(string(owner), "run/")
 	var out []*managementv1.TreeNode
-	for _, e := range page.GetExecutions() {
+	for _, e := range executions {
 		node := &managementv1.TreeNode{Resource: resourceFromVisibility(e)}
 		if node.Resource.GetKind() == "run" && !ownerIsRun {
 			out = append(out, node)
@@ -799,6 +797,47 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 	return out, nil
 }
 
+// treeLevel is one level of the tree: every page of the query, ONE row
+// per record. A record's past holds several closed executions — a
+// re-declared name, a deleted and then reborn one — and a record shown
+// once per execution was walked once per execution too: a run's tree
+// multiplied at every level and stopped answering. The live execution
+// wins; otherwise the one that closed last.
+func treeLevel(ctx context.Context, c client.Client, query string) ([]*workflowpb.WorkflowExecutionInfo, error) {
+	var (
+		order []string
+		byId  = map[string]*workflowpb.WorkflowExecutionInfo{}
+		token []byte
+	)
+	for {
+		page, err := c.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{Query: query, NextPageToken: token})
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range page.GetExecutions() {
+			id := e.GetExecution().GetWorkflowId()
+			have, ok := byId[id]
+			switch {
+			case !ok:
+				order = append(order, id)
+				byId[id] = e
+			case have.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING:
+			case e.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING || e.GetCloseTime().AsTime().After(have.GetCloseTime().AsTime()):
+				byId[id] = e
+			}
+		}
+		token = page.GetNextPageToken()
+		if len(token) == 0 {
+			break
+		}
+	}
+	out := make([]*workflowpb.WorkflowExecutionInfo, 0, len(order))
+	for _, id := range order {
+		out = append(out, byId[id])
+	}
+	return out, nil
+}
+
 // subtreeQuery is the visibility query for one level of the tree.
 //
 // An EMPTY owner asks for the forest's ROOTS: records nobody owns —
@@ -811,7 +850,10 @@ func (m *Management) subtree(ctx context.Context, b *nsbundle.Bundle, owner ref.
 // is history, not death, and the tree is where a developer finds it under
 // its pipeline. With the past included, closed entity workflows come too:
 // visibility keeps them as long as their history lives, owner and phase as
-// they were at the end. Names are reused run after run (every run declares
+// they were at the end — the END, not a continue-as-new: that execution
+// is the same record carried on, with the owner it had back then (an
+// agent before its transfer showed up under the run as well as under its
+// machine). Names are reused run after run (every run declares
 // its agent/db-1), so among the deleted a name alone is ambiguous: the run
 // label pins the walk to one run's records.
 func subtreeQuery(owner ref.OwnerRef, withPast bool, runScope string) string {
@@ -823,7 +865,7 @@ func subtreeQuery(owner ref.OwnerRef, withPast bool, runScope string) string {
 		return fmt.Sprintf("%s = '%s' AND (ExecutionStatus = 'Running' OR %s = 'run')",
 			wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrKind.GetName())
 	}
-	query := fmt.Sprintf("%s = '%s'", wire.SearchAttrOwner.GetName(), string(owner))
+	query := fmt.Sprintf("%s = '%s' AND ExecutionStatus != 'ContinuedAsNew'", wire.SearchAttrOwner.GetName(), string(owner))
 	if runScope != "" {
 		query += fmt.Sprintf(" AND %s IN ('%s=%s')", entdefine.SearchAttrLabels.GetName(), syslabels.Run, runScope)
 	}

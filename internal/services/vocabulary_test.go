@@ -112,9 +112,9 @@ func selectorOf(kind, phase string) *managementv1.Selector {
 func TestSubtreeQueryScopesThePastToOneRun(t *testing.T) {
 	require.Equal(t, "EntityOwner = 'agent/db-1' AND (ExecutionStatus = 'Running' OR EntityKind = 'run')",
 		subtreeQuery("agent/db-1", false, ""), "live trees need no scope: one live record per name")
-	require.Equal(t, "EntityOwner = 'agent/db-1' AND EntityLabels IN ('graphene.io/run=nightly-1')",
+	require.Equal(t, "EntityOwner = 'agent/db-1' AND ExecutionStatus != 'ContinuedAsNew' AND EntityLabels IN ('graphene.io/run=nightly-1')",
 		subtreeQuery("agent/db-1", true, "nightly-1"))
-	require.Equal(t, "EntityOwner = 'stand/perf'", subtreeQuery("stand/perf", true, ""),
+	require.Equal(t, "EntityOwner = 'stand/perf' AND ExecutionStatus != 'ContinuedAsNew'", subtreeQuery("stand/perf", true, ""),
 		"a stand's past has no one run to pin to")
 	require.Contains(t, subtreeQuery("", true, "x"), "ExecutionStatus = 'Running'", "the forest's roots are live")
 }

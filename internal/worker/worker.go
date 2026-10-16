@@ -1237,10 +1237,31 @@ func (s *Worker) deleteResource(ctx context.Context, owner ref.OwnerRef) error {
 // each other — a dependency is an ownership edge, and a record is
 // deleted only after everything it owns is gone. Four machines under one
 // subnet take the time of one, not of four.
+//
+// A record that CLOSED without being deleted — a declaration that failed
+// — is gone from the live tree, but what it owns is not: a subnet and
+// machines declared under a network the cloud refused keep running, and
+// a cascade that walked the live tree alone finished at once and left
+// them all. Under a run, the cascade walks the run's closed records too
+// and takes down whatever still lives under them. Names are reused run
+// after run, so the closed are looked up within the run only.
 func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
+	run, _ := strings.CutPrefix(string(owner), "run/")
+	return s.cascadeIn(ctx, owner, run)
+}
+
+// cascadeIn is cascade within one run's records ("" — the live tree
+// alone).
+func (s *Worker) cascadeIn(ctx context.Context, owner ref.OwnerRef, run string) error {
 	children, err := OwnedBy(ctx, s.deps.Client, owner)
 	if err != nil {
 		return err
+	}
+	var closed []string
+	if run != "" {
+		if closed, err = closedOwnedBy(ctx, s.deps.Client, owner, run, children); err != nil {
+			return err
+		}
 	}
 	var (
 		mu   sync.Mutex
@@ -1248,19 +1269,24 @@ func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
 		wg   sync.WaitGroup
 		slot = make(chan struct{}, cascadeParallel)
 	)
-	for _, child := range children {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slot <- struct{}{}
-			defer func() { <-slot }()
-			if err := s.cascadeOne(ctx, child); err != nil {
-				mu.Lock()
-				errs = append(errs, err)
-				mu.Unlock()
-			}
-		}()
+	each := func(ids []string, take func(string) error) {
+		for _, id := range ids {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				slot <- struct{}{}
+				defer func() { <-slot }()
+				if err := take(id); err != nil {
+					mu.Lock()
+					errs = append(errs, err)
+					mu.Unlock()
+				}
+			}()
+		}
 	}
+	each(children, func(child string) error { return s.cascadeOne(ctx, child, run) })
+	// A closed record is not deleted again — only what it still owns.
+	each(closed, func(record string) error { return s.cascadeIn(ctx, ref.OwnerRef(record), run) })
 	wg.Wait()
 	return errors.Join(errs...)
 }
@@ -1269,7 +1295,7 @@ func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
 const cascadeParallel = 16
 
 // cascadeOne takes one child down: its own subtree first, then itself.
-func (s *Worker) cascadeOne(ctx context.Context, child string) error {
+func (s *Worker) cascadeOne(ctx context.Context, child, run string) error {
 	// A CHILD RUN is not an entity — it does not answer the delete
 	// signal, and it owns its OWN subtree which its cleanup interceptor
 	// tears down. Cancel it and let its own cascade run; recursing or
@@ -1280,7 +1306,7 @@ func (s *Worker) cascadeOne(ctx context.Context, child string) error {
 		}
 		return nil
 	}
-	if err := s.cascade(ctx, ref.OwnerRef(child)); err != nil {
+	if err := s.cascadeIn(ctx, ref.OwnerRef(child), run); err != nil {
 		return err
 	}
 	if err := s.DeleteOne(ctx, child); err != nil {
@@ -1293,6 +1319,37 @@ func (s *Worker) cascadeOne(ctx context.Context, child string) error {
 // owner. A workflow id IS the resource ref ("kind/id") by construction.
 func OwnedBy(ctx context.Context, c client.Client, owner ref.OwnerRef) ([]string, error) {
 	query := fmt.Sprintf("EntityOwner = '%s' AND ExecutionStatus = 'Running'", string(owner))
+	return listOwned(ctx, c, query, owner)
+}
+
+// closedOwnedBy lists the run's records under owner that closed and have
+// no live execution: a failed declaration, a record deleted earlier. A
+// continued-as-new execution is not an end, and a child run tears its
+// own tree down.
+func closedOwnedBy(ctx context.Context, c client.Client, owner ref.OwnerRef, run string, live []string) ([]string, error) {
+	query := fmt.Sprintf("%s = '%s' AND ExecutionStatus != 'Running' AND ExecutionStatus != 'ContinuedAsNew' AND %s IN ('%s=%s')",
+		wire.SearchAttrOwner.GetName(), string(owner), entdefine.SearchAttrLabels.GetName(), wire.LabelRun, run)
+	ids, err := listOwned(ctx, c, query, owner)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, id := range live {
+		seen[id] = true
+	}
+	var out []string
+	for _, id := range ids {
+		if seen[id] || strings.HasPrefix(id, "run/") {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// listOwned pages a visibility query into workflow ids.
+func listOwned(ctx context.Context, c client.Client, query string, owner ref.OwnerRef) ([]string, error) {
 	var out []string
 	var token []byte
 	for {
