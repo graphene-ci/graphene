@@ -117,3 +117,26 @@ func receive[T any](t *testing.T, ch <-chan T) T {
 		return zero
 	}
 }
+
+// Stopping a run's executors asks every machine at once and is bounded by
+// the caller: one agent that never answers — its VM deleted, its session
+// kept alive by a proxy — costs the timeout once, not once per machine.
+func TestStopRunContainersIsParallelAndBounded(t *testing.T) {
+	registry := New(time.Second, xlog.New(xlog.NopCore{}))
+	stream, cancel, _ := connectTestAgent(t, registry)
+	defer cancel()
+	for _, run := range []string{"run-1"} {
+		stream.in <- &agentpb.SessionRequest{Body: &agentpb.SessionRequest_ContainerReport{ContainerReport: &agentpb.ContainerReport{AgentId: "machine-1", RunId: run, State: agentpb.ContainerState_CONTAINER_STATE_RUNNING}}}
+	}
+	time.Sleep(100 * time.Millisecond)
+	ctx, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	start := time.Now()
+	err := registry.StopRunContainers(ctx, "test", "run-1", nil)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a silent agent: %v, want the caller's deadline", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("stop took %s past its 300ms bound", took)
+	}
+}

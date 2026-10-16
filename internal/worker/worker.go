@@ -15,6 +15,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/graphene-ci/temporal-entity/pkg/entclient"
@@ -1231,32 +1232,61 @@ func (s *Worker) deleteResource(ctx context.Context, owner ref.OwnerRef) error {
 
 // cascade deletes everything owned by owner (recursively), deepest
 // first; the owner itself is the CALLER's business.
+//
+// Siblings go down TOGETHER: records under one owner do not depend on
+// each other — a dependency is an ownership edge, and a record is
+// deleted only after everything it owns is gone. Four machines under one
+// subnet take the time of one, not of four.
 func (s *Worker) cascade(ctx context.Context, owner ref.OwnerRef) error {
 	children, err := OwnedBy(ctx, s.deps.Client, owner)
 	if err != nil {
 		return err
 	}
-	var errs []error
+	var (
+		mu   sync.Mutex
+		errs []error
+		wg   sync.WaitGroup
+		slot = make(chan struct{}, cascadeParallel)
+	)
 	for _, child := range children {
-		// A CHILD RUN is not an entity — it does not answer the delete
-		// signal, and it owns its OWN subtree which its cleanup interceptor
-		// tears down. Cancel it and let its own cascade run; recursing or
-		// delete-signalling here would race that cleanup.
-		if strings.HasPrefix(child, "run/") {
-			if err := s.deps.Client.CancelWorkflow(ctx, child, ""); err != nil && !alreadyGone(err) {
-				errs = append(errs, fmt.Errorf("cancel child run %s: %w", child, err))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slot <- struct{}{}
+			defer func() { <-slot }()
+			if err := s.cascadeOne(ctx, child); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
 			}
-			continue
-		}
-		if err := s.cascade(ctx, ref.OwnerRef(child)); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if err := s.DeleteOne(ctx, child); err != nil {
-			errs = append(errs, fmt.Errorf("delete %s: %w", child, err))
-		}
+		}()
 	}
+	wg.Wait()
 	return errors.Join(errs...)
+}
+
+// cascadeParallel bounds the siblings deleted at once under one owner.
+const cascadeParallel = 16
+
+// cascadeOne takes one child down: its own subtree first, then itself.
+func (s *Worker) cascadeOne(ctx context.Context, child string) error {
+	// A CHILD RUN is not an entity — it does not answer the delete
+	// signal, and it owns its OWN subtree which its cleanup interceptor
+	// tears down. Cancel it and let its own cascade run; recursing or
+	// delete-signalling here would race that cleanup.
+	if strings.HasPrefix(child, "run/") {
+		if err := s.deps.Client.CancelWorkflow(ctx, child, ""); err != nil && !alreadyGone(err) {
+			return fmt.Errorf("cancel child run %s: %w", child, err)
+		}
+		return nil
+	}
+	if err := s.cascade(ctx, ref.OwnerRef(child)); err != nil {
+		return err
+	}
+	if err := s.DeleteOne(ctx, child); err != nil {
+		return fmt.Errorf("delete %s: %w", child, err)
+	}
+	return nil
 }
 
 // ownedBy lists the workflow ids of the entities currently owned by
@@ -1445,8 +1475,18 @@ func (s *Worker) runCleanup(ctx context.Context, req wire.RunCleanupRequest) err
 	// the reaper's to collect once the run is closed and its queue empty.
 	// Failing the cleanup on it held a cancelled run in "cancelling" for
 	// as long as one agent kept dropping the stop command.
-	if err := s.deps.Registry.StopRunContainers(ctx, s.deps.Namespace, req.RunId, func(agentId id.AgentId) bool {
-		return s.queueHasLiveEntities(ctx, wire.AgentRunQueue(agentId, req.RunId))
+	//
+	// And it is BOUNDED: the agent of a machine deleted a moment ago can
+	// look connected for many minutes behind a proxy that still answers
+	// its keepalives, and a stop command to it waits for a reply that
+	// never comes — without a heartbeat, so the cleanup timed out and
+	// retried for twenty minutes after the last record was gone.
+	stopCtx, cancel := context.WithTimeout(ctx, executorStopTimeout)
+	defer cancel()
+	if err := heartbeatWhile(ctx, "stopping the run's executors", func() error {
+		return s.deps.Registry.StopRunContainers(stopCtx, s.deps.Namespace, req.RunId, func(agentId id.AgentId) bool {
+			return s.queueHasLiveEntities(stopCtx, wire.AgentRunQueue(agentId, req.RunId))
+		})
 	}); err != nil {
 		obs.Warn(ctx, "executor not stopped; the reaper collects it once the run is closed",
 			obs.Str("error", err.Error()))
@@ -1460,6 +1500,29 @@ func (s *Worker) runCleanup(ctx context.Context, req wire.RunCleanupRequest) err
 	upstream := activity.GetInfo(ctx).WorkflowType.Name
 	s.fireDownstream(ctx, upstream, string(req.RunId), req.Outcome)
 	return nil
+}
+
+// executorStopTimeout bounds stopping a run's machine executors in its
+// cleanup; what is not stopped by then is the reaper's.
+const executorStopTimeout = 30 * time.Second
+
+// heartbeatWhile runs fn and keeps the activity heartbeating until it
+// returns: a wait on someone else's reply is not a dead worker.
+func heartbeatWhile(ctx context.Context, note string, fn func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-tick.C:
+			if activity.IsActivity(ctx) {
+				activity.RecordHeartbeat(ctx, note)
+			}
+		}
+	}
 }
 
 // fireDownstream lands a firing on every pipeline whose Upstream

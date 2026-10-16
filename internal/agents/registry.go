@@ -375,7 +375,13 @@ func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runI
 		}
 	}
 	r.mu.Unlock()
-	var errs []error
+	// Every machine at once: one silent agent must not make the rest
+	// wait behind it.
+	var (
+		mu   sync.Mutex
+		errs []error
+		wg   sync.WaitGroup
+	)
 	for _, s := range sessions {
 		s.containersMu.Lock()
 		_, has := s.containers[runId]
@@ -386,10 +392,17 @@ func (r *Registry) StopRunContainers(ctx context.Context, namespace string, runI
 		if keep != nil && keep(s.agentId) {
 			continue
 		}
-		if err := r.StopContainer(ctx, namespace, s.agentId, runId); err != nil {
-			errs = append(errs, err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := r.StopContainer(ctx, namespace, s.agentId, runId); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		}()
 	}
+	wg.Wait()
 	return errors.Join(errs...)
 }
 
