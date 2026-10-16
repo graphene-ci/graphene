@@ -31,6 +31,10 @@ type treeClient struct {
 	// each in its run (failedRun).
 	failed    map[string]string
 	failedRun map[string]string
+	// liveRun is a live record's run label; liveAgain are closed names a
+	// live execution carries again.
+	liveRun   map[string]string
+	liveAgain map[string]bool
 	signaled  map[string]time.Time // record -> when its delete landed
 	order     []string             // records in the order they closed
 }
@@ -60,7 +64,11 @@ func (c *treeClient) ListWorkflow(_ context.Context, req *workflowservice.ListWo
 		}
 		return out, nil
 	}
+	scoped := runQuery.FindStringSubmatch(req.GetQuery())
 	for id, o := range c.owner {
+		if scoped != nil && c.liveRun[id] != scoped[1] {
+			continue
+		}
 		if o == owner && !c.closed(id, time.Now()) {
 			out.Executions = append(out.Executions, &workflowpb.WorkflowExecutionInfo{Execution: &commonpb.WorkflowExecution{WorkflowId: id}})
 		}
@@ -90,6 +98,9 @@ func (c *treeClient) DescribeWorkflowExecution(_ context.Context, id, _ string) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	status := enums.WORKFLOW_EXECUTION_STATUS_RUNNING
+	if _, ok := c.failed[id]; ok && !c.liveAgain[id] {
+		return &workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: enums.WORKFLOW_EXECUTION_STATUS_FAILED}}, nil
+	}
 	if c.closed(id, time.Now()) {
 		status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
 		if !contains(c.order, id) {
@@ -145,19 +156,35 @@ func TestCascadeWalksAFailedRecordsChildren(t *testing.T) {
 		t:         t,
 		finalize:  100 * time.Millisecond,
 		signaled:  map[string]time.Time{},
-		failed:    map[string]string{"net/n": "run/r", "net/old": "run/r"},
-		failedRun: map[string]string{"net/n": "r", "net/old": "other"},
+		failed:    map[string]string{"net/n": "run/r", "net/old": "run/r", "agent/db-1": "run/r"},
+		failedRun: map[string]string{"net/n": "r", "net/old": "other", "agent/db-1": "r"},
+		liveAgain: map[string]bool{"agent/db-1": true},
 		owner: map[string]string{
-			"subnet/s":   "net/n",
-			"instance/a": "subnet/s",
-			"subnet/x":   "net/old",
+			"subnet/s":    "net/n",
+			"instance/a":  "subnet/s",
+			"subnet/x":    "net/old",
+			"subnet/peer": "net/n",      // a live record of ANOTHER run under the same name
+			"docker/pg":   "agent/db-1", // owned by the name that lives again
 		},
+		liveRun: map[string]string{"subnet/s": "r", "instance/a": "r", "subnet/peer": "other", "docker/pg": "other"},
 	}
 	w := &Worker{deps: Deps{Client: c}}
 	require.NoError(t, w.cascade(context.Background(), ref.OwnerRef("run/r")))
 	require.Equal(t, []string{"instance/a", "subnet/s"}, c.order, "children of the failed root, deepest first")
-	_, touched := c.signaled["subnet/x"]
-	require.False(t, touched, "another run's record is not this run's teardown")
+	for _, other := range []string{"subnet/x", "subnet/peer", "docker/pg"} {
+		_, touched := c.signaled[other]
+		require.False(t, touched, "%s is not this run's teardown", other)
+	}
+}
+
+// A value that would step out of a quoted visibility literal is refused
+// before any query is built.
+func TestCascadeRefusesQueryBreakingRefs(t *testing.T) {
+	w := &Worker{deps: Deps{Client: &treeClient{t: t}}}
+	require.ErrorContains(t, w.cascade(context.Background(), ref.OwnerRef("net/x' OR EntityOwner != 'y")), "invalid ref")
+	require.ErrorContains(t, w.cascade(context.Background(), ref.OwnerRef("run/r'")), "invalid ref")
+	_, err := OwnedBy(context.Background(), &treeClient{t: t}, "net/a\\b")
+	require.ErrorContains(t, err, "invalid ref")
 }
 
 // A wait on someone else's reply keeps the activity heartbeating and ends
