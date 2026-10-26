@@ -661,18 +661,26 @@ func (s *Worker) DescribeRevision(ctx context.Context, pipelineId, revisionId st
 
 // --- the authorization store (authz.Store) ---
 
-// Roles returns the namespace's roles: the built-ins, then whatever
-// the installation wrote over them.
-func (s *Worker) Roles(ctx context.Context, namespace string) (map[string]authz.Rules, error) {
+// Roles returns the installation's roles: the built-ins, then whatever
+// the installation wrote over them. A record that cannot be read fails
+// the whole read — a partial set would deny what the record allows —
+// and one gone since the listing is simply not there.
+func (s *Worker) Roles(ctx context.Context) (map[string]authz.Rules, error) {
 	out := authz.Builtins()
 	ids, err := s.listKind(ctx, string(rbacflow.RoleKind))
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	roles := entclient.Bind(s.roleDef, s.deps.Client, wire.ServerQueue)
 	for _, id := range ids {
 		desc, err := roles.Describe(ctx, entity.ResourceID(id))
-		if err != nil || desc.Phase != entity.PhaseReady {
+		if err != nil {
+			if gone(err) {
+				continue
+			}
+			return nil, err
+		}
+		if desc.Phase != entity.PhaseReady {
 			continue
 		}
 		out[id] = desc.State.Rules
@@ -680,8 +688,9 @@ func (s *Worker) Roles(ctx context.Context, namespace string) (map[string]authz.
 	return out, nil
 }
 
-// Bindings returns the namespace's role bindings.
-func (s *Worker) Bindings(ctx context.Context, namespace string) ([]authz.Binding, error) {
+// Bindings returns every role binding; each names its namespace. Read
+// failures fail the whole read, as for Roles.
+func (s *Worker) Bindings(ctx context.Context) ([]authz.Binding, error) {
 	ids, err := s.listKind(ctx, string(rbacflow.BindingKind))
 	if err != nil {
 		return nil, err
@@ -690,13 +699,25 @@ func (s *Worker) Bindings(ctx context.Context, namespace string) ([]authz.Bindin
 	out := make([]authz.Binding, 0, len(ids))
 	for _, id := range ids {
 		desc, err := bindings.Describe(ctx, entity.ResourceID(id))
-		if err != nil || desc.Phase != entity.PhaseReady {
+		if err != nil {
+			if gone(err) {
+				continue
+			}
+			return nil, err
+		}
+		if desc.Phase != entity.PhaseReady {
 			continue
 		}
 		st := desc.State
 		out = append(out, authz.Binding{Role: st.Role, Subjects: st.Subjects, Namespace: st.Namespace})
 	}
 	return out, nil
+}
+
+// gone reports a record that no longer exists.
+func gone(err error) bool {
+	var notFound *serviceerror.NotFound
+	return errors.As(err, &notFound)
 }
 
 // listKind lists the ids of one kind from visibility.

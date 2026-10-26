@@ -120,6 +120,15 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 	// The live hub: the collector fans every accepted signal out to
 	// follow streams, so a tail is a push and never a poll.
 	hub := telemetry.NewHub()
+	otlp := &services.OTLP{
+		Traces:  cfg.OtelTraces,
+		Logs:    cfg.OtelLogs,
+		Metrics: cfg.OtelMetrics,
+		Hub:     hub,
+		Log:     log.With(xlog.String("component", "otlp")),
+	}
+	otlp.Start(stop.Context())
+	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
 	// The hub's own dimension 4, on the server's obs pipeline. The
 	// gauge readings are signals like any other; nobody subscribes to
 	// the server's own metrics by default, so the loop does not feed
@@ -135,17 +144,10 @@ func Run(ctx context.Context, cfg config.Config, log *xlog.Logger) error {
 				subs, drops := hub.Stats()
 				obs.Gauge(stop.Context(), "graphene.hub.subscriptions", float64(subs))
 				obs.Gauge(stop.Context(), "graphene.hub.dropped.total", float64(drops))
+				obs.Gauge(stop.Context(), "graphene.otlp.dropped.total", float64(otlp.Dropped()))
 			}
 		}
 	}()
-	otlp := &services.OTLP{
-		Traces:  cfg.OtelTraces,
-		Logs:    cfg.OtelLogs,
-		Metrics: cfg.OtelMetrics,
-		Hub:     hub,
-		Log:     log.With(xlog.String("component", "otlp")),
-	}
-	stop.RegisterFnErr(func(context.Context) error { otlp.Close(); return nil })
 
 	// The server observes its OWN records. It exports through its own
 	// door — the door IS the collector, so the signals of a system

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"strings"
@@ -93,6 +94,15 @@ func New(deps Deps) http.Handler {
 			mux.Handle("/v2/", deps.requireRole(proxy, registryRule, auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
 		}
 	}
+	// The process's own profiles, for an administrator: a goroutine dump
+	// taken while the door stalls says where it waits.
+	profiles := http.NewServeMux()
+	profiles.HandleFunc("/debug/pprof/", pprof.Index)
+	profiles.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	profiles.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	profiles.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	profiles.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.Handle("/debug/pprof/", deps.requireRole(profiles, nil, auth.RoleAdmin))
 	return mux
 }
 

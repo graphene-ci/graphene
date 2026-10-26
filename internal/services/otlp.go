@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gopherex/xlog"
@@ -47,13 +48,58 @@ type OTLP struct {
 	Metrics string
 	Log     *xlog.Logger
 
-	client *http.Client
+	client  *http.Client
+	queue   chan shipment
+	dropped atomic.Int64
 
-	mu     sync.Mutex
-	warned map[string]bool
+	mu        sync.Mutex
+	warned    map[string]bool
+	droppedAt time.Time
 }
 
-// forward posts one OTLP protobuf payload to a backend.
+// The forward to storage runs BEHIND the door, not inside the caller's
+// RPC: an export is answered once its payload is queued, and senders
+// drain the queue. A backend that slows down then costs queued
+// payloads — counted and said — instead of holding every exporter's
+// call until its deadline, which is what turned one slow backend into
+// "DeadlineExceeded" on every agent at once.
+const (
+	// forwardQueue bounds payloads waiting for a sender.
+	forwardQueue = 4096
+	// forwardSenders posts to the backends in parallel.
+	forwardSenders = 16
+	// forwardTimeout bounds one post.
+	forwardTimeout = 10 * time.Second
+)
+
+// shipment is one payload on its way to a backend.
+type shipment struct {
+	signal, url string
+	raw         []byte
+}
+
+// Start opens the queue and its senders; they live until ctx ends.
+// Without Start the forward is synchronous — the shape tests use.
+func (o *OTLP) Start(ctx context.Context) {
+	o.queue = make(chan shipment, forwardQueue)
+	for range forwardSenders {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case sh := <-o.queue:
+					o.post(ctx, sh)
+				}
+			}
+		}()
+	}
+}
+
+// Dropped is the number of payloads shed because the queue was full.
+func (o *OTLP) Dropped() int64 { return o.dropped.Load() }
+
+// forward hands one OTLP protobuf payload to its backend.
 func (o *OTLP) forward(ctx context.Context, signal, url string, msg proto.Message) {
 	if url == "" {
 		o.warnOnce(signal)
@@ -64,26 +110,58 @@ func (o *OTLP) forward(ctx context.Context, signal, url string, msg proto.Messag
 		o.Log.Error("telemetry marshal", xlog.String("signal", signal), xlog.Err(err))
 		return
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	sh := shipment{signal: signal, url: url, raw: raw}
+	if o.queue == nil {
+		o.post(ctx, sh)
+		return
+	}
+	select {
+	case o.queue <- sh:
+	default:
+		o.dropped.Add(1)
+		o.warnDropped()
+	}
+}
+
+// post sends one payload; the caller's cancellation does not cut it.
+func (o *OTLP) post(ctx context.Context, sh shipment) {
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forwardTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(sendCtx, http.MethodPost, url, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(sendCtx, http.MethodPost, sh.url, bytes.NewReader(sh.raw))
 	if err != nil {
-		o.Log.Error("telemetry request", xlog.String("signal", signal), xlog.Err(err))
+		o.Log.Error("telemetry request", xlog.String("signal", sh.signal), xlog.Err(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	resp, err := o.httpClient().Do(req)
 	if err != nil {
-		o.Log.Warn("telemetry backend unreachable", xlog.String("signal", signal), xlog.Err(err))
+		o.Log.Warn("telemetry backend unreachable", xlog.String("signal", sh.signal), xlog.Err(err))
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		o.Log.Warn("telemetry backend refused",
-			xlog.String("signal", signal),
+			xlog.String("signal", sh.signal),
 			xlog.String("status", resp.Status),
 			xlog.String("body", string(body)))
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+}
+
+// warnDropped says the queue sheds payloads, at most once a minute.
+func (o *OTLP) warnDropped() {
+	o.mu.Lock()
+	now := time.Now()
+	say := now.Sub(o.droppedAt) >= time.Minute
+	if say {
+		o.droppedAt = now
+	}
+	o.mu.Unlock()
+	if say {
+		o.Log.Warn("telemetry backends fall behind — payloads dropped",
+			xlog.Int64("dropped_total", o.dropped.Load()))
 	}
 }
 
@@ -91,7 +169,11 @@ func (o *OTLP) httpClient() *http.Client {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.client == nil {
-		o.client = &http.Client{Timeout: 15 * time.Second}
+		// Every sender keeps its connection: the default keeps two idle
+		// per host, and the rest dial anew on every post.
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.MaxIdleConnsPerHost = forwardSenders
+		o.client = &http.Client{Timeout: 15 * time.Second, Transport: transport}
 	}
 	return o.client
 }

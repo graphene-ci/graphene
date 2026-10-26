@@ -1,10 +1,19 @@
 package authz
 
-// Resolving a caller's rights means reading the namespace's roles and
-// bindings. Those are records, so the read is a visibility query plus
-// a describe — cheap, but not free, and it happens on EVERY call.
-// Hence a short cache: permissions may lag a few seconds, which is the
-// same promise every RBAC system makes.
+// Resolving a caller's rights means reading the installation's roles
+// and bindings. Those are records, so the read is a visibility query
+// plus a describe per record — cheap, but not free, and every call
+// asks. Hence one shared snapshot, refreshed at most every few seconds:
+// permissions may lag that long, which is the promise every RBAC
+// system makes.
+//
+// The records are installation-wide (a binding names its namespace and
+// Authorize filters by it), so ONE snapshot serves every namespace —
+// a snapshot per caller namespace multiplied the same reads by the
+// number of namespaces. One refresh runs at a time; callers that
+// arrive during it keep the snapshot they have. A failed refresh keeps
+// the last good snapshot: a backend that sheds load for a moment must
+// not turn into "permission denied" for every run and agent.
 
 import (
 	"context"
@@ -14,25 +23,25 @@ import (
 
 // Store reads the authorization records of one installation.
 type Store interface {
-	// Roles returns the namespace's roles by name, including the
-	// built-ins.
-	Roles(ctx context.Context, namespace string) (map[string]Rules, error)
-	// Bindings returns the namespace's bindings (including those bound
-	// to every namespace).
-	Bindings(ctx context.Context, namespace string) ([]Binding, error)
+	// Roles returns the roles by name, including the built-ins.
+	Roles(ctx context.Context) (map[string]Rules, error)
+	// Bindings returns every binding; each names its namespace.
+	Bindings(ctx context.Context) ([]Binding, error)
 }
 
-// cacheTTL is how long a resolved permission set is reused. Short
-// enough that revoking rights takes effect while someone is still
-// looking at the screen.
+// cacheTTL is how long a snapshot is reused. Short enough that revoking
+// rights takes effect while someone is still looking at the screen.
 const cacheTTL = 5 * time.Second
 
 // Resolver answers authorization questions over a Store.
 type Resolver struct {
 	store Store
+	now   func() time.Time
 
-	mu     sync.Mutex
-	cached map[string]snapshot
+	// refresh serializes reads of the store; mu guards the snapshot.
+	refresh sync.Mutex
+	mu      sync.Mutex
+	snap    snapshot
 }
 
 type snapshot struct {
@@ -43,7 +52,7 @@ type snapshot struct {
 
 // NewResolver builds a resolver over the store.
 func NewResolver(store Store) *Resolver {
-	return &Resolver{store: store, cached: map[string]snapshot{}}
+	return &Resolver{store: store, now: time.Now}
 }
 
 // Allow answers whether the caller may do verb on kind. A caller
@@ -52,7 +61,7 @@ func NewResolver(store Store) *Resolver {
 // can widen them.
 func (r *Resolver) Allow(ctx context.Context, id Identity, boundRole string, verb Verb, kind Kind) Decision {
 	if boundRole != "" {
-		roles, err := r.roles(ctx, id.Namespace)
+		roles, err := r.roles(ctx)
 		if err != nil {
 			return Decision{Reason: "cannot read roles: " + err.Error()}
 		}
@@ -65,41 +74,72 @@ func (r *Resolver) Allow(ctx context.Context, id Identity, boundRole string, ver
 		}
 		return Decision{Reason: id.Subject.String() + " may not " + string(verb) + " " + string(kind)}
 	}
-	snap, err := r.snapshot(ctx, id.Namespace)
+	snap, err := r.snapshot(ctx)
 	if err != nil {
 		return Decision{Reason: "cannot read permissions: " + err.Error()}
 	}
 	return Authorize(id, verb, kind, snap.bindings, snap.roles)
 }
 
-func (r *Resolver) roles(ctx context.Context, namespace string) (map[string]Rules, error) {
-	snap, err := r.snapshot(ctx, namespace)
+func (r *Resolver) roles(ctx context.Context) (map[string]Rules, error) {
+	snap, err := r.snapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return snap.roles, nil
 }
 
-func (r *Resolver) snapshot(ctx context.Context, namespace string) (snapshot, error) {
+// current is the snapshot held now, and whether it is still fresh.
+func (r *Resolver) current() (snapshot, bool) {
 	r.mu.Lock()
-	snap, ok := r.cached[namespace]
-	r.mu.Unlock()
-	if ok && time.Since(snap.at) < cacheTTL {
+	defer r.mu.Unlock()
+	return r.snap, !r.snap.at.IsZero() && r.now().Sub(r.snap.at) < cacheTTL
+}
+
+// snapshot is a fresh snapshot, or the last good one when the store
+// cannot be read; an error only when there has never been one.
+func (r *Resolver) snapshot(ctx context.Context) (snapshot, error) {
+	snap, fresh := r.current()
+	if fresh {
 		return snap, nil
 	}
-	roles, err := r.store.Roles(ctx, namespace)
+	// A refresh already running answers for everyone: a caller with a
+	// snapshot keeps it; only the very first callers wait.
+	if !r.refresh.TryLock() {
+		if !snap.at.IsZero() {
+			return snap, nil
+		}
+		r.refresh.Lock()
+	}
+	defer r.refresh.Unlock()
+	// Whoever held the lock before may have refreshed already.
+	snap, fresh = r.current()
+	if fresh {
+		return snap, nil
+	}
+	next, err := r.read(ctx)
 	if err != nil {
+		if !snap.at.IsZero() {
+			return snap, nil
+		}
 		return snapshot{}, err
 	}
-	bindings, err := r.store.Bindings(ctx, namespace)
-	if err != nil {
-		return snapshot{}, err
-	}
-	snap = snapshot{roles: roles, bindings: bindings, at: time.Now()}
 	r.mu.Lock()
-	r.cached[namespace] = snap
+	r.snap = next
 	r.mu.Unlock()
-	return snap, nil
+	return next, nil
+}
+
+func (r *Resolver) read(ctx context.Context) (snapshot, error) {
+	roles, err := r.store.Roles(ctx)
+	if err != nil {
+		return snapshot{}, err
+	}
+	bindings, err := r.store.Bindings(ctx)
+	if err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{roles: roles, bindings: bindings, at: r.now()}, nil
 }
 
 // ClusterWide reports whether the caller's rights span every
@@ -107,7 +147,7 @@ func (r *Resolver) snapshot(ctx context.Context, namespace string) (snapshot, er
 // client needs to offer namespace switching; the switch itself is just
 // the header, and every call still authorizes in the target namespace.
 func (r *Resolver) ClusterWide(ctx context.Context, id Identity) bool {
-	snap, err := r.snapshot(ctx, id.Namespace)
+	snap, err := r.snapshot(ctx)
 	if err != nil {
 		return false
 	}
@@ -117,12 +157,4 @@ func (r *Resolver) ClusterWide(ctx context.Context, id Identity) bool {
 		}
 	}
 	return false
-}
-
-// Forget drops a namespace's cached permissions — called when a role
-// or a binding changes, so a revocation does not wait out the TTL.
-func (r *Resolver) Forget(namespace string) {
-	r.mu.Lock()
-	delete(r.cached, namespace)
-	r.mu.Unlock()
 }
