@@ -11,11 +11,13 @@ import (
 	"github.com/graphene-ci/graphene/internal/config"
 )
 
-// The process's profiles are an administrator's: a run's or an agent's
-// token is refused, a token nobody knows is challenged.
+// The process's profiles span every tenant: only an installation-wide
+// administrator gets them — not a namespace's admin, a run or an agent;
+// a token nobody knows is challenged.
 func TestProfilesAreForAdministrators(t *testing.T) {
 	h := New(Deps{Auth: auth.New([]config.Token{
 		{Token: "admin-token", Role: "admin", Namespace: "*"},
+		{Token: "tenant-admin", Role: "admin", Namespace: "tenant-a"},
 		{Token: "run-token", Role: "run", Namespace: "default"},
 		{Token: "agent-token", Role: "agent", Namespace: "default"},
 	})})
@@ -29,6 +31,7 @@ func TestProfilesAreForAdministrators(t *testing.T) {
 		return w.Code
 	}
 	require.Equal(t, http.StatusOK, get("admin-token"))
+	require.Equal(t, http.StatusForbidden, get("tenant-admin"))
 	require.Equal(t, http.StatusForbidden, get("run-token"))
 	require.Equal(t, http.StatusForbidden, get("agent-token"))
 	require.Equal(t, http.StatusUnauthorized, get(""))

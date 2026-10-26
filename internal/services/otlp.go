@@ -50,6 +50,7 @@ type OTLP struct {
 
 	client  *http.Client
 	queue   chan shipment
+	queued  atomic.Int64 // bytes waiting in queue
 	dropped atomic.Int64
 
 	mu        sync.Mutex
@@ -66,6 +67,9 @@ type OTLP struct {
 const (
 	// forwardQueue bounds payloads waiting for a sender.
 	forwardQueue = 4096
+	// forwardBudget bounds the bytes they hold: the count alone would let
+	// payloads at the door's message limit (4 MiB) pile up to 16 GiB.
+	forwardBudget = 256 << 20
 	// forwardSenders posts to the backends in parallel.
 	forwardSenders = 16
 	// forwardTimeout bounds one post.
@@ -89,6 +93,7 @@ func (o *OTLP) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case sh := <-o.queue:
+					o.queued.Add(-int64(len(sh.raw)))
 					o.post(ctx, sh)
 				}
 			}
@@ -115,9 +120,17 @@ func (o *OTLP) forward(ctx context.Context, signal, url string, msg proto.Messag
 		o.post(ctx, sh)
 		return
 	}
+	size := int64(len(raw))
+	if o.queued.Add(size) > forwardBudget {
+		o.queued.Add(-size)
+		o.dropped.Add(1)
+		o.warnDropped()
+		return
+	}
 	select {
 	case o.queue <- sh:
 	default:
+		o.queued.Add(-size)
 		o.dropped.Add(1)
 		o.warnDropped()
 	}

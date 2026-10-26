@@ -88,13 +88,25 @@ func TestResolverKeepsTheLastSnapshotOnError(t *testing.T) {
 		t.Fatalf("first read: %s", d.Reason)
 	}
 	store.fail.Store(true)
-	clock = clock.Add(time.Minute)
+	clock = clock.Add(cacheTTL)
 	if d := r.Allow(context.Background(), alice, "", VerbRun, KindPipeline); !d.Allowed {
 		t.Fatalf("a failed refresh denied: %s", d.Reason)
 	}
 	if d := r.Allow(context.Background(), alice, "run", VerbCreate, KindResource); !d.Allowed {
 		t.Fatalf("a failed refresh denied a bound role: %s", d.Reason)
 	}
+
+	// A store down for longer must not keep rights alive: past maxStale
+	// the failure is the answer.
+	clock = clock.Add(maxStale)
+	if d := r.Allow(context.Background(), alice, "", VerbRun, KindPipeline); d.Allowed || d.Reason == "" {
+		t.Fatalf("a snapshot past maxStale still answered: %+v", d)
+	}
+	store.fail.Store(false)
+	if d := r.Allow(context.Background(), alice, "", VerbRun, KindPipeline); !d.Allowed {
+		t.Fatalf("a recovered store must answer again: %s", d.Reason)
+	}
+	store.fail.Store(true)
 
 	// With no snapshot ever read, the failure is the answer.
 	fresh := resolverAt(store, &clock)
@@ -112,7 +124,7 @@ func TestResolverRefreshesOnceAtATime(t *testing.T) {
 	r.Allow(context.Background(), alice, "", VerbRun, KindPipeline)
 
 	store.hold = make(chan struct{})
-	clock = clock.Add(time.Minute)
+	clock = clock.Add(cacheTTL)
 	refreshing := make(chan struct{})
 	go func() {
 		defer close(refreshing)

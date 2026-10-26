@@ -94,16 +94,28 @@ func New(deps Deps) http.Handler {
 			mux.Handle("/v2/", deps.requireRole(proxy, registryRule, auth.RoleAgent, auth.RoleRun, auth.RoleAdmin))
 		}
 	}
-	// The process's own profiles, for an administrator: a goroutine dump
-	// taken while the door stalls says where it waits.
+	// The process's own profiles: a goroutine dump taken while the door
+	// stalls says where it waits. A profile spans every tenant (a heap
+	// dump holds their payloads), so only an installation-wide
+	// administrator gets one — an admin of one namespace does not.
 	profiles := http.NewServeMux()
 	profiles.HandleFunc("/debug/pprof/", pprof.Index)
-	profiles.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	profiles.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	profiles.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	profiles.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	mux.Handle("/debug/pprof/", deps.requireRole(profiles, nil, auth.RoleAdmin))
+	mux.Handle("/debug/pprof/", deps.requireRole(installationWide(profiles), nil, auth.RoleAdmin))
 	return mux
+}
+
+// installationWide admits only a principal whose namespace is "*".
+func installationWide(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := auth.FromContext(r.Context()); !ok || p.Namespace != "*" {
+			http.Error(w, "an installation-wide administrator only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireRole admits a configured or minted token by its role; any other

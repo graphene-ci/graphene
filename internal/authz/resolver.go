@@ -12,8 +12,9 @@ package authz
 // a snapshot per caller namespace multiplied the same reads by the
 // number of namespaces. One refresh runs at a time; callers that
 // arrive during it keep the snapshot they have. A failed refresh keeps
-// the last good snapshot: a backend that sheds load for a moment must
-// not turn into "permission denied" for every run and agent.
+// the last good snapshot for up to a minute: a backend that sheds load
+// for a moment must not turn into "permission denied" for every run and
+// agent, and a store down for longer must not keep revoked rights alive.
 
 import (
 	"context"
@@ -32,6 +33,12 @@ type Store interface {
 // cacheTTL is how long a snapshot is reused. Short enough that revoking
 // rights takes effect while someone is still looking at the screen.
 const cacheTTL = 5 * time.Second
+
+// maxStale bounds how long the last snapshot stands in for a store that
+// cannot be read: long enough to ride out a burst of shed load, short
+// enough that a revoked right does not live on while the store is down.
+// Past it, the failure is the answer and every caller is refused.
+const maxStale = time.Minute
 
 // Resolver answers authorization questions over a Store.
 type Resolver struct {
@@ -96,8 +103,14 @@ func (r *Resolver) current() (snapshot, bool) {
 	return r.snap, !r.snap.at.IsZero() && r.now().Sub(r.snap.at) < cacheTTL
 }
 
-// snapshot is a fresh snapshot, or the last good one when the store
-// cannot be read; an error only when there has never been one.
+// usable reports whether a snapshot may still answer for a store that
+// cannot be read right now.
+func (r *Resolver) usable(snap snapshot) bool {
+	return !snap.at.IsZero() && r.now().Sub(snap.at) < maxStale
+}
+
+// snapshot is a fresh snapshot, or — while the store cannot be read —
+// the last good one for at most maxStale.
 func (r *Resolver) snapshot(ctx context.Context) (snapshot, error) {
 	snap, fresh := r.current()
 	if fresh {
@@ -106,7 +119,7 @@ func (r *Resolver) snapshot(ctx context.Context) (snapshot, error) {
 	// A refresh already running answers for everyone: a caller with a
 	// snapshot keeps it; only the very first callers wait.
 	if !r.refresh.TryLock() {
-		if !snap.at.IsZero() {
+		if r.usable(snap) {
 			return snap, nil
 		}
 		r.refresh.Lock()
@@ -119,7 +132,7 @@ func (r *Resolver) snapshot(ctx context.Context) (snapshot, error) {
 	}
 	next, err := r.read(ctx)
 	if err != nil {
-		if !snap.at.IsZero() {
+		if r.usable(snap) {
 			return snap, nil
 		}
 		return snapshot{}, err
