@@ -16,9 +16,9 @@ import (
 	"golang.org/x/term"
 
 	"github.com/graphene-ci/pipeline/pkg/cliconfig"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 
 	"github.com/graphene-ci/graphene/internal/ctl/ui"
-	"github.com/graphene-ci/graphene/internal/services"
 	"github.com/graphene-ci/graphene/pkg/proto/management/v1/managementv1connect"
 )
 
@@ -128,7 +128,7 @@ type authInterceptor struct{ cc cliconfig.Context }
 func (a authInterceptor) apply(h http.Header) {
 	h.Set("Authorization", "Bearer "+a.cc.Token)
 	if a.cc.Namespace != "" {
-		h.Set(services.NamespaceHeader, a.cc.Namespace)
+		h.Set(wire.NamespaceHeader,a.cc.Namespace)
 	}
 }
 

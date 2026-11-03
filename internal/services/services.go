@@ -15,10 +15,8 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/nsbundle"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
-
-// NamespaceHeader picks the namespace for cluster-wide admin tokens.
-const NamespaceHeader = "x-graphene-namespace"
 
 // scope resolves the caller's namespace and checks the role. Kept for
 // the worker plane, whose callers are runs holding a run token; the
@@ -46,7 +44,7 @@ func scope(ctx context.Context, roles ...auth.Role) (string, error) {
 func namespaceFor(ctx context.Context, p auth.Principal) (string, error) {
 	namespace := p.Namespace
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if hdr := md.Get(NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
+		if hdr := md.Get(wire.NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
 			if !p.In(hdr[0]) {
 				return "", status.Errorf(codes.PermissionDenied, "token has no access to namespace %q", hdr[0])
 			}

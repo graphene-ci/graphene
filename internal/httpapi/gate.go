@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/graphene-ci/graphene/internal/authz"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // Gate decides for the tokens the static authenticator does not know —
@@ -28,10 +29,6 @@ type Ask struct {
 // rule names what a request asks for: the namespace it acts in and the
 // asks that would allow it; ok=false refuses it outright.
 type rule func(r *http.Request) (namespace string, asks []Ask, ok bool)
-
-// NamespaceHeader picks the namespace of a call that does not name one in
-// its path — the same header the API doors read.
-const NamespaceHeader = "X-Graphene-Namespace"
 
 // registryRule maps a registry call onto the records it touches. A
 // repository is "<namespace>/<pipeline>", so the namespace comes from the
@@ -60,7 +57,9 @@ func registryRule(r *http.Request) (string, []Ask, bool) {
 // agentBinaryRule: the agent binary is read by whoever may read agents in
 // the namespace the call names (default when it names none).
 func agentBinaryRule(r *http.Request) (string, []Ask, bool) {
-	namespace := r.Header.Get(NamespaceHeader)
+	// A call that does not name its namespace in the path picks it with the
+	// same header the API doors read.
+	namespace := r.Header.Get(wire.NamespaceHeader)
 	if namespace == "" {
 		namespace = "default"
 	}

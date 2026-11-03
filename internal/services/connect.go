@@ -15,6 +15,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/pkg/proto/management/v1/managementv1connect"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // MountConnect mounts the management plane onto the door's HTTP mux.
@@ -49,7 +50,7 @@ func withCORS(next http.Handler) http.Handler {
 	return cors.Handler(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: connectcors.AllowedMethods(),
-		AllowedHeaders: append(connectcors.AllowedHeaders(), "Authorization", NamespaceHeader),
+		AllowedHeaders: append(connectcors.AllowedHeaders(), "Authorization", wire.NamespaceHeader),
 		ExposedHeaders: connectcors.ExposedHeaders(),
 		MaxAge:         7200,
 	})(next)
@@ -63,7 +64,7 @@ func withBearer(next http.Handler, authn *auth.Authenticator, m *Management) htt
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		ctx := r.Context()
-		namespace := r.Header.Get(NamespaceHeader)
+		namespace := r.Header.Get(wire.NamespaceHeader)
 
 		switch identity, ok := m.authenticate(ctx, token, namespace); {
 		case ok:
@@ -77,7 +78,7 @@ func withBearer(next http.Handler, authn *auth.Authenticator, m *Management) htt
 			ctx = auth.WithPrincipal(ctx, p)
 		}
 		if namespace != "" {
-			ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(NamespaceHeader, namespace))
+			ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(wire.NamespaceHeader, namespace))
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

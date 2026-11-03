@@ -15,6 +15,7 @@ import (
 
 	"github.com/graphene-ci/graphene/internal/config"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // Role is what a principal is allowed to be.
@@ -83,7 +84,7 @@ func (a *Authenticator) resolve(ctx context.Context, fullMethod string) (Princip
 		return Principal{}, status.Error(codes.Unauthenticated, "invalid token")
 	}
 	namespace := "default"
-	if hdr := md.Get(namespaceHeader); len(hdr) > 0 && hdr[0] != "" {
+	if hdr := md.Get(wire.NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
 		namespace = hdr[0]
 	}
 	p, authenticated, err := a.bindings.AuthorizeGRPC(ctx, token, namespace, fullMethod)
@@ -95,9 +96,6 @@ func (a *Authenticator) resolve(ctx context.Context, fullMethod string) (Princip
 	}
 	return p, nil
 }
-
-// namespaceHeader is the namespace a call names (services.NamespaceHeader).
-const namespaceHeader = "x-graphene-namespace"
 
 // New builds an authenticator over the configured token list.
 func New(tokens []config.Token) *Authenticator {

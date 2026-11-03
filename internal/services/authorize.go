@@ -22,6 +22,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/nsbundle"
 	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/pipeline/pkg/id"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // identityOf builds the authorization identity of the caller: a minted
@@ -106,7 +107,7 @@ func callerNamespace(ctx context.Context) (string, error) {
 		// switch is free because every call still authorizes against
 		// the target namespace's bindings.
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if hdr := md.Get(NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
+			if hdr := md.Get(wire.NamespaceHeader); len(hdr) > 0 && hdr[0] != "" {
 				return hdr[0], nil
 			}
 		}

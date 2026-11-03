@@ -12,6 +12,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/auth"
 	"github.com/graphene-ci/graphene/internal/authz"
 	"github.com/graphene-ci/graphene/internal/config"
+	"github.com/graphene-ci/pipeline/pkg/wire"
 )
 
 // fakeGate knows one service account token, bound to get pipelines and
@@ -115,7 +116,7 @@ func TestAgentBinaryRule(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "default", ns)
 	require.Equal(t, []Ask{{authz.VerbGet, authz.KindAgent}}, asks)
-	r.Header.Set(NamespaceHeader, "tenant-a")
+	r.Header.Set(wire.NamespaceHeader, "tenant-a")
 	ns, _, _ = agentBinaryRule(r)
 	require.Equal(t, "tenant-a", ns)
 }
