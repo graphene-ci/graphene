@@ -4,29 +4,70 @@ BIN := $(CURDIR)/bin
 
 export PATH := $(BIN):$(PATH)
 
+SDK_TS := $(CURDIR)/sdk/ts
+
 GOLANGCI_LINT_VERSION := v2.12.2
+EASYP_VERSION := v0.16.6
+PROTOC_GEN_GO_VERSION := v1.36.12
+PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
+PROTOC_GEN_CONNECT_GO_VERSION := v1.20.0
+NODE_VERSION := $(shell cat $(CURDIR)/.node-version)
+
+GO_TOOLS := $(BIN)/golangci-lint $(BIN)/easyp $(BIN)/protoc-gen-go \
+	$(BIN)/protoc-gen-go-grpc $(BIN)/protoc-gen-connect-go
 
 .PHONY: configure
-configure: $(BIN)/golangci-lint ## Install pinned repository tools into bin
+configure: $(GO_TOOLS) $(SDK_TS)/node_modules ## Install pinned repository tools into bin and sdk/ts
 
 $(BIN)/golangci-lint:
 	GOBIN=$(BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
+$(BIN)/easyp:
+	GOBIN=$(BIN) go install github.com/easyp-tech/easyp/cmd/easyp@$(EASYP_VERSION)
+
+$(BIN)/protoc-gen-go:
+	GOBIN=$(BIN) go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+
+$(BIN)/protoc-gen-go-grpc:
+	GOBIN=$(BIN) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
+
+$(BIN)/protoc-gen-connect-go:
+	GOBIN=$(BIN) go install connectrpc.com/connect/cmd/protoc-gen-connect-go@$(PROTOC_GEN_CONNECT_GO_VERSION)
+
+.PHONY: verify-node
+verify-node:
+	@test "$$(node --version)" = "$(NODE_VERSION)" || { \
+		echo "Node.js $(NODE_VERSION) required, found $$(node --version 2>/dev/null || echo none)" >&2; \
+		exit 1; \
+	}
+
+$(SDK_TS)/node_modules: $(SDK_TS)/package-lock.json | verify-node
+	npm --prefix $(SDK_TS) ci --no-audit --no-fund
+	touch $@
+
 .PHONY: test
-test: ## Run tests
+test: $(SDK_TS)/node_modules ## Run Go and TypeScript SDK tests
 	go test ./...
+	npm --prefix $(SDK_TS) test
 
 .PHONY: lint
-lint: ## Run Go linters
+lint: $(SDK_TS)/node_modules ## Run Go linters and Biome on the TypeScript SDK
 	$(BIN)/golangci-lint run ./...
+	npm --prefix $(SDK_TS) run lint
 
 .PHONY: build
 build: ## Build the server binary
 	go build ./cmd/graphene-server
 
 .PHONY: generate
-generate: ## Generate Go contracts from proto
-	easyp generate
+generate: $(GO_TOOLS) $(SDK_TS)/node_modules ## Generate Go and TypeScript contracts from proto
+	$(RM) -r $(SDK_TS)/src/proto
+	$(BIN)/easyp generate
+
+.PHONY: sdk-ts
+sdk-ts: $(SDK_TS)/node_modules ## Build the TypeScript SDK into sdk/ts/dist
+	$(RM) -r $(SDK_TS)/dist
+	npm --prefix $(SDK_TS) run build
 
 .PHONY: help
 help: ## Show available targets

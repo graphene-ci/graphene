@@ -18,3 +18,10 @@ generate:
       out: .
       opts:
         module: github.com/graphene-ci/graphene
+    # TypeScript bindings for the published @graphene-ci/management-api
+    # package; the generator is pinned in sdk/ts/package.json.
+    - path: ./sdk/ts/node_modules/.bin/protoc-gen-es
+      out: sdk/ts/src
+      opts:
+        target: ts
+        import_extension: ts

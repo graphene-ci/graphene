@@ -32,6 +32,11 @@ Control plane и `graphenectl` Graphene. Текущая модель проду�
 
 - `cmd/` — сборка `graphene-server` и `graphenectl`;
 - `proto/management` — публичный Management API, generated code коммитится;
+- `sdk/ts` — TypeScript SDK `@graphene-ci/management-api` (Р-Н28):
+  `src/proto` генерирует `make generate` и руками не правится, рукописный
+  только `src/index.ts`. Изменение proto — перегенерация Go и TS в одном
+  коммите; пакет выходит с тегом сервера, Studio обновляет зависимость.
+  Код SDK проходит Biome и `node --test` в `make lint`/`make test`;
 - `internal/` — реализации flows, server worker, API, auth, storage,
   materialization исходников и managed execution; внешних импортируемых пакетов
   здесь нет.

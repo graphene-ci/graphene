@@ -35,6 +35,34 @@ sudo install graphenectl /usr/local/bin/
 graphenectl login --server <host:port>
 ```
 
+**TypeScript SDK** — `@graphene-ci/management-api` from GitHub Packages,
+versioned with the server. GitHub Packages needs a token with
+`read:packages` even for reads (`gh auth token` works when `gh` has that
+scope):
+
+```ini
+# .npmrc
+@graphene-ci:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+```ts
+import { createConnectTransport } from '@connectrpc/connect-web' // or connect-node
+import { authInterceptor, createGrapheneClient } from '@graphene-ci/management-api'
+import type { GetRunResponse } from '@graphene-ci/management-api/v1/runs'
+
+const api = createGrapheneClient(
+  createConnectTransport({
+    baseUrl: 'https://graphene.example.com',
+    interceptors: [authInterceptor(() => ({ token, namespace: 'default' }))],
+  }),
+)
+const info = await api.namespaces.serverInfo({})
+```
+
+The package depends on `@bufbuild/protobuf` and `@connectrpc/connect`
+(peer dependencies); the transport is the consumer's choice.
+
 ## Public TLS and internal workers
 
 Keep `GRAPHENE_SERVER_EXTERNAL` as `host:port` and set
@@ -66,6 +94,7 @@ to close; ordinary resource teardown still waits for closure.
 | `cmd/graphene-server` | build and run the server |
 | `cmd/graphenectl` | the general-purpose operator CLI |
 | `proto/management` | the public Management API |
+| `sdk/ts` | the `@graphene-ci/management-api` TypeScript SDK: generated bindings and the client helpers |
 | `internal/services` | Management, worker and agent API implementations |
 | `internal/worker` | the Temporal worker and system-process registration |
 | `internal/*flow`, `internal/ops` | record lifecycles and external effects |
@@ -81,6 +110,13 @@ make lint
 make test
 make build
 ```
+
+`make configure` needs Go and Node.js of the version in `.node-version`;
+it installs the pinned linters and code generators into `bin/` and the SDK
+dependencies into `sdk/ts/node_modules`. `make generate` regenerates the Go
+and TypeScript bindings from `proto/`; `make sdk-ts` builds the SDK into
+`sdk/ts/dist`. `make lint` and `make test` cover the SDK as well (Biome,
+type-check and `node --test` against an in-memory Connect router).
 
 `make test` replays recorded histories of the system entities
 (`internal/*/testdata`) against the current workflow code: the server
@@ -109,7 +145,8 @@ make ver v=0.1.0        # or: make bump TYPE=minor
 
 The tag drives the release workflow: goreleaser publishes the `graphenectl`
 binaries to a GitHub Release, and the server image is built (embedding the
-latest released agent selected by the release workflow) and pushed to GHCR as `:X.Y.Z` and `:latest`.
+latest released agent selected by the release workflow) and pushed to GHCR as `:X.Y.Z` and `:latest`,
+and `@graphene-ci/management-api@X.Y.Z` is published to GitHub Packages.
 
 Resource ownership transfer activities emit heartbeats while waiting for the
 entity command, including during resource creation. Cancellation and the

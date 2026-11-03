@@ -1,0 +1,48 @@
+{
+  "name": "@graphene-ci/management-api",
+  "version": "0.0.0",
+  "description": "TypeScript client for the Graphene CI Management API",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/graphene-ci/graphene.git",
+    "directory": "sdk/ts"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./v1/*": {
+      "types": "./dist/proto/management/v1/*_pb.d.ts",
+      "default": "./dist/proto/management/v1/*_pb.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && node --test 'src/**/*.test.ts'",
+    "lint": "biome check --error-on-warnings ."
+  },
+  "peerDependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
+    "@connectrpc/connect": "^2.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.10",
+    "@bufbuild/protobuf": "2.16.0",
+    "@bufbuild/protoc-gen-es": "2.16.0",
+    "@connectrpc/connect": "2.3.0",
+    "@types/node": "^26.2.0",
+    "typescript": "7.0.2"
+  }
+}

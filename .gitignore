@@ -2,3 +2,5 @@
 /graphene-server
 *.out
 .env
+/sdk/ts/node_modules/
+/sdk/ts/dist/

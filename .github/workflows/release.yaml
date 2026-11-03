@@ -2,7 +2,8 @@ name: release
 
 # A pushed semver tag (X.Y.Z, no prefix) IS a release: goreleaser ships the
 # graphenectl CLI to a GitHub Release, and the docker job builds the
-# graphene-server image and pushes it to GHCR. The image embeds the agent
+# graphene-server image and pushes it to GHCR, the sdk-ts job publishes
+# @graphene-ci/management-api to GitHub Packages. The image embeds the agent
 # binary at the LATEST agent release (resolved at build time) — the agent
 # versions independently, so a graphene release never forces a matching
 # agent tag.
@@ -73,6 +74,30 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sdk-ts:
+    # The TypeScript SDK carries the server's version: one tag, one
+    # Management API contract.
+    name: "@graphene-ci/management-api (GitHub Packages)"
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          registry-url: https://npm.pkg.github.com
+          scope: "@graphene-ci"
+      - run: make sdk-ts
+      - name: Publish
+        working-directory: sdk/ts
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm version "$VERSION" --no-git-tag-version
+          npm publish
 
   server-image:
     name: graphene-server image
