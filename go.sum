@@ -132,6 +132,8 @@ github.com/graphene-ci/library/docker v0.3.7 h1:NcBG1PrCbdxN+OM4w7Qq2tOGqddgMmEG
 github.com/graphene-ci/library/docker v0.3.7/go.mod h1:B2oAsfrSyv+cJndOiPZNy48TnqSAlHhuYvF/ezGBh8k=
 github.com/graphene-ci/library/docker v0.3.8 h1:AKIXsSh0LQi4apauTsWWz2Gdut6oR5S0vJc1Z0YajOk=
 github.com/graphene-ci/library/docker v0.3.8/go.mod h1:TUyksBl9o9F+HmskzAyiCldqZXgnH2NVaWORM2teyio=
+github.com/graphene-ci/library/docker v0.3.10 h1:+oLUHPyyYvrlKUWAx6n0fnbELLZuKTkJp24XYbNzjAM=
+github.com/graphene-ci/library/docker v0.3.10/go.mod h1:2Nvhlp+R9Q34gmFlGY6WoOnwLz7qy0aN4PxvO6twQKM=
 github.com/graphene-ci/pipeline v0.2.14 h1:y3L6DQQgxTvcRaUH4EXBPaS6yWhOdwFVpa7LkE5pcOU=
 github.com/graphene-ci/pipeline v0.2.14/go.mod h1:2YpDZtdO3LCkJ65oRzdAssnUO1mIewjMQoJ4auoYkko=
 github.com/graphene-ci/pipeline v0.2.15 h1:VtbcZ+LIrz5dxg0wuZQDY3YwqEkhawvbFMrVJzyBfPQ=
@@ -152,6 +154,8 @@ github.com/graphene-ci/pipeline v0.2.23 h1:86YOJNRmxbx/+nwtHsCFw0QRaTG9/EdQx0CMn
 github.com/graphene-ci/pipeline v0.2.23/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/pipeline v0.2.24 h1:ci2rJW6qvmsob2tsKYz57HzoCzgSzNsdIE3OyAO0TDo=
 github.com/graphene-ci/pipeline v0.2.24/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
+github.com/graphene-ci/pipeline v0.2.26 h1:idjFrM9aDcndUqrxxaV6uVox8cIEHV7+UJP31ufA5Rk=
+github.com/graphene-ci/pipeline v0.2.26/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305 h1:XAo+LQg6zidnVXdzUNmrqWdHke3OejhAYRTXABrvbWU=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
 github.com/graphene-ci/temporal-entity v0.1.1 h1:6adZ9koQxvdH8D29+b8PqeGxQbX5dasdJ/m+qqVpUwk=
