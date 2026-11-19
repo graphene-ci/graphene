@@ -6,12 +6,13 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"go.temporal.io/sdk/temporal"
 	"net"
 	"strings"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/graphene-ci/graphene/internal/agents"
@@ -23,7 +24,7 @@ import (
 
 // AgentOps implements the agent flow's Ops for ONE namespace: agent
 // presence from the registry, ssh install for machines that already
-// exist.
+// exist, and decommission over the live session or ssh.
 type AgentOps struct {
 	namespace string
 	registry  *agents.Registry
@@ -55,17 +56,83 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 	if err != nil {
 		return err
 	}
+	out, err := o.runSSH(ctx, install, script)
+	if err == nil {
+		return nil
+	}
+	// The machine already carries a DIFFERENT agent's identity: retrying
+	// would never change that, and overwriting it would silently re-badge
+	// a live agent. Fail loudly, once.
+	if strings.Contains(out, "GRAPHENE_ALREADY_BOUND") {
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("machine %s already runs another agent (%s). "+
+				"Attach it (pipeline.AttachAgent / labels) if any machine will do; "+
+				"declaring a NEW name here would re-badge a live machine — to really rename it, "+
+				"remove /etc/graphene-agent on the host first",
+				install.Address, truncate(strings.TrimSpace(out), 128)),
+			"MachineAlreadyBound", nil)
+	}
+	return fmt.Errorf("install script: %w: %s", err, truncate(out, 2048))
+}
+
+// decommissionWait bounds how long an agent that accepted Decommission
+// may take to leave its session.
+const decommissionWait = 2 * time.Minute
+
+// Decommission takes the agent off its machine. A connected agent runs the
+// uninstall itself (detached from its own process) and is done when its
+// session ends; an offline one is uninstalled over the record's ssh. With
+// neither, the attempt fails and the flow's policy decides: retry until
+// done, or give up and mark the agent as possibly remaining.
+func (o *AgentOps) Decommission(ctx context.Context, agentId id.AgentId, install *pipeline.SSHInstall) error {
+	script := UninstallScript(agentId)
+	if o.registry.Status(o.namespace, agentId).Connected {
+		if err := o.registry.Decommission(ctx, o.namespace, agentId, script); err != nil {
+			return fmt.Errorf("decommission over the session: %w", err)
+		}
+		deadline := time.Now().Add(decommissionWait)
+		for o.registry.Status(o.namespace, agentId).Connected {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("agent %s accepted decommission but is still connected after %s", agentId, decommissionWait)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+		return nil
+	}
+	if install == nil {
+		return errors.New("agent is offline and the record has no ssh to uninstall it with")
+	}
+	out, err := o.runSSH(ctx, *install, script)
+	if err != nil {
+		return fmt.Errorf("uninstall over ssh: %w: %s", err, truncate(out, 2048))
+	}
+	if !strings.Contains(out, uninstallMarker) && !strings.Contains(out, otherAgentMarker) {
+		return fmt.Errorf("uninstall over ssh did not finish: %s", truncate(out, 2048))
+	}
+	return nil
+}
+
+// runSSH runs a root script on the machine over ssh and returns its
+// combined output. The script travels on stdin, never in argv (it may
+// carry a token), into a private temp file that is removed whatever the
+// script's outcome. A non-root login escalates with sudo -n (sudo would
+// eat a piped stdin, hence the file).
+func (o *AgentOps) runSSH(ctx context.Context, install pipeline.SSHInstall, script string) (string, error) {
 	keyPEM, err := o.secrets.Get(install.KeyRef.Name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	signer, err := ssh.ParsePrivateKey([]byte(keyPEM))
 	if err != nil {
-		return fmt.Errorf("parse ssh key: %w", err)
+		return "", fmt.Errorf("parse ssh key: %w", err)
 	}
 	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(install.HostKey))
 	if err != nil {
-		return fmt.Errorf("parse host key: %w", err)
+		return "", fmt.Errorf("parse host key: %w", err)
 	}
 	address := install.Address
 	if _, _, splitErr := net.SplitHostPort(address); splitErr != nil {
@@ -83,43 +150,30 @@ func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install p
 	}
 	raw, err := (&net.Dialer{Timeout: sshCfg.Timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
-		return fmt.Errorf("dial %s: %w", address, err)
+		return "", fmt.Errorf("dial %s: %w", address, err)
 	}
 	sshConn, chans, reqs, err := ssh.NewClientConn(raw, address, sshCfg)
 	if err != nil {
 		_ = raw.Close()
-		return fmt.Errorf("ssh handshake %s: %w", address, err)
+		return "", fmt.Errorf("ssh handshake %s: %w", address, err)
 	}
 	conn := ssh.NewClient(sshConn, chans, reqs)
 	defer func() { _ = conn.Close() }()
 	session, err := conn.NewSession()
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = session.Close() }()
-	// The install token is inside the script; it never appears in argv.
-	// The script needs root: a non-root login escalates with sudo -n
-	// (the stdin lands in a temp file first — sudo would eat the pipe).
 	session.Stdin = strings.NewReader(script)
-	const run = `s=$(mktemp); cat > "$s"; ` +
-		`if [ "$(id -u)" -ne 0 ]; then exec sudo -n sh "$s"; else exec sh "$s"; fi`
-	if out, err := session.CombinedOutput("sh -c '" + run + "'"); err != nil {
-		// The machine already carries a DIFFERENT agent's identity:
-		// retrying would never change that, and overwriting it would
-		// silently re-badge a live agent. Fail loudly, once.
-		if strings.Contains(string(out), "GRAPHENE_ALREADY_BOUND") {
-			return temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("machine %s already runs another agent (%s). "+
-					"Attach it (pipeline.AttachAgent / labels) if any machine will do; "+
-					"declaring a NEW name here would re-badge a live machine — to really rename it, "+
-					"remove /etc/graphene-agent on the host first",
-					install.Address, truncate(strings.TrimSpace(string(out)), 128)),
-				"MachineAlreadyBound", nil)
-		}
-		return fmt.Errorf("install script: %w: %s", err, truncate(string(out), 2048))
-	}
-	return nil
+	out, err := session.CombinedOutput("sh -c '" + sshRunner + "'")
+	return string(out), err
 }
+
+// sshRunner takes the script from stdin into a private temp file, runs it
+// as root, and removes the file on every exit path: the install script
+// carries the agent's token and must not stay on the machine.
+const sshRunner = `s=$(mktemp); trap "rm -f \"$s\"" EXIT; cat > "$s"; ` +
+	`if [ "$(id -u)" -ne 0 ]; then sudo -n sh "$s"; else sh "$s"; fi`
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

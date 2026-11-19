@@ -215,6 +215,7 @@ func New(deps Deps) (*Worker, error) {
 
 	// Ops behind the flows.
 	w.RegisterActivityWithOptions(deps.AgentOps.InstallSSH, activity.RegisterOptions{Name: agentflow.InstallSSHActivity})
+	w.RegisterActivityWithOptions(deps.AgentOps.Decommission, activity.RegisterOptions{Name: agentflow.DecommissionActivity})
 	w.RegisterActivityWithOptions(deps.AgentOps.AgentStatus, activity.RegisterOptions{Name: agentflow.AgentStatusActivity})
 	w.RegisterActivityWithOptions(deps.ArtifactOps.Stat, activity.RegisterOptions{Name: artifact.StatActivity})
 	w.RegisterActivityWithOptions(deps.ArtifactOps.Delete, activity.RegisterOptions{Name: artifact.DeleteActivity})
@@ -1019,10 +1020,15 @@ func (s *Worker) reportLeak(ctx context.Context, req wire.ReportLeakRequest) err
 // namespace — the guard against a valid token opening a session for a
 // machine no pipeline ever declared. A pipeline declares the record
 // before the agent connects, so a legitimate agent always finds one.
+//
+// A DELETED record no longer answers for its machine: its history still
+// describes, but the agent behind it is refused — deny by id, whatever
+// token it still holds. A record being deleted keeps its session, so a
+// decommission can reach the agent.
 func (s *Worker) AgentExists(ctx context.Context, agentId id.AgentId) bool {
 	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
-	_, err := agents.Describe(ctx, entity.ResourceID(agentId))
-	return err == nil
+	desc, err := agents.Describe(ctx, entity.ResourceID(agentId))
+	return err == nil && desc.Phase != entity.PhaseDeleted
 }
 
 func (s *Worker) attachAgent(ctx context.Context, agentId id.AgentId, needs []wire.NeedSpec) (pipeline.AgentState, error) {

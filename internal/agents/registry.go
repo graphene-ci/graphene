@@ -228,6 +228,16 @@ func (r *Registry) StopContainer(ctx context.Context, namespace string, agentId 
 	})
 }
 
+// Decommission asks the machine's agent to schedule the uninstall script
+// and waits for its answer; the agent goes away shortly after.
+func (r *Registry) Decommission(ctx context.Context, namespace string, agentId id.AgentId, script string) error {
+	return r.command(ctx, namespace, agentId, func(commandId string) *agentpb.SessionResponse {
+		return &agentpb.SessionResponse{Body: &agentpb.SessionResponse_Decommission{
+			Decommission: &agentpb.Decommission{CommandId: commandId, Script: script},
+		}}
+	})
+}
+
 // Status reports the agent's presence for the machine flow — with the
 // full inventory behind the digest, so the reconcile lands the facts
 // on the record and every reader gets them from the state.

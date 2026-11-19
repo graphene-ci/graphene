@@ -328,3 +328,55 @@ func TestStandDirty(t *testing.T) {
 		t.Fatalf("dirty %v", dirty)
 	}
 }
+
+// agentPhaseClient answers an agent record's describe with a phase.
+type agentPhaseClient struct {
+	client.Client
+	phase entity.Phase
+	gone  bool
+}
+
+func (c agentPhaseClient) QueryWorkflow(context.Context, string, string, string, ...any) (converter.EncodedValue, error) {
+	if c.gone {
+		return nil, serviceerror.NewNotFound("no record")
+	}
+	return phaseValue{phase: c.phase}, nil
+}
+
+type phaseValue struct{ phase entity.Phase }
+
+func (phaseValue) HasValue() bool { return true }
+
+func (v phaseValue) Get(ptr any) error {
+	raw, err := json.Marshal(map[string]any{"phase": v.phase})
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, ptr)
+}
+
+// A deleted agent record answers for no machine: its agent is refused
+// whatever token it holds. A record being deleted keeps the session so a
+// decommission reaches the agent.
+func TestAgentExists(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		client agentPhaseClient
+		want   bool
+	}{
+		{name: "ready", client: agentPhaseClient{phase: entity.PhaseReady}, want: true},
+		{name: "deleting", client: agentPhaseClient{phase: entity.PhaseDeleting}, want: true},
+		{name: "deleted", client: agentPhaseClient{phase: entity.PhaseDeleted}},
+		{name: "never declared", client: agentPhaseClient{gone: true}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			w := &Worker{deps: Deps{Client: c.client}, agentDef: agentflow.Definition(agentflow.Options{})}
+			if got := w.AgentExists(context.Background(), "db-1"); got != c.want {
+				t.Fatalf("AgentExists = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

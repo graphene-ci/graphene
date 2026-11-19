@@ -14,9 +14,9 @@ require (
 	github.com/gopherex/xprobe v1.0.0
 	github.com/gopherex/xprobe/pkg/transport/grpc v1.0.0
 	github.com/gopherex/xshutdown v1.0.0
-	github.com/graphene-ci/agent v0.2.2
+	github.com/graphene-ci/agent v0.2.3
 	github.com/graphene-ci/library/docker v0.3.8
-	github.com/graphene-ci/pipeline v0.2.22
+	github.com/graphene-ci/pipeline v0.2.23
 	github.com/graphene-ci/temporal-entity v0.1.1
 	github.com/itchyny/gojq v0.12.19
 	github.com/minio/minio-go/v7 v7.3.0

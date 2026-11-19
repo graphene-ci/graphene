@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"fmt"
 	"errors"
 	"io"
 	"strings"
@@ -159,5 +160,30 @@ func TestMachineFactsCarryDisks(t *testing.T) {
 	other := &agentpb.Facts{Hostname: "db-1"}
 	if digest(f) == digest(other) {
 		t.Fatal("a disk change must change the facts digest")
+	}
+}
+
+// Decommission reaches the connected agent with the script and returns
+// the agent's answer.
+func TestDecommissionCommand(t *testing.T) {
+	t.Parallel()
+	for _, refusal := range []string{"", "systemd-run: unit exists"} {
+		t.Run(fmt.Sprintf("answer %q", refusal), func(t *testing.T) {
+			t.Parallel()
+			registry := New(time.Second, xlog.New(xlog.NopCore{}))
+			stream, cancel, _ := connectTestAgent(t, registry)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- registry.Decommission(context.Background(), "test", "machine-1", "echo bye") }()
+			cmd := receive(t, stream.out).GetDecommission()
+			if cmd.GetScript() != "echo bye" {
+				t.Fatalf("command %+v", cmd)
+			}
+			stream.in <- &agentpb.SessionRequest{Body: &agentpb.SessionRequest_CommandResult{CommandResult: &agentpb.CommandResult{CommandId: cmd.GetCommandId(), Error: refusal}}}
+			err := receive(t, done)
+			if (err != nil) != (refusal != "") {
+				t.Fatalf("err = %v, want refusal %q", err, refusal)
+			}
+		})
 	}
 }

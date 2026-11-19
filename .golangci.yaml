@@ -39,3 +39,8 @@ linters:
       - path: internal/managed/k8s_test.go
         linters: [gosec]
         text: "G101"
+      # The opt-in uninstall test drives the docker CLI against the
+      # container it started itself; the id is docker's own answer.
+      - path: internal/ops/uninstall_it_test.go
+        linters: [gosec]
+        text: "G204"
