@@ -30,7 +30,6 @@ import (
 	"github.com/graphene-ci/graphene/internal/triggerflow"
 	"github.com/graphene-ci/graphene/internal/valueflow"
 	agentflow "github.com/graphene-ci/pipeline/pkg/flow/agent"
-	"github.com/graphene-ci/pipeline/pkg/flow/artifact"
 	"github.com/graphene-ci/pipeline/pkg/id"
 	"github.com/graphene-ci/pipeline/pkg/manifest"
 	"github.com/graphene-ci/pipeline/pkg/pipeline"
@@ -316,8 +315,11 @@ func buildKinds() map[string]*kindEntry {
 		cmd("extend", reflect.TypeFor[standflow.ExtendCmd]()),
 		cmd("release", reflect.TypeFor[standflow.ReleaseCmd]()))
 
+	// clear-leaks: an operator says the leftovers a record could not
+	// remove are gone (or accepted) — the machine is clean again.
 	add("agent", "a machine's identity and the process on it", true,
-		reflect.TypeFor[pipeline.AgentSpec]())
+		reflect.TypeFor[pipeline.AgentSpec](),
+		cmd("clear-leaks", reflect.TypeFor[agentflow.ClearLeaksCmd]()))
 
 	add("artifact", "bytes a run produced, kept with their record", true,
 		reflect.TypeFor[pipeline.ArtifactSpec]())
@@ -360,5 +362,3 @@ func cmd(name string, payload reflect.Type) commandDef {
 	return commandDef{name: name, payload: payload}
 }
 
-var _ = agentflow.Kind
-var _ = artifact.Kind

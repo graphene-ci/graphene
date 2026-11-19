@@ -231,6 +231,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.attachArtifact, activity.RegisterOptions{Name: wire.AttachArtifactActivity})
 	w.RegisterActivityWithOptions(s.selectAgents, activity.RegisterOptions{Name: wire.SelectAgentsActivity})
 	w.RegisterActivityWithOptions(s.publishCapability, activity.RegisterOptions{Name: wire.PublishCapabilityActivity})
+	w.RegisterActivityWithOptions(s.reportLeak, activity.RegisterOptions{Name: wire.ReportLeakActivity})
 	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
 	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
 	w.RegisterActivityWithOptions(s.runActive, activity.RegisterOptions{Name: standflow.RunActiveActivity})
@@ -858,6 +859,27 @@ func (s *Worker) PublishCapability(ctx context.Context, agentId id.AgentId, capa
 // publishCapability is the activity form.
 func (s *Worker) publishCapability(ctx context.Context, agentId id.AgentId, capability pipeline.Capability) error {
 	return s.PublishCapability(ctx, agentId, capability)
+}
+
+// reportLeak writes onto the machine's record what a record on it could
+// not clean up: the machine is dirty until the leak is cleared. The
+// record is the CALLING workflow and the machine is the one that
+// workflow's queue serves — both read from Temporal, never from the
+// request, so a caller cannot dirty a machine it does not run on.
+func (s *Worker) reportLeak(ctx context.Context, req wire.ReportLeakRequest) error {
+	caller := activity.GetInfo(ctx).WorkflowExecution
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, caller.ID, caller.RunID)
+	if err != nil {
+		return fmt.Errorf("leak report: describe %s: %w", caller.ID, err)
+	}
+	agentId, _, onMachine := wire.ParseAgentRunQueue(desc.GetExecutionConfig().GetTaskQueue().GetName())
+	if !onMachine {
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("leak report: %s does not run on a machine queue", caller.ID), "leak_off_machine", nil)
+	}
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	_, err = entclient.Exec(ctx, agents, entity.ResourceID(agentId), agentflow.ReportLeakCmd{Ref: caller.ID, Error: req.Error})
+	return err
 }
 
 // attachAgent recognizes an EXISTING agent: no record — an error, never
