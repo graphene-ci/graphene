@@ -221,6 +221,8 @@ func TestLeasedStandOf(t *testing.T) {
 		"agent/db-1":    "yc.vm/db-1",
 		"yc.vm/free-1":  "stand/idle",
 		"artifact/mine": "run/r1",
+		"loop/a":        "loop/b",
+		"loop/b":        "loop/a",
 	}
 	stands := map[string]*standflow.Lease{
 		"stand/lab":  {Run: "r1"},
@@ -239,6 +241,7 @@ func TestLeasedStandOf(t *testing.T) {
 		{record: "artifact/mine"},
 		{record: "nothing/here"},
 		{record: "docker/pg", broken: true, fails: true},
+		{record: "loop/a", fails: true},
 	}
 	for _, c := range cases {
 		t.Run(c.record, func(t *testing.T) {

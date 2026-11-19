@@ -531,14 +531,19 @@ func (s *Worker) runState(ctx context.Context, runId string) (string, error) {
 	return standflow.RunClosed, nil
 }
 
+// maxOwnerHops bounds an ownership climb.
+const maxOwnerHops = 32
+
 // LeasedStandOf reports whether ref sits on a leased stand — it is the
 // stand, or its ownership chain ends at one — and which stand.
 func (s *Worker) LeasedStandOf(ctx context.Context, record string) (string, bool, error) {
 	stand, onStand := strings.CutPrefix(record, "stand/")
 	cur := record
-	for range 32 {
-		if onStand {
-			break
+	for hops := 0; !onStand; hops++ {
+		if hops == maxOwnerHops {
+			// A chain this deep is not a tree the server built: refuse
+			// rather than guess it is off every stand.
+			return "", false, fmt.Errorf("%s: ownership chain deeper than %d", record, maxOwnerHops)
 		}
 		owner, err := s.ownerOf(ctx, cur)
 		if notFound(err) || (err == nil && owner == "") {
@@ -547,11 +552,12 @@ func (s *Worker) LeasedStandOf(ctx context.Context, record string) (string, bool
 		if err != nil {
 			return "", false, err
 		}
+		// A run or a pipeline ends the chain: the record is not parked.
+		if kind, _, _ := strings.Cut(owner, "/"); kind == "run" || kind == "pipeline" {
+			return "", false, nil
+		}
 		stand, onStand = strings.CutPrefix(owner, "stand/")
 		cur = owner
-	}
-	if !onStand {
-		return "", false, nil
 	}
 	stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
 	desc, err := stands.Describe(ctx, entity.ResourceID(stand))
