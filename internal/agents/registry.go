@@ -266,6 +266,12 @@ func machineFacts(f *agentpb.Facts) *agentflow.MachineFacts {
 			Name: iface.GetName(), Addresses: iface.GetAddresses(),
 		})
 	}
+	for _, d := range f.GetDisks() {
+		out.Disks = append(out.Disks, agentflow.Disk{
+			Name: d.GetName(), SizeBytes: d.GetSizeBytes(), Rotational: d.GetRotational(),
+			Transport: d.GetTransport(), Model: d.GetModel(), Serial: d.GetSerial(), ById: d.GetById(),
+		})
+	}
 	return out
 }
 
