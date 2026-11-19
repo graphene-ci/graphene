@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/gopherex/xlog"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -236,6 +237,8 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
 	w.RegisterActivityWithOptions(s.runActive, activity.RegisterOptions{Name: standflow.RunActiveActivity})
 	w.RegisterActivityWithOptions(s.standExpire, activity.RegisterOptions{Name: standflow.ExpireActivity})
+	w.RegisterActivityWithOptions(s.standDirty, activity.RegisterOptions{Name: standflow.DirtyActivity})
+	w.RegisterActivityWithOptions(s.runState, activity.RegisterOptions{Name: standflow.RunStateActivity})
 	// The trigger contour: the arbiter's arms and the firing path.
 	w.RegisterActivityWithOptions(s.triggerFire, activity.RegisterOptions{Name: triggerflow.FireActivity})
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
@@ -455,6 +458,116 @@ func (s *Worker) standExpire(ctx context.Context) error {
 		return temporal.NewNonRetryableApplicationError(caller+" is not a stand", "not_a_stand", nil)
 	}
 	return s.DeleteOne(ctx, caller)
+}
+
+// standDirty lists the agents on the CALLING stand whose records carry
+// leaks: every holding's tree is walked down the owner index. The stand
+// is the activity's own workflow, never a request field.
+func (s *Worker) standDirty(ctx context.Context) ([]string, error) {
+	caller := activity.GetInfo(ctx).WorkflowExecution.ID
+	standId, ok := strings.CutPrefix(caller, "stand/")
+	if !ok {
+		return nil, temporal.NewNonRetryableApplicationError(caller+" is not a stand", "not_a_stand", nil)
+	}
+	return s.dirtyOf(ctx, standId)
+}
+
+// dirtyOf lists the agents with leaks anywhere in the stand's trees.
+func (s *Worker) dirtyOf(ctx context.Context, standId string) ([]string, error) {
+	stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
+	desc, err := stands.Describe(ctx, entity.ResourceID(standId))
+	if err != nil {
+		return nil, err
+	}
+	agents := entclient.Bind(s.agentDef, s.deps.Client, wire.ServerQueue)
+	var dirty []string
+	queue := make([]string, 0, len(desc.State.Holdings))
+	for held := range desc.State.Holdings {
+		queue = append(queue, held)
+	}
+	seen := map[string]bool{}
+	for len(queue) > 0 {
+		record := queue[0]
+		queue = queue[1:]
+		if seen[record] {
+			continue
+		}
+		seen[record] = true
+		if agentId, isAgent := strings.CutPrefix(record, string(agentflow.Kind)+"/"); isAgent {
+			a, err := agents.Describe(ctx, entity.ResourceID(agentId))
+			if err != nil {
+				return nil, err
+			}
+			if len(a.State.Leaks) > 0 || a.State.LeaksOverflow > 0 {
+				dirty = append(dirty, record)
+			}
+		}
+		if err := queryLiteral(record); err != nil {
+			return nil, err
+		}
+		children, err := ownedBy(ctx, s.deps.Client, ref.OwnerRef(record), "")
+		if err != nil {
+			return nil, err
+		}
+		queue = append(queue, children...)
+	}
+	sort.Strings(dirty)
+	return dirty, nil
+}
+
+// runState answers whether a run is running, closed, or unknown (never
+// started) — a lease taken before the run starts waits for it.
+func (s *Worker) runState(ctx context.Context, runId string) (string, error) {
+	desc, err := s.deps.Client.DescribeWorkflowExecution(ctx, "run/"+runId, "")
+	if err != nil {
+		if notFound(err) {
+			return standflow.RunUnknown, nil
+		}
+		return "", err
+	}
+	if desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		return standflow.RunRunning, nil
+	}
+	return standflow.RunClosed, nil
+}
+
+// LeasedStandOf reports whether ref sits on a leased stand — it is the
+// stand, or its ownership chain ends at one — and which stand.
+func (s *Worker) LeasedStandOf(ctx context.Context, record string) (string, bool, error) {
+	stand, onStand := strings.CutPrefix(record, "stand/")
+	cur := record
+	for range 32 {
+		if onStand {
+			break
+		}
+		owner, err := s.ownerOf(ctx, cur)
+		if notFound(err) || (err == nil && owner == "") {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		stand, onStand = strings.CutPrefix(owner, "stand/")
+		cur = owner
+	}
+	if !onStand {
+		return "", false, nil
+	}
+	stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
+	desc, err := stands.Describe(ctx, entity.ResourceID(stand))
+	if notFound(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return stand, desc.State.Lease != nil, nil
+}
+
+// notFound reports a Temporal "no such workflow".
+func notFound(err error) bool {
+	var nf *serviceerror.NotFound
+	return errors.As(err, &nf)
 }
 
 // standCascade is the stand's teardown arm: subtree first, then the

@@ -336,7 +336,9 @@ func buildKinds() map[string]*kindEntry {
 		cmd("extend", reflect.TypeFor[standflow.ExtendCmd]()),
 		cmd("release", reflect.TypeFor[standflow.ReleaseCmd]()),
 		cmd("set-ttl", reflect.TypeFor[standflow.SetTTLCmd]()),
-		cmd("set-idle", reflect.TypeFor[standflow.SetIdleCmd]()))
+		cmd("set-idle", reflect.TypeFor[standflow.SetIdleCmd]()),
+		cmd("acquire", reflect.TypeFor[standflow.AcquireCmd]()),
+		cmd("release-lease", reflect.TypeFor[standflow.ReleaseLeaseCmd]()))
 	reg["stand"].validate = validated[standflow.Spec]()
 
 	// clear-leaks: an operator says the leftovers a record could not
@@ -385,4 +387,3 @@ type commandDef struct {
 func cmd(name string, payload reflect.Type) commandDef {
 	return commandDef{name: name, payload: payload}
 }
-

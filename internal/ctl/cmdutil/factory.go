@@ -128,7 +128,7 @@ type authInterceptor struct{ cc cliconfig.Context }
 func (a authInterceptor) apply(h http.Header) {
 	h.Set("Authorization", "Bearer "+a.cc.Token)
 	if a.cc.Namespace != "" {
-		h.Set(wire.NamespaceHeader,a.cc.Namespace)
+		h.Set(wire.NamespaceHeader, a.cc.Namespace)
 	}
 }
 

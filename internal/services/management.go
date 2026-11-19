@@ -38,9 +38,10 @@ import (
 	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/runtimes"
-	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
+	"github.com/graphene-ci/graphene/internal/standflow"
+	"github.com/graphene-ci/graphene/internal/worker"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
 	"github.com/graphene-ci/pipeline/pkg/flow/ownership"
 	"github.com/graphene-ci/pipeline/pkg/id"
@@ -883,6 +884,14 @@ func (m *Management) Delete(ctx context.Context, creq *connect.Request[managemen
 	if protectedRef(req.GetRef()) {
 		return nil, status.Errorf(codes.FailedPrecondition, "%s is protected and cannot be deleted", req.GetRef())
 	}
+	// A record on a LEASED stand is in a run's hands: it leaves only after
+	// the run, the stand itself included.
+	if stand, leased, err := b.Worker.LeasedStandOf(ctx, req.GetRef()); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if leased {
+		return nil, refusalStatus(temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("%s is on stand %s, leased by a run", req.GetRef(), stand), standflow.CodeLeased, nil))
+	}
 	// Deleting what never existed is not a deletion: without this look the
 	// audit note and the "record deleting" log below would be written
 	// about a name — and then answer `logs` for a record that never was.
@@ -949,7 +958,7 @@ func (m *Management) Invoke(ctx context.Context, creq *connect.Request[managemen
 	}
 	out, err := entclient.ExecRaw(ctx, b.Client, req.GetRef(), req.GetCommand(), req.GetPayload(), req.GetRequestId())
 	if err != nil {
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, refusalStatus(err)
 	}
 	m.audit(ctx, b, req.GetRef(), authz.VerbInvoke)
 	octx := obs.WithEntity(ctx, req.GetRef())

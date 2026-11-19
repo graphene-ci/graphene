@@ -85,7 +85,6 @@ func parseLifetime(field, v string) (time.Duration, error) {
 	return d, nil
 }
 
-
 // Holding is one resource the stand keeps.
 type Holding struct {
 	// KeepUntil bounds the stay; nil means until an explicit release.
@@ -106,6 +105,15 @@ type State struct {
 	LastActive time.Time `json:"lastActive,omitempty"`
 	// Expiring is set once the stand asked for its own deletion.
 	Expiring bool `json:"expiring,omitempty"`
+	// Lease is the run using the stand now; nil — free.
+	Lease *Lease `json:"lease,omitempty"`
+}
+
+// Lease is one run's exclusive use of a stand.
+type Lease struct {
+	// Run is the run id ("run/<run>" is its workflow).
+	Run string    `json:"run"`
+	At  time.Time `json:"at"`
 }
 
 // AcceptCmd registers a handover (the transfer flow calls it right
@@ -182,6 +190,87 @@ func (SetIdleCmd) Result() CommandRes { return CommandRes{} }
 func (c SetIdleCmd) Validate() error {
 	_, err := parseLifetime("idleTimeout", c.IdleTimeout)
 	return err
+}
+
+// Refusal codes: the stable error types a stand answers with. A queue in
+// front of the stand tells them apart as wait reasons.
+const (
+	// CodeBusy — another run holds the lease.
+	CodeBusy = "busy"
+	// CodeDirty — a machine on the stand has leaks its removals left.
+	CodeDirty = "dirty"
+	// CodeLeased — the stand is in use; holdings cannot leave it.
+	CodeLeased = "stand_leased"
+	// CodeNotHolder — the lease belongs to another run.
+	CodeNotHolder = "not_holder"
+)
+
+func refusal(code, format string, args ...any) error {
+	return temporal.NewNonRetryableApplicationError(fmt.Sprintf(format, args...), code, nil)
+}
+
+// DirtyActivity lists the agents on the calling stand that have leaks —
+// served by the graphene server worker.
+const DirtyActivity = "server.stand.dirty"
+
+// RunStateActivity reports a run's state: "running", "closed", or
+// "unknown" (never started) — served by the graphene server worker.
+const RunStateActivity = "server.run.state"
+
+// Run states RunStateActivity answers.
+const (
+	RunRunning = "running"
+	RunClosed  = "closed"
+	RunUnknown = "unknown"
+)
+
+// LeaseGrace is how long a lease waits for a run that has not started:
+// a queue acquires before it starts the run.
+const LeaseGrace = 15 * time.Minute
+
+// AcquireCmd takes the stand for one run: exclusive, refused while
+// another run holds it (busy) or a machine on it is dirty. The run may
+// acquire before it starts; the lease ends with the run.
+type AcquireCmd struct {
+	Run string `json:"run"`
+}
+
+// Name is the command's wire identity.
+func (AcquireCmd) Name() entity.CommandName { return "acquire" }
+
+// Result binds the response type.
+func (AcquireCmd) Result() LeaseRes { return LeaseRes{} }
+
+// Validate rejects a lease for nobody.
+func (c AcquireCmd) Validate() error {
+	if c.Run == "" || strings.Contains(c.Run, "/") {
+		return fmt.Errorf("acquire needs a run id, got %q", c.Run)
+	}
+	return nil
+}
+
+// ReleaseLeaseCmd gives the stand back before the run ends.
+type ReleaseLeaseCmd struct {
+	Run string `json:"run"`
+}
+
+// Name is the command's wire identity.
+func (ReleaseLeaseCmd) Name() entity.CommandName { return "release-lease" }
+
+// Result binds the response type.
+func (ReleaseLeaseCmd) Result() LeaseRes { return LeaseRes{} }
+
+// Validate rejects a release for nobody.
+func (c ReleaseLeaseCmd) Validate() error {
+	if c.Run == "" {
+		return errors.New("release-lease needs the run that holds the lease")
+	}
+	return nil
+}
+
+// LeaseRes names the run holding the stand after the command; "" — free.
+type LeaseRes struct {
+	Holder string `json:"holder,omitempty"`
 }
 
 // CommandRes reports the number of holdings after a command. The entity
@@ -272,6 +361,11 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 
 	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ReleaseCmd) (CommandRes, error) {
 		st := ec.State()
+		// A leased stand's machines are in use: nothing leaves it until
+		// the run is done.
+		if st.Lease != nil {
+			return CommandRes{}, refusal(CodeLeased, "stand is leased by run %s", st.Lease.Run)
+		}
 		targets := []string{}
 		if cmd.Ref != "" {
 			if _, held := st.Holdings[string(cmd.Ref)]; !held {
@@ -311,7 +405,64 @@ func New(tick time.Duration) *entdefine.Definition[Spec, State] {
 		return CommandRes{Count: len(st.Holdings)}, nil
 	})
 
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd AcquireCmd) (LeaseRes, error) {
+		st := ec.State()
+		if st.Lease != nil {
+			if st.Lease.Run == cmd.Run {
+				return LeaseRes{Holder: cmd.Run}, nil
+			}
+			return LeaseRes{Holder: st.Lease.Run}, refusal(CodeBusy, "stand is leased by run %s", st.Lease.Run)
+		}
+		if st.Expiring {
+			return LeaseRes{}, refusal(CodeLeased, "stand is being deleted")
+		}
+		var dirty []string
+		if err := workflow.ExecuteActivity(serverActx(ctx), DirtyActivity).Get(ctx, &dirty); err != nil {
+			return LeaseRes{}, err
+		}
+		if len(dirty) > 0 {
+			return LeaseRes{}, refusal(CodeDirty, "machines with leaks: %s", strings.Join(dirty, ", "))
+		}
+		now := workflow.Now(ctx)
+		st.Lease = &Lease{Run: cmd.Run, At: now}
+		st.LastActive = now
+		return LeaseRes{Holder: cmd.Run}, nil
+	})
+
+	entdefine.Handle(def, func(ctx workflow.Context, ec *entdefine.Ctx[Spec, State], cmd ReleaseLeaseCmd) (LeaseRes, error) {
+		st := ec.State()
+		if st.Lease == nil {
+			return LeaseRes{}, nil
+		}
+		if st.Lease.Run != cmd.Run {
+			return LeaseRes{Holder: st.Lease.Run}, refusal(CodeNotHolder, "stand is leased by run %s", st.Lease.Run)
+		}
+		st.Lease = nil
+		st.LastActive = workflow.Now(ctx)
+		return LeaseRes{}, nil
+	})
+
 	return def
+}
+
+// leaseVersion gates the lease checks in the reconcile tick.
+const leaseVersion = "stand-lease"
+
+// leaseHolds reports whether the lease still stands: its run is running,
+// or has not started yet and is within LeaseGrace.
+func leaseHolds(ctx workflow.Context, l *Lease, now time.Time) (bool, error) {
+	var state string
+	if err := workflow.ExecuteActivity(serverActx(ctx), RunStateActivity, l.Run).Get(ctx, &state); err != nil {
+		return false, err
+	}
+	switch state {
+	case RunRunning:
+		return true, nil
+	case RunUnknown:
+		return now.Sub(l.At) < LeaseGrace, nil
+	default:
+		return false, nil
+	}
 }
 
 // lifetimeVersion gates the stand-level TTL and idle timeout: histories
@@ -326,7 +477,6 @@ func outlived(st *State, now time.Time) bool {
 	return st.IdleTimeout > 0 && now.Sub(st.LastActive) >= st.IdleTimeout
 }
 
-
 // expireTick tears down what outstayed its keep — the stand's own
 // clock, not a server scan. A holding whose ORIGIN run still runs is
 // left alone until the run ends: ToStand happens mid-workflow, and a
@@ -335,6 +485,21 @@ func outlived(st *State, now time.Time) bool {
 func expireTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
 	st := ec.State()
 	now := workflow.Now(ctx)
+	if workflow.GetVersion(ctx, leaseVersion, workflow.DefaultVersion, 1) != workflow.DefaultVersion && st.Lease != nil {
+		held, err := leaseHolds(ctx, st.Lease, now)
+		if err != nil {
+			return err
+		}
+		if held {
+			// In use: nothing expires under a running run, and use is
+			// not idleness.
+			st.LastActive = now
+			return nil
+		}
+		workflow.GetLogger(ctx).Info("stand lease ended with its run", "run", st.Lease.Run)
+		st.Lease = nil
+		st.LastActive = now
+	}
 	for held, h := range st.Holdings {
 		if h.KeepUntil == nil || h.KeepUntil.After(now) {
 			continue
@@ -371,7 +536,6 @@ func expireTick(ctx workflow.Context, ec *entdefine.Ctx[Spec, State]) error {
 	st.Expiring = true
 	return nil
 }
-
 
 // RunActiveActivity reports whether a workflow (a run) is still
 // running — served by the graphene worker.

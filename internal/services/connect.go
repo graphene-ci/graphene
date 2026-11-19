@@ -123,7 +123,14 @@ func asConnectError(err error) error {
 		return err
 	}
 	if s, ok := status.FromError(err); ok && s.Code() != codes.Unknown {
-		return connect.NewError(connect.Code(s.Code()), errors.New(s.Message()))
+		ce := connect.NewError(connect.Code(s.Code()), errors.New(s.Message()))
+		// Details (a refusal's ErrorInfo code) survive the translation.
+		for _, d := range s.Proto().GetDetails() {
+			if detail, derr := connect.NewErrorDetail(d); derr == nil {
+				ce.AddDetail(detail)
+			}
+		}
+		return ce
 	}
 	return err
 }
