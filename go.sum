@@ -124,6 +124,8 @@ github.com/graphene-ci/library/docker v0.3.6 h1:JsB8pKjazvEAGFEgoni90dLoTGPKwtkS
 github.com/graphene-ci/library/docker v0.3.6/go.mod h1:B2oAsfrSyv+cJndOiPZNy48TnqSAlHhuYvF/ezGBh8k=
 github.com/graphene-ci/library/docker v0.3.7 h1:NcBG1PrCbdxN+OM4w7Qq2tOGqddgMmEGDRuB0d0rzGs=
 github.com/graphene-ci/library/docker v0.3.7/go.mod h1:B2oAsfrSyv+cJndOiPZNy48TnqSAlHhuYvF/ezGBh8k=
+github.com/graphene-ci/library/docker v0.3.8 h1:AKIXsSh0LQi4apauTsWWz2Gdut6oR5S0vJc1Z0YajOk=
+github.com/graphene-ci/library/docker v0.3.8/go.mod h1:TUyksBl9o9F+HmskzAyiCldqZXgnH2NVaWORM2teyio=
 github.com/graphene-ci/pipeline v0.2.14 h1:y3L6DQQgxTvcRaUH4EXBPaS6yWhOdwFVpa7LkE5pcOU=
 github.com/graphene-ci/pipeline v0.2.14/go.mod h1:2YpDZtdO3LCkJ65oRzdAssnUO1mIewjMQoJ4auoYkko=
 github.com/graphene-ci/pipeline v0.2.15 h1:VtbcZ+LIrz5dxg0wuZQDY3YwqEkhawvbFMrVJzyBfPQ=
