@@ -270,6 +270,7 @@ func machineFacts(f *agentpb.Facts) *agentflow.MachineFacts {
 		OSReleaseId:      f.GetOsReleaseId(),
 		OSReleaseLike:    f.GetOsReleaseLike(),
 		OSReleaseVersion: f.GetOsReleaseVersion(),
+		KernelRelease:    f.GetKernelRelease(),
 	}
 	for _, iface := range f.GetInterfaces() {
 		out.Interfaces = append(out.Interfaces, agentflow.InterfaceAddrs{

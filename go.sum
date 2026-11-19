@@ -124,6 +124,8 @@ github.com/graphene-ci/agent v0.2.2 h1:Ut3javqdetCtkwVLiAVmk6bm0t3qJaB+0GiW2+rSZ
 github.com/graphene-ci/agent v0.2.2/go.mod h1:Vplf2Lh3bKvelH9XYj3dB5WNBec11QAOoaTGzM26v3o=
 github.com/graphene-ci/agent v0.2.3 h1:YingNxsOdGAJhpQ3C93DW4sCSD2BlhlxL8MP+fuHst0=
 github.com/graphene-ci/agent v0.2.3/go.mod h1:Vplf2Lh3bKvelH9XYj3dB5WNBec11QAOoaTGzM26v3o=
+github.com/graphene-ci/agent v0.2.4 h1:z1Br3dL8qEYZJme5JNnuQ8rdyROKMsg6IqR2A1a7FnA=
+github.com/graphene-ci/agent v0.2.4/go.mod h1:Vplf2Lh3bKvelH9XYj3dB5WNBec11QAOoaTGzM26v3o=
 github.com/graphene-ci/library/docker v0.3.6 h1:JsB8pKjazvEAGFEgoni90dLoTGPKwtkSi65HnGLl/0w=
 github.com/graphene-ci/library/docker v0.3.6/go.mod h1:B2oAsfrSyv+cJndOiPZNy48TnqSAlHhuYvF/ezGBh8k=
 github.com/graphene-ci/library/docker v0.3.7 h1:NcBG1PrCbdxN+OM4w7Qq2tOGqddgMmEGDRuB0d0rzGs=
@@ -148,6 +150,8 @@ github.com/graphene-ci/pipeline v0.2.22 h1:EwvqIDStLd+S16GHRC06zkdicJqfKBq0/Uz06
 github.com/graphene-ci/pipeline v0.2.22/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/pipeline v0.2.23 h1:86YOJNRmxbx/+nwtHsCFw0QRaTG9/EdQx0CMnFryCN4=
 github.com/graphene-ci/pipeline v0.2.23/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
+github.com/graphene-ci/pipeline v0.2.24 h1:ci2rJW6qvmsob2tsKYz57HzoCzgSzNsdIE3OyAO0TDo=
+github.com/graphene-ci/pipeline v0.2.24/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305 h1:XAo+LQg6zidnVXdzUNmrqWdHke3OejhAYRTXABrvbWU=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
 github.com/graphene-ci/temporal-entity v0.1.1 h1:6adZ9koQxvdH8D29+b8PqeGxQbX5dasdJ/m+qqVpUwk=

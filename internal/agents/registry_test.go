@@ -146,12 +146,12 @@ func TestStopRunContainersIsParallelAndBounded(t *testing.T) {
 // disk change is a facts change.
 func TestMachineFactsCarryDisks(t *testing.T) {
 	t.Parallel()
-	f := &agentpb.Facts{Hostname: "db-1", Disks: []*agentpb.Facts_Disk{{
+	f := &agentpb.Facts{Hostname: "db-1", KernelRelease: "6.8.0-45-generic", Disks: []*agentpb.Facts_Disk{{
 		Name: "nvme0n1", SizeBytes: 1 << 40, Transport: "nvme", Model: "M", Serial: "S", ById: []string{"nvme-M_S"},
 	}}}
 	got := machineFacts(f)
-	if len(got.Disks) != 1 {
-		t.Fatalf("disks %+v", got.Disks)
+	if len(got.Disks) != 1 || got.KernelRelease != "6.8.0-45-generic" {
+		t.Fatalf("facts %+v", got)
 	}
 	d := got.Disks[0]
 	if d.Name != "nvme0n1" || d.SizeBytes != 1<<40 || d.Transport != "nvme" || d.Model != "M" || d.Serial != "S" || len(d.ById) != 1 {
