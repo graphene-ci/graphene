@@ -136,6 +136,8 @@ github.com/graphene-ci/pipeline v0.2.17 h1:Aw4QCAE7tfQpohpGyKpJeGH5UX+pVPABOzVSz
 github.com/graphene-ci/pipeline v0.2.17/go.mod h1:2YpDZtdO3LCkJ65oRzdAssnUO1mIewjMQoJ4auoYkko=
 github.com/graphene-ci/pipeline v0.2.18 h1:D3HxBn07IDKEFdTLQM//723wIvrdMTW/A3hA4qhr7mY=
 github.com/graphene-ci/pipeline v0.2.18/go.mod h1:2YpDZtdO3LCkJ65oRzdAssnUO1mIewjMQoJ4auoYkko=
+github.com/graphene-ci/pipeline v0.2.20 h1:VGSsHxNs3vNaWhK2ks8OS8WjfmT/8y60PCVv94hB0Tc=
+github.com/graphene-ci/pipeline v0.2.20/go.mod h1:2YpDZtdO3LCkJ65oRzdAssnUO1mIewjMQoJ4auoYkko=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305 h1:XAo+LQg6zidnVXdzUNmrqWdHke3OejhAYRTXABrvbWU=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
 github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 h1:B+8ClL/kCQkRiU82d9xajRPKYMrB7E0MbtzWVi1K4ns=

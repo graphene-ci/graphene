@@ -95,6 +95,22 @@ type kindEntry struct {
 	// specType turns a JSON spec into the kind's own Go type — the
 	// validation a generic Apply would otherwise skip.
 	specType reflect.Type
+	// validate checks a decoded spec's values (durations, exclusive
+	// fields) where the type alone cannot; nil — the type is enough.
+	validate func(json.RawMessage) error
+}
+
+// validated is the value check of a spec type that declares one.
+func validated[T interface{ Validate() error }]() func(json.RawMessage) error {
+	return func(raw json.RawMessage) error {
+		var spec T
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &spec); err != nil {
+				return err
+			}
+		}
+		return spec.Validate()
+	}
 }
 
 // Kinds lists what this installation can declare and command.
@@ -131,6 +147,11 @@ func (s *Worker) Apply(ctx context.Context, kind, id string, spec json.RawMessag
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(probe); err != nil {
 			return "", fmt.Errorf("spec does not fit kind %q: %w", kind, err)
+		}
+	}
+	if entry.validate != nil {
+		if err := entry.validate(spec); err != nil {
+			return "", fmt.Errorf("spec of kind %q: %w", kind, err)
 		}
 	}
 	// System markers go on at the ONE place records are declared, so
@@ -309,11 +330,14 @@ func buildKinds() map[string]*kindEntry {
 		cmd("pause", nil), cmd("resume", nil),
 		cmd("hook", reflect.TypeFor[triggerflow.HookCmd]()))
 
-	add("stand", "the project's standing ground: what outlives a run", true,
+	add("stand", "machines and resources that outlive the runs using them", true,
 		reflect.TypeFor[standflow.Spec](),
 		cmd("accept", reflect.TypeFor[standflow.AcceptCmd]()),
 		cmd("extend", reflect.TypeFor[standflow.ExtendCmd]()),
-		cmd("release", reflect.TypeFor[standflow.ReleaseCmd]()))
+		cmd("release", reflect.TypeFor[standflow.ReleaseCmd]()),
+		cmd("set-ttl", reflect.TypeFor[standflow.SetTTLCmd]()),
+		cmd("set-idle", reflect.TypeFor[standflow.SetIdleCmd]()))
+	reg["stand"].validate = validated[standflow.Spec]()
 
 	// clear-leaks: an operator says the leftovers a record could not
 	// remove are gone (or accepted) — the machine is clean again.

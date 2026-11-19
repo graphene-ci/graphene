@@ -235,6 +235,7 @@ func New(deps Deps) (*Worker, error) {
 	w.RegisterActivityWithOptions(s.transferResource, activity.RegisterOptions{Name: wire.TransferResourceActivity})
 	w.RegisterActivityWithOptions(s.standCascade, activity.RegisterOptions{Name: standflow.CascadeActivity})
 	w.RegisterActivityWithOptions(s.runActive, activity.RegisterOptions{Name: standflow.RunActiveActivity})
+	w.RegisterActivityWithOptions(s.standExpire, activity.RegisterOptions{Name: standflow.ExpireActivity})
 	// The trigger contour: the arbiter's arms and the firing path.
 	w.RegisterActivityWithOptions(s.triggerFire, activity.RegisterOptions{Name: triggerflow.FireActivity})
 	w.RegisterActivityWithOptions(s.autoStartRun, activity.RegisterOptions{Name: pipelineflow.StartActivity})
@@ -443,6 +444,17 @@ func (s *Worker) runActive(ctx context.Context, workflowId string) (bool, error)
 		return false, nil
 	}
 	return desc.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING, nil
+}
+
+// standExpire deletes the CALLING stand — its TTL or idle timeout ran
+// out. The stand is read from the activity's own workflow, so no request
+// can expire another stand.
+func (s *Worker) standExpire(ctx context.Context) error {
+	caller := activity.GetInfo(ctx).WorkflowExecution.ID
+	if !strings.HasPrefix(caller, "stand/") {
+		return temporal.NewNonRetryableApplicationError(caller+" is not a stand", "not_a_stand", nil)
+	}
+	return s.DeleteOne(ctx, caller)
 }
 
 // standCascade is the stand's teardown arm: subtree first, then the
@@ -1016,12 +1028,27 @@ func (s *Worker) transferResource(ctx context.Context, req wire.TransferResource
 	}
 	// Entity updates wait until the resource can accept the command. VM
 	// creation may take minutes; that wait is not a dead activity worker.
+	// A run may create its OWN pipeline's stand on first use; every other
+	// stand must have been applied. The pipeline is the run workflow's
+	// type — read from Temporal, never from the request.
+	var creator id.PipelineId
+	if info := activity.GetInfo(ctx); strings.HasPrefix(info.WorkflowExecution.ID, "run/") {
+		creator = id.PipelineId(info.WorkflowType.Name)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- s.Transfer(ctx, req) }()
-	return heartbeatUntil(ctx, done, "waiting for resource ownership transfer")
+	go func() { done <- s.Transfer(ctx, req, creator) }()
+	err := heartbeatUntil(ctx, done, "waiting for resource ownership transfer")
+	if errors.Is(err, ErrStandMissing) {
+		return temporal.NewNonRetryableApplicationError(err.Error(), "stand_missing", err)
+	}
+	return err
 }
+
+// ErrStandMissing refuses a transfer onto a stand that was never applied:
+// a typo in a stand name must not create a stand on the fly.
+var ErrStandMissing = errors.New("stand does not exist")
 
 // Transfer gives a resource to a new owner through the entity's own
 // transfer command: typed for the system kinds, by wire identity for
@@ -1032,8 +1059,20 @@ func (s *Worker) transferResource(ctx context.Context, req wire.TransferResource
 // ownership. Declared dependencies are indivisible (a vm on a stand
 // must not strand its subnet under a finishing run); resources with
 // separate fates are simply not chained.
-func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest) error {
+//
+// creator is the pipeline whose OWN stand may be created by this transfer
+// (a run's ToStand); every other stand must exist already, checked before
+// the resource changes hands so a refusal never strands it.
+func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest, creator id.PipelineId) error {
 	standId, toStand := strings.CutPrefix(string(req.NewOwner), "stand/")
+	stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
+	ownStand := toStand && creator != "" && standId == string(creator)
+	if toStand && !ownStand {
+		desc, err := stands.Describe(ctx, entity.ResourceID(standId))
+		if err != nil || desc.Phase != entity.PhaseReady {
+			return fmt.Errorf("%w: %s", ErrStandMissing, req.NewOwner)
+		}
+	}
 	if toStand {
 		// The climb is a STAND semantic: handing over survivors moves
 		// the whole declared tree. A point re-parenting (adopting a
@@ -1062,12 +1101,14 @@ func (s *Worker) Transfer(ctx context.Context, req wire.TransferResourceRequest)
 		}
 		// The stand LIVES the handover: its own timer enforces the
 		// keep, its history records it.
-		stands := entclient.Bind(s.standDef, s.deps.Client, wire.ServerQueue)
-		// The stand is the PIPELINE's: the pipeline is the project, so
-		// what stands beside it is its child.
+		accept := standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From}
+		if !ownStand {
+			_, err := entclient.Exec(ctx, stands, entity.ResourceID(standId), accept)
+			return err
+		}
+		// A pipeline's own stand is its child, created on first use.
 		_, err := entclient.ExecWithStart(ctx, stands, entity.ResourceID(standId),
-			standflow.Spec{PipelineId: standId},
-			standflow.AcceptCmd{Ref: req.Resource, Keep: req.Keep, From: req.From},
+			standflow.Spec{PipelineId: standId}, accept,
 			entclient.WithLabels(map[string]string{syslabels.Pipeline: standId}))
 		return err
 	}

@@ -38,6 +38,7 @@ import (
 	"github.com/graphene-ci/graphene/internal/nsflow"
 	"github.com/graphene-ci/graphene/internal/pipelineflow"
 	"github.com/graphene-ci/graphene/internal/runtimes"
+	"github.com/graphene-ci/graphene/internal/worker"
 	"github.com/graphene-ci/graphene/internal/secrets"
 	"github.com/graphene-ci/graphene/internal/selector"
 	managementv1 "github.com/graphene-ci/graphene/pkg/proto/management/v1"
@@ -924,11 +925,15 @@ func (m *Management) Transfer(ctx context.Context, creq *connect.Request[managem
 	if err != nil {
 		return nil, err
 	}
+	// An operator creates no stand by transferring: a stand is applied.
 	if err := b.Worker.Transfer(ctx, wire.TransferResourceRequest{
 		Resource: ref.OwnerRef(req.GetRef()),
 		NewOwner: ref.OwnerRef(req.GetNewOwner()),
 		Keep:     time.Duration(req.GetKeepSeconds()) * time.Second,
-	}); err != nil {
+	}, ""); err != nil {
+		if errors.Is(err, worker.ErrStandMissing) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	m.audit(ctx, b, req.GetRef(), authz.VerbTransfer)
