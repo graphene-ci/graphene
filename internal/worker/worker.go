@@ -215,6 +215,7 @@ func New(deps Deps) (*Worker, error) {
 
 	// Ops behind the flows.
 	w.RegisterActivityWithOptions(deps.AgentOps.InstallSSH, activity.RegisterOptions{Name: agentflow.InstallSSHActivity})
+	w.RegisterActivityWithOptions(deps.AgentOps.HostKey, activity.RegisterOptions{Name: agentflow.HostKeyActivity})
 	w.RegisterActivityWithOptions(deps.AgentOps.Decommission, activity.RegisterOptions{Name: agentflow.DecommissionActivity})
 	w.RegisterActivityWithOptions(deps.AgentOps.AgentStatus, activity.RegisterOptions{Name: agentflow.AgentStatusActivity})
 	w.RegisterActivityWithOptions(deps.ArtifactOps.Stat, activity.RegisterOptions{Name: artifact.StatActivity})

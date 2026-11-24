@@ -5,6 +5,7 @@
 package ops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"golang.org/x/crypto/ssh"
 
@@ -50,7 +52,7 @@ func (o *AgentOps) AgentStatus(_ context.Context, agentId id.AgentId) (agentflow
 
 // InstallSSH runs the agent install script on an existing machine over
 // ssh — the same bytes a fresh VM gets through user-data. Idempotent: the
-// script itself converges.
+// script itself converges. The machine must present install.HostKey.
 func (o *AgentOps) InstallSSH(ctx context.Context, agentId id.AgentId, install pipeline.SSHInstall) error {
 	script, err := o.userData(agentId)
 	if err != nil {
@@ -116,12 +118,65 @@ func (o *AgentOps) Decommission(ctx context.Context, agentId id.AgentId, install
 	return nil
 }
 
+// HostKey reads the key a machine presents and sends nothing: the key
+// exchange is cut before any login, so no credential and no script leave
+// the server. Trust on first use pins this key before the install.
+func (o *AgentOps) HostKey(ctx context.Context, address string) (string, error) {
+	var seen ssh.PublicKey
+	errSeen := errors.New("host key read")
+	cfg := &ssh.ClientConfig{
+		User:    "graphene",
+		Timeout: sshTimeout,
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			seen = key
+			return errSeen
+		},
+	}
+	address = sshAddress(address)
+	raw, err := (&net.Dialer{Timeout: sshTimeout}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return "", fmt.Errorf("dial %s: %w", address, err)
+	}
+	defer func() { _ = raw.Close() }()
+	if _, _, _, err := ssh.NewClientConn(raw, address, cfg); seen == nil {
+		return "", fmt.Errorf("ssh key exchange %s: %w", address, err)
+	}
+	if activity.IsActivity(ctx) {
+		activity.GetLogger(ctx).Info("ssh host key trusted on first use",
+			"address", address, "fingerprint", ssh.FingerprintSHA256(seen))
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(seen))), nil
+}
+
+// sshTimeout bounds an ssh dial and handshake.
+const sshTimeout = 30 * time.Second
+
+// sshAddress defaults the port to 22.
+func sshAddress(address string) string {
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		return net.JoinHostPort(address, "22")
+	}
+	return address
+}
+
 // runSSH runs a root script on the machine over ssh and returns its
 // combined output. The script travels on stdin, never in argv (it may
 // carry a token), into a private temp file that is removed whatever the
 // script's outcome. A non-root login escalates with sudo -n (sudo would
 // eat a piped stdin, hence the file).
+//
+// The machine must present install.HostKey: without one there is nothing
+// to verify against, and a different key is a final CodeHostKeyMismatch.
 func (o *AgentOps) runSSH(ctx context.Context, install pipeline.SSHInstall, script string) (string, error) {
+	if install.HostKey == "" {
+		return "", temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("no host key pinned for %s: nothing to verify the machine against", install.Address),
+			pipeline.CodeHostKeyMismatch, nil)
+	}
+	pinned, _, _, _, err := ssh.ParseAuthorizedKey([]byte(install.HostKey))
+	if err != nil {
+		return "", fmt.Errorf("parse host key: %w", err)
+	}
 	keyPEM, err := o.secrets.Get(install.KeyRef.Name)
 	if err != nil {
 		return "", err
@@ -130,31 +185,37 @@ func (o *AgentOps) runSSH(ctx context.Context, install pipeline.SSHInstall, scri
 	if err != nil {
 		return "", fmt.Errorf("parse ssh key: %w", err)
 	}
-	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(install.HostKey))
-	if err != nil {
-		return "", fmt.Errorf("parse host key: %w", err)
-	}
-	address := install.Address
-	if _, _, splitErr := net.SplitHostPort(address); splitErr != nil {
-		address = net.JoinHostPort(address, "22")
-	}
+	var seen ssh.PublicKey
 	sshCfg := &ssh.ClientConfig{
-		User:            install.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.FixedHostKey(hostKey),
+		User: install.User,
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			seen = key
+			if !bytes.Equal(key.Marshal(), pinned.Marshal()) {
+				return errors.New("host key mismatch")
+			}
+			return nil
+		},
 		// Negotiate the ALGORITHM of the pinned key — otherwise the
 		// server may present a different key type and the pin
 		// mismatches spuriously.
-		HostKeyAlgorithms: []string{hostKey.Type()},
-		Timeout:           30 * time.Second,
+		HostKeyAlgorithms: []string{pinned.Type()},
+		Timeout:           sshTimeout,
 	}
-	raw, err := (&net.Dialer{Timeout: sshCfg.Timeout}).DialContext(ctx, "tcp", address)
+	address := sshAddress(install.Address)
+	raw, err := (&net.Dialer{Timeout: sshTimeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return "", fmt.Errorf("dial %s: %w", address, err)
 	}
 	sshConn, chans, reqs, err := ssh.NewClientConn(raw, address, sshCfg)
 	if err != nil {
 		_ = raw.Close()
+		if seen != nil && !bytes.Equal(seen.Marshal(), pinned.Marshal()) {
+			return "", temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("%s presented host key %s, not the pinned %s", address,
+					ssh.FingerprintSHA256(seen), ssh.FingerprintSHA256(pinned)),
+				pipeline.CodeHostKeyMismatch, nil)
+		}
 		return "", fmt.Errorf("ssh handshake %s: %w", address, err)
 	}
 	conn := ssh.NewClient(sshConn, chans, reqs)

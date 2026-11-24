@@ -156,6 +156,10 @@ github.com/graphene-ci/pipeline v0.2.24 h1:ci2rJW6qvmsob2tsKYz57HzoCzgSzNsdIE3Oy
 github.com/graphene-ci/pipeline v0.2.24/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/pipeline v0.2.26 h1:idjFrM9aDcndUqrxxaV6uVox8cIEHV7+UJP31ufA5Rk=
 github.com/graphene-ci/pipeline v0.2.26/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
+github.com/graphene-ci/pipeline v0.2.27 h1:refflwsMk5kaPZc1yRMz47dbOaAwB9T8IbkREiDQQFA=
+github.com/graphene-ci/pipeline v0.2.27/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
+github.com/graphene-ci/pipeline v0.2.28 h1:EEe3Vxsj+lWnN3d8Pn7O+dhwXY3DR9GR6+/Fn5smnPo=
+github.com/graphene-ci/pipeline v0.2.28/go.mod h1:GwgBBGjI9A7sxilE6r8TZli0r5wbCT/okKtkFG8gcLE=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305 h1:XAo+LQg6zidnVXdzUNmrqWdHke3OejhAYRTXABrvbWU=
 github.com/graphene-ci/temporal-entity v0.0.0-20260825234335-880e05240305/go.mod h1:/dueP9d/i14iEJHNIjQVOYvbiRHZVXMmWUQYIYnBUd8=
 github.com/graphene-ci/temporal-entity v0.1.1 h1:6adZ9koQxvdH8D29+b8PqeGxQbX5dasdJ/m+qqVpUwk=

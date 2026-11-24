@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gopherex/xlog"
+	"go.temporal.io/sdk/temporal"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/graphene-ci/graphene/internal/agents"
@@ -180,11 +181,41 @@ func TestDecommissionPinsTheHostKey(t *testing.T) {
 	other := newSSHMachine(t, pub, "", 0)
 	o := NewAgentOps("test", agents.New(time.Second, xlog.New(xlog.NopCore{})), keyStore{"key": pemKey}, nil)
 	install := &pipeline.SSHInstall{Address: machine.addr, User: "root", KeyRef: ref.SecretRef{Name: "key"}, HostKey: other.hostKey}
-	if err := o.Decommission(context.Background(), "manual-1", install); err == nil || !strings.Contains(err.Error(), "handshake") {
-		t.Fatalf("err = %v, want a handshake refusal", err)
+	err := o.Decommission(context.Background(), "manual-1", install)
+	var app *temporal.ApplicationError
+	if !errors.As(err, &app) || app.Type() != pipeline.CodeHostKeyMismatch || !app.NonRetryable() {
+		t.Fatalf("err = %v, want a final %s", err, pipeline.CodeHostKeyMismatch)
 	}
 	if len(machine.execs) != 0 {
 		t.Fatal("nothing may run on a machine whose key does not match")
+	}
+}
+
+// Trust on first use reads the key without logging in or running
+// anything; ssh without a pinned key refuses instead of trusting.
+func TestHostKeyFirstUse(t *testing.T) {
+	t.Parallel()
+	pemKey, pub := clientKey(t)
+	machine := newSSHMachine(t, pub, "GRAPHENE_DECOMMISSIONED\n", 0)
+	o := NewAgentOps("test", agents.New(time.Second, xlog.New(xlog.NopCore{})), keyStore{"key": pemKey}, nil)
+	key, err := o.HostKey(context.Background(), machine.addr)
+	if err != nil || key != strings.TrimSpace(machine.hostKey) {
+		t.Fatalf("host key %q err %v, want %q", key, err, machine.hostKey)
+	}
+	install := &pipeline.SSHInstall{Address: machine.addr, User: "root", KeyRef: ref.SecretRef{Name: "key"}}
+	err = o.Decommission(context.Background(), "manual-1", install)
+	var app *temporal.ApplicationError
+	if !errors.As(err, &app) || app.Type() != pipeline.CodeHostKeyMismatch {
+		t.Fatalf("err = %v, want a refusal without a pinned key", err)
+	}
+	install.HostKey = key
+	if err := o.Decommission(context.Background(), "manual-1", install); err != nil {
+		t.Fatalf("the pinned key must verify: %v", err)
+	}
+	machine.mu.Lock()
+	defer machine.mu.Unlock()
+	if len(machine.execs) != 1 {
+		t.Fatalf("execs %v: reading the key must run nothing", machine.execs)
 	}
 }
 
